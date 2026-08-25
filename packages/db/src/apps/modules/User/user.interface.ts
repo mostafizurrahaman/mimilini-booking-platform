@@ -4,7 +4,8 @@ import type { TAuthRole, TAuthStatus } from './user.constant'
 export interface IUser extends Document {
   name: string
   email: string
-  password: string
+  
+  passwordHash: string
   status: TAuthStatus
 
   // roles:
@@ -12,13 +13,14 @@ export interface IUser extends Document {
 
   // profile common properties:
   profileImage?: string
-  phoneNumber?: string
+  phone?: string
 
   // 2FA:
   twoFactorSecret?: string
   isTwoFactorEnabled: boolean
   twoFactorBackupCodes?: string[]
   isOtpVerified: boolean
+  isProfileCompleted: boolean
 
   // Stripe related:
   isOnboardingCompleted: boolean
@@ -26,6 +28,7 @@ export interface IUser extends Document {
   // reason:
   blockedReason?: string
   deletionReason?: string
+  rejectionReason?: string; 
 
   // common timestamps:
   lastLogin?: Date
@@ -37,14 +40,11 @@ export interface IUser extends Document {
   updatedAt: Date
 }
 
-export interface IUserModel extends Model<IUser> {
-  getUserById(id: string): Promise<IUser | null>
-  isUserExistByEmail(email: string): Promise<IUser | null>
-  isUserActive(user: IUser): Promise<boolean>
-  isUserDeleted(user: IUser): Promise<boolean>
-  isUserBlocked(user: IUser): Promise<boolean>
-  isUserUnderReview(user: IUser): Promise<boolean>
-  isUserStatusPending(user: IUser): Promise<boolean>
+export interface IUserDoc  extends IUser, Document { }
+
+export interface IUserModel extends Model<IUserDoc> {
+  getUserById(id: string): Promise<IUserDoc | null>
+  isUserExistByEmail(email: string): Promise<IUserDoc | null>
   isJwtIssuedBeforePasswordChanged: (
     passwordChangedAt: Date,
     jwtIssuedTimestamps: number

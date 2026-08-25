@@ -1,9 +1,9 @@
 import { model, Schema } from 'mongoose'
 
 import { AuthRoles, AuthStatus } from './user.constant'
-import type { IUser, IUserModel } from './user.interface'
+import type { IUser, IUserDoc, IUserModel } from './user.interface'
 
-const userSchema = new Schema<IUser, IUserModel>(
+const userSchema = new Schema<IUserDoc, IUserModel>(
   {
     name: {
       type: String,
@@ -13,14 +13,15 @@ const userSchema = new Schema<IUser, IUserModel>(
       required: true,
       unique: true,
     },
-    phoneNumber: {
-      type: String,
-    },
-    password: {
+    passwordHash: {
       type: String,
       required: true,
       select: false,
     },
+    phone: {
+      type: String,
+    },
+  
     //  profile image:
     profileImage: {
       type: String,
@@ -29,11 +30,16 @@ const userSchema = new Schema<IUser, IUserModel>(
       type: Boolean,
       default: false,
     },
+    isProfileCompleted: { 
+      type: Boolean, 
+      default: false,
+    }, 
+
     // roles:
     role: {
       type: String,
       enum: AuthRoles,
-      default: AuthRoles.ORGANIZER,
+      default: AuthRoles.CUSTOMER,
     },
 
     status: {
@@ -68,7 +74,9 @@ const userSchema = new Schema<IUser, IUserModel>(
     deletionReason: {
       type: String,
     },
-
+    rejectionReason: { 
+      type: String,
+    },
     // blocked at:
     lastLogin: {
       type: Date,
@@ -86,7 +94,6 @@ const userSchema = new Schema<IUser, IUserModel>(
       type: Date,
     },
   },
-
   {
     timestamps: true,
     versionKey: false,
@@ -94,41 +101,17 @@ const userSchema = new Schema<IUser, IUserModel>(
 )
 
 // 1. Find user with _id: (Object id)
-userSchema.statics.getUserById = async function (id: string): Promise<IUser | null> {
+userSchema.statics.getUserById = async function (id: string): Promise<IUserDoc | null> {
   return this.findById(id)
 }
 
 // 2. Find User with email address:
-userSchema.statics.isUserExistByEmail = async function (email: string): Promise<IUser | null> {
+userSchema.statics.isUserExistByEmail = async function (email: string): Promise<IUserDoc | null> {
   return this.findOne({
     email,
   })
 }
 
-// 3. Check is user active by id:
-userSchema.statics.isUserActive = async function (user: IUser) {
-  return user.status === AuthStatus.ACTIVE
-}
-
-// 4. Check is user deleted by id:
-userSchema.statics.isUserDeleted = async function (user: IUser) {
-  return user.status === AuthStatus.DELETED
-}
-
-// 5. Check is user blocked by id:
-userSchema.statics.isUserBlocked = async function (user: IUser) {
-  return user.status === AuthStatus.BLOCKED
-}
-
-// 6. check is user under_review by id:
-userSchema.statics.isUserUnderReview = async function (user: IUser) {
-  return user.status === AuthStatus.IN_REVIEW
-}
-
-// 7. check is user in Pending  by id:
-userSchema.statics.isUserStatusPending = async function (user: IUser) {
-  return user.status === AuthStatus.PENDING
-}
 
 // 8. remove hash password :
 userSchema.post('save', async function (doc, next) {
@@ -152,4 +135,4 @@ userSchema.statics.isJwtIssuedBeforePasswordChanged = function (
   return jwtIssuedTime < passwordChangedAt.getTime()
 }
 
-export const User = model<IUser, IUserModel>('User', userSchema)
+export const User = model<IUserDoc, IUserModel>('User', userSchema)
