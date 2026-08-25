@@ -29,7 +29,7 @@ export const ResetPasswordOTPEmail = ({
   userFirstName = 'User',
   otpCode = '123456',
   userEmail = 'user@example.com',
-  expirationMinutes = 15,
+  expirationMinutes = 5,
   companyName = 'Your Company',
   companyLogo = 'https://via.placeholder.com/120x40/5850EC/ffffff?text=LOGO',
 }: ResetPasswordOTPEmailProps) => {

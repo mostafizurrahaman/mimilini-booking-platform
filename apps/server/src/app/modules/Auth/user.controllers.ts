@@ -2,16 +2,18 @@ import { catchAsync, getUserFromRequest, sendResponse, setCookie } from '@repo/s
 import { AuthServices } from './user.services'
 import httpStatus from 'http-status'
 import configs from '@app/configs'
+import type { TMulterFile } from '@repo/media-hub'
 
 // 1. Sign up
 const signUp = catchAsync(async (req, res) => {
-  const result = await AuthServices.signUp(req.body)
+  const profileImage = req.file as TMulterFile
+  const result = await AuthServices.signUp(req.body, profileImage)
 
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.CREATED,
-    message: `User signed up successfully!`,
-    data: result,
+    message: result.message ?? `User signed up successfully!`,
+    data: null,
   })
 })
 
@@ -42,6 +44,48 @@ const verifySignupOTP = catchAsync(async (req, res) => {
 // 4. Login user:
 const login = catchAsync(async (req, res) => {
   const result = await AuthServices.login(req.body)
+
+  setCookie(res, 'refreshToken', result.refreshToken, {
+    httpOnly: true,
+    secure: configs.nodeEnv === 'production',
+    maxAge: 365 * 24 * 60 * 60 * 1000, // 365 days
+    sameSite: 'lax',
+    path: '/',
+  })
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: `You have logged in successfully!`,
+    data: result,
+  })
+
+})
+
+// 4.1. Artist Login: 
+const artistLogin = catchAsync(async (req, res) => {
+  const result = await AuthServices.artistLogin(req.body)
+
+  setCookie(res, 'refreshToken', result.refreshToken, {
+    httpOnly: true,
+    secure: configs.nodeEnv === 'production',
+    maxAge: 365 * 24 * 60 * 60 * 1000, // 365 days
+    sameSite: 'lax',
+    path: '/',
+  })
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: result?.message ?? "You have logged in successfully",
+    data: result,
+  })
+})
+
+
+// 4.2. Admin Login 
+const adminLogin = catchAsync(async (req, res) => {
+  const result = await AuthServices.adminLogin(req.body)
 
   setCookie(res, 'refreshToken', result.refreshToken, {
     httpOnly: true,
@@ -133,6 +177,8 @@ export const AuthController = {
   resendSignupOTP,
   verifySignupOTP,
   login,
+  artistLogin,
+  adminLogin, 
   forgotPassword,
   verifyResetPasswordOtp,
   resendOTP,

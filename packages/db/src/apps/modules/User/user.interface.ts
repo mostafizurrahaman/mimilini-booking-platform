@@ -1,5 +1,5 @@
 import { Document, Model } from 'mongoose'
-import type { TAuthRole, TAuthStatus } from './user.constant'
+import type { TAuthRole, TAuthStatus, TVerificationStatus } from './user.constant'
 
 export interface IUser extends Document {
   name: string
@@ -7,6 +7,7 @@ export interface IUser extends Document {
   
   passwordHash: string
   status: TAuthStatus
+  verificationStatus: TVerificationStatus
 
   // roles:
   role: TAuthRole
@@ -23,7 +24,7 @@ export interface IUser extends Document {
   isProfileCompleted: boolean
 
   // Stripe related:
-  isOnboardingCompleted: boolean
+  isStripeConnected: boolean
 
   // reason:
   blockedReason?: string

@@ -1,6 +1,6 @@
 import { model, Schema } from 'mongoose'
 
-import { AuthRoles, AuthStatus } from './user.constant'
+import { AuthRoles, AuthStatus, verificationStatus, VerificationStatusValues } from './user.constant'
 import type { IUser, IUserDoc, IUserModel } from './user.interface'
 
 const userSchema = new Schema<IUserDoc, IUserModel>(
@@ -26,7 +26,7 @@ const userSchema = new Schema<IUserDoc, IUserModel>(
     profileImage: {
       type: String,
     },
-    isOnboardingCompleted: {
+    isStripeConnected: {
       type: Boolean,
       default: false,
     },
@@ -47,7 +47,11 @@ const userSchema = new Schema<IUserDoc, IUserModel>(
       enum: AuthStatus,
       default: AuthStatus.PENDING,
     },
-
+    verificationStatus: {
+      type: String,
+      enum: VerificationStatusValues,
+      default: verificationStatus.PENDING,
+    },
     twoFactorSecret: {
       type: String,
       select: false,
@@ -115,7 +119,7 @@ userSchema.statics.isUserExistByEmail = async function (email: string): Promise<
 
 // 8. remove hash password :
 userSchema.post('save', async function (doc, next) {
-  doc.password = ''
+  doc.passwordHash = ''
   next()
 })
 

@@ -1,16 +1,22 @@
 // Auth Status
 export const AuthStatus = {
-  ACTIVE: 'active', // can use the system
   PENDING: 'pending', // signup completed, waiting for next step
-  IN_REVIEW: 'in_review', // admin/manual verification in progress
-  DELINED_DOCUMENT: "delined_document",
+  ACTIVE: 'active', // can use the system
   BLOCKED: 'blocked', // admin restricted
   DELETED: 'deleted', // soft-deleted (no login)
 } as const
 
+export const verificationStatus = {
+  PENDING: 'pending',    
+  IN_REVIEW: 'in_review', 
+  VERIFIED: 'verified',   
+  REJECTED: 'rejected',   
+} as const
 export const AuthStatusValues = Object.values(AuthStatus)
+export const VerificationStatusValues = Object.values(verificationStatus)
 
-export type TAuthStatus = (typeof AuthStatus)[keyof typeof AuthStatus]
+
+
 
 // Auth Roles:
 export const AuthRoles = {
@@ -22,4 +28,7 @@ export const AuthRoles = {
 
 export const AuthRolesValues = Object.values(AuthRoles)
 
+
+export type TAuthStatus = (typeof AuthStatus)[keyof typeof AuthStatus]
 export type TAuthRole = (typeof AuthRoles)[keyof typeof AuthRoles]
+export type TVerificationStatus = (typeof verificationStatus)[keyof typeof verificationStatus]

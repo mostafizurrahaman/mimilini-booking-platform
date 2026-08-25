@@ -7,6 +7,7 @@ interface SignupOTPEmailProps {
   otpCode: string
   companyName: string
   companyLogo: string
+  expiresInMin: number
 }
 
 export const SignupOTPEmail = ({
@@ -14,6 +15,7 @@ export const SignupOTPEmail = ({
   otpCode,
   companyName,
   companyLogo,
+  expiresInMin
 }: SignupOTPEmailProps) => {
   return (
     <EmailLayout previewText={`Your verification code is ${otpCode}`}>
@@ -34,7 +36,7 @@ export const SignupOTPEmail = ({
         <Text className="text-gray-600 text-base leading-relaxed">Hi {userFirstName},</Text>
         <Text className="text-gray-600 text-base leading-relaxed">
           Thanks for starting your journey with <strong>{companyName}</strong>. Use the following
-          verification code to complete your registration. This code will expire in 10 minutes.
+          verification code to complete your registration. This code will expire in {expiresInMin ?? 5} minutes.
         </Text>
 
         {/* OTP Box - Simplified for maximum compatibility */}

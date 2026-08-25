@@ -4,11 +4,20 @@ import { AuthValidations } from './user.validations'
 import { AuthController } from './user.controllers'
 import { auth } from '@app/middlewares/auth'
 import { AuthRoles } from '@repo/db'
+import { multerFactory } from 'packages/media-hub/src'
 
 const router: Router = express()
 
 // 1. Sign up route:
-router.post('/sign-up', validateRequest(AuthValidations.signUserSchema), AuthController.signUp)
+router.post(
+  '/sign-up',
+  multerFactory({
+    category: 'image',
+    maxSizeInMB: 10,
+  }).single('profileImage'),
+  validateRequest(AuthValidations.signUserSchema),
+  AuthController.signUp
+)
 
 // 2. Resend Signup Otp:
 router.post(
