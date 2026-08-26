@@ -3,12 +3,15 @@ import { Server } from 'http'
 import configs from './app/configs'
 import app from './app'
 import { logger } from '@app/libs/logger'
+import { seedSuperAdmin } from '@app/libs/seed-super-admin'
 
 let server: Server
 //  boostrap function :
 const boostrap = async () => {
   try {
     await connectDB(configs.databaseUrl)
+
+    await seedSuperAdmin()
 
     logger.info('✅ Database connected  successfully!')
     // server listen :

@@ -9,6 +9,9 @@ import { notFound } from './app/middlewares/not-found'
 import globalErrorHandler from './app/middlewares/global-error-handler'
 import { allRoutes } from '@app/routes'
 import { logger } from '@app/libs/logger'
+import dns from 'node:dns'
+
+dns.setServers(["1.1.1.1"])
 
 const app: express.Application = express()
 

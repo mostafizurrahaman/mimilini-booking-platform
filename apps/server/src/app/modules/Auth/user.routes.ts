@@ -3,7 +3,6 @@ import express, { Router } from 'express'
 import { AuthValidations } from './user.validations'
 import { AuthController } from './user.controllers'
 import { auth } from '@app/middlewares/auth'
-import { AuthRoles } from '@repo/db'
 import { multerFactory } from 'packages/media-hub/src'
 
 const router: Router = express()
@@ -36,6 +35,11 @@ router.post(
 // 4. Login :
 router.post('/login', validateRequest(AuthValidations.loginSchema), AuthController.login)
 
+// 4.1. Login :
+router.post('/artist-login', validateRequest(AuthValidations.loginSchema), AuthController.artistLogin)
+// 4.2. Login :
+router.post('/admin-login', validateRequest(AuthValidations.loginSchema), AuthController.adminLogin)
+
 // 5. Forgot passwod:
 router.post(
   '/forgot-password',
@@ -67,9 +71,49 @@ router.post(
 // 9. Changed password:
 router.post(
   '/changed-password',
-  auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN, AuthRoles.USER),
+  auth(),
   validateRequest(AuthValidations.changedPasswordSchema),
   AuthController.changedPassword
+)
+
+// 10. Get me:
+router.get('/me', auth(), AuthController.getMe)
+
+// 11. Update profile :
+router.patch(
+  '/profile',
+  auth(),
+  multerFactory({
+    category: 'image',
+    maxSizeInMB: 10,
+  }).single('profileImage'),
+  validateRequest(AuthValidations.updateProfileSchema),
+  AuthController.updateProfile
+)
+
+// 12. Change Profile picture: 
+router.patch("/change-profile",  
+multerFactory({
+    category: 'image',
+    maxSizeInMB: 10,
+  }).single('profileImage'),
+  auth(), 
+  AuthController.changeProfilePicture 
+)
+
+// // 12. Update User Status:
+// router.patch(
+//   '/update-status/:id',
+//   auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
+//   validateRequest(AuthValidations.updateUserStatusSchema),
+//   AuthController.updateUserStatusByID
+// )
+
+// 13. Refresh Token:
+router.post(
+  '/refresh-token',
+  validateRequest(AuthValidations.refreshTokenSchema),
+  AuthController.refreshToken
 )
 
 export const authRoutes = router

@@ -1,5 +1,5 @@
 import { AppError, catchAsync, verifyToken } from '@repo/shared'
-import { AuthStatus, User, type TAuthRole } from '@repo/db'
+import {  AuthStatus, User, type TAuthRole } from '@repo/db'
 import httpStatus from 'http-status'
 import configs from '@app/configs'
 
@@ -35,11 +35,11 @@ export const auth = (...requiredRoles: TAuthRole[]) => {
     /**
      * 4. Account status checks
      */
-    if (await User.isUserBlocked(user)) {
+    if (user.status === AuthStatus.BLOCKED) {
       throw new AppError(httpStatus.FORBIDDEN, 'Your account has been blocked')
     }
 
-    if (await User.isUserDeleted(user)) {
+    if (user.status === AuthStatus.DELETED) {
       throw new AppError(httpStatus.GONE, 'Your account has been deleted')
     }
 
@@ -47,16 +47,13 @@ export const auth = (...requiredRoles: TAuthRole[]) => {
       throw new AppError(httpStatus.FORBIDDEN, 'Please verify your account')
     }
 
-    if (await User.isUserUnderReview(user)) {
-      throw new AppError(
-        httpStatus.FORBIDDEN,
-        'Your account is under review. Please submit required documents'
-      )
-    }
-
+  
     if (user.status !== AuthStatus.ACTIVE) {
       throw new AppError(httpStatus.FORBIDDEN, 'Your account is not active')
     }
+
+
+    // ?? TODO: Write the logic for verification status for artist user: 
 
     /**
      * 5. Token invalidation check

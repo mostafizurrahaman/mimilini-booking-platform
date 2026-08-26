@@ -8,6 +8,7 @@ export const hashPassword = async (password: string, soltRounds: number) => {
 
 // 2. Compare Password
 export const comparePassword = async (newPassword: string, hashedPassword: string) => {
+  console.log({newPassword, hashedPassword})
   const isPasswordMatched = await bcrypt.compare(newPassword, hashedPassword)
   return isPasswordMatched
 }

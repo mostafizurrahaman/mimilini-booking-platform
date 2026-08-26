@@ -9,6 +9,7 @@ import type {
   ISignUpSchemaType,
   IVerifyResetPasswordOtpType,
   IVerifySignupOtpType,
+  TUpdateProfilePayloadType,
 } from './user.validations'
 import {
   addTime,
@@ -29,6 +30,7 @@ import { sendEmail } from '@repo/email-sender'
 import { deleteSingleFileFromS3, uploadSingleFileToS3, type TMulterFile } from 'packages/media-hub/src'
 import { AWS_FOLDER_NAMES } from '@app/libs/files_folder'
 import { getNewOtp } from '@app/libs/get-new-otp'
+import { logger } from '@app/libs/logger'
 
 // 1. Signup
 const signUp = async (payload: ISignUpSchemaType, profileImage: TMulterFile) => {
@@ -309,7 +311,7 @@ const login = async (payload: ILoginType) => {
   const { email, password } = payload
 
   // 1. check user
-  const user = await User.findOne({ email }).select('+password')
+  const user = await User.findOne({ email }).select('+passwordHash')
   if (!user) {
     throw new AppError(httpStatus.NOT_FOUND, "User doesn't exists!")
   }
@@ -380,7 +382,7 @@ const artistLogin = async (payload: ILoginType) => {
   const { email, password } = payload
 
   // 1. check user
-  const user = await User.findOne({ email }).select('+password')
+  const user = await User.findOne({ email }).select('+passwordHash')
   if (!user) {
     throw new AppError(httpStatus.NOT_FOUND, "User doesn't exists!")
   }
@@ -457,7 +459,7 @@ const adminLogin = async (payload: ILoginType) => {
   const { email, password } = payload
 
   // 1. check user
-  const user = await User.findOne({ email }).select('+password')
+  const user = await User.findOne({ email }).select('+passwordHash')
   if (!user) {
     throw new AppError(httpStatus.NOT_FOUND, "User doesn't exists!")
   }
@@ -780,7 +782,7 @@ const changedPassword = async (userInfo: IUser, payload: IChangedPasswordType) =
   const { newPassword, oldPassword } = payload
 
   // 1. Check is user exists with this id?:
-  const user = await User.findById(userInfo._id).select('+password')
+  const user = await User.findById(userInfo._id).select('+passwordHash')
   if (!user) {
     throw new AppError(httpStatus.NOT_FOUND, "User doesn't exists!")
   }
@@ -822,11 +824,13 @@ const getMe = async (user: IUser) => {
         _id: '$_id',
         name: '$name',
         email: '$email',
-        phoneNumber: { $ifNull: ['$phoneNumber', null] },
+        phone: { $ifNull: ['$phone', null] },
         status: '$status',
+        verificationStatus: "$verificationStatus",
         role: '$role',
         profileImage: { $ifNull: ['$profileImage', null] },
-        isOnboardingCompleted: { $ifNull: ['$isOnboardingCompleted', null] },
+        isProfileCompleted: { $ifNull: ['$isProfileCompleted', null] },
+        isStripeConnected: { $ifNull: ['$isStripeConnected', null] },
         createdAt: '$createdAt',
         updatedAt: '$updatedAt',
       },
@@ -843,36 +847,24 @@ const getMe = async (user: IUser) => {
 // 11. Update Profile:
 const updateProfile = async (
   user: IUser,
-  payload: IUpdateProfilePayload,
-  profileImageFile: IMulterFile
+  payload: TUpdateProfilePayloadType,
+  profileImageFile: TMulterFile
 ) => {
-  const { name, phoneNumber } = payload
-
-  // ? Check any user  exists with this phone number:
-  const hasAssociatedUserWithPhoneNumber = await User.exists({
-    phoneNumber,
-    _id: {
-      $ne: user?._id,
-    },
-  }).lean()
-
-  if (hasAssociatedUserWithPhoneNumber) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'The phone number have already in use.')
-  }
+  const { name,  phone } = payload
 
   const oldImageUrl = user?.profileImage
   let newImageUrl = undefined
   // if the profile file provided:
 
   if (profileImageFile) {
-    const { url } = await uploadSingleFileToS3(profileImageFile, 'profileImage')
+    const { url } = await uploadSingleFileToS3(profileImageFile, AWS_FOLDER_NAMES.ProfileImage)
 
     user.profileImage = url
     newImageUrl = url
   }
 
   if (name !== undefined) user.name = name
-  if (phoneNumber !== undefined) user.phoneNumber = phoneNumber
+  if (phone !== undefined) user.phone = phone
 
   try {
     await user.save({
@@ -891,7 +883,50 @@ const updateProfile = async (
   return {
     name: user.name,
     email: user.email,
-    phoneNumber: user.phoneNumber || null,
+    phone: user.phone || null,
+    profileImageFile: user.profileImage || null,
+    createdAt: user.createdAt,
+    updated: user.updatedAt,
+  }
+}
+
+// 12. Update Profile:
+const changeProfilePicture = async (
+  user: IUser,
+  profileImageFile: TMulterFile
+) => {
+
+
+  const oldImageUrl = user?.profileImage
+  let newImageUrl = undefined
+  // if the profile file provided:
+
+  if (profileImageFile) {
+    const { url } = await uploadSingleFileToS3(profileImageFile, AWS_FOLDER_NAMES.ProfileImage)
+
+    user.profileImage = url
+    newImageUrl = url
+  }
+
+  
+
+  try {
+    await user.save({
+      validateBeforeSave: true,
+    })
+  } catch (error) {
+    await deleteSingleFileFromS3(newImageUrl as string)
+    throw  error
+  }
+
+  if (oldImageUrl && newImageUrl) {
+    await deleteSingleFileFromS3(oldImageUrl!)
+  }
+
+  return {
+    name: user.name,
+    email: user.email,
+    phone: user.phone || null,
     profileImageFile: user.profileImage || null,
     createdAt: user.createdAt,
     updated: user.updatedAt,
@@ -1022,6 +1057,7 @@ const refreshToken = async (token: string) => {
     accessToken,
   }
 }
+
 export const AuthServices = {
   signUp,
   resendSignupOTP,
@@ -1036,6 +1072,7 @@ export const AuthServices = {
   changedPassword,
   getMe,
   updateProfile,
+  changeProfilePicture,
   updateUserStatusIntoDB,
   refreshToken,
 }
