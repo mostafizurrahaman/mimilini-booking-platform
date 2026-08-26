@@ -1,5 +1,5 @@
 import { enumString, optionalString, requiredEmail, requiredString } from '@repo/shared'
-import { AuthRoles } from 'packages/db/src'
+import { AuthRoles } from '@repo/db'
 import z from 'zod/v4'
 
 // 1. Signup

@@ -3,7 +3,7 @@ import express, { Router } from 'express'
 import { AuthValidations } from './user.validations'
 import { AuthController } from './user.controllers'
 import { auth } from '@app/middlewares/auth'
-import { multerFactory } from 'packages/media-hub/src'
+import { multerFactory } from '@repo/media-hub'
 
 const router: Router = express()
 
