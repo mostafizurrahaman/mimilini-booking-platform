@@ -1,29 +1,39 @@
 import { Document, Model } from 'mongoose'
-import type { TAuthRole, TAuthStatus } from './user.constant'
+import type { TAuthRole, TAuthStatus, TVerificationStatus } from './user.constant'
 
 export interface IUser extends Document {
   name: string
   email: string
-  password: string
+  
+  passwordHash: string
   status: TAuthStatus
+  verificationStatus: TVerificationStatus
 
   // roles:
   role: TAuthRole
 
   // profile common properties:
   profileImage?: string
+  phone?: string
 
   // 2FA:
   twoFactorSecret?: string
   isTwoFactorEnabled: boolean
   twoFactorBackupCodes?: string[]
   isOtpVerified: boolean
+  isProfileCompleted: boolean
+
+  // Stripe related:
+  isStripeConnected: boolean
 
   // reason:
   blockedReason?: string
   deletionReason?: string
+  rejectionReason?: string; 
 
   // common timestamps:
+  lastLogin?: Date
+  lastActivity?: Date
   blockedAt?: Date
   deletedAt?: Date
   passwordChangedAt?: Date
@@ -31,14 +41,11 @@ export interface IUser extends Document {
   updatedAt: Date
 }
 
-export interface IUserModel extends Model<IUser> {
-  getUserById(id: string): Promise<IUser | null>
-  isUserExistByEmail(email: string): Promise<IUser | null>
-  isUserActive(user: IUser): Promise<boolean>
-  isUserDeleted(user: IUser): Promise<boolean>
-  isUserBlocked(user: IUser): Promise<boolean>
-  isUserUnderReview(user: IUser): Promise<boolean>
-  isUserStatusPending(user: IUser): Promise<boolean>
+export interface IUserDoc  extends IUser, Document { }
+
+export interface IUserModel extends Model<IUserDoc> {
+  getUserById(id: string): Promise<IUserDoc | null>
+  isUserExistByEmail(email: string): Promise<IUserDoc | null>
   isJwtIssuedBeforePasswordChanged: (
     passwordChangedAt: Date,
     jwtIssuedTimestamps: number

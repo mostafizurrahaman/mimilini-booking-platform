@@ -1,4 +1,5 @@
-import { requiredEmail, requiredString } from '@repo/shared'
+import { enumString, optionalString, requiredEmail, requiredString } from '@repo/shared'
+import { AuthRoles } from '@repo/db'
 import z from 'zod/v4'
 
 // 1. Signup
@@ -9,6 +10,7 @@ const signUserSchema = z.object({
     password: requiredString('Password').min(1, {
       error: `Password is required`,
     }),
+    role: enumString([AuthRoles.ARTIST, AuthRoles.CUSTOMER], "Role")
   }),
 })
 
@@ -73,6 +75,37 @@ const changedPasswordSchema = z.object({
   }),
 })
 
+
+const updateProfileSchema = z.object({
+  body: z.object({
+    name: requiredString('name'),
+    phone: requiredString('phone'),
+  }),
+})
+
+
+const refreshTokenSchema = z.object({
+  cookies: z.object({
+     refreshToken: optionalString("Refresh token")
+  }),
+  body: z.object({
+    refreshToken: optionalString("Refresh token")
+  }),
+}).superRefine((data, ctx) => { 
+
+  const hasToken = !!data?.cookies?.refreshToken?.trim() || !!data?.body?.refreshToken?.trim()
+
+  if (!hasToken) {
+     return ctx.addIssue({
+      code: "custom",
+      path: ["body", "refreshToken"], 
+      message: "Refresh token is required."
+     })
+  }
+
+})
+
+
 export const AuthValidations = {
   signUserSchema,
   loginSchema,
@@ -83,6 +116,8 @@ export const AuthValidations = {
   resendOTPSchema,
   changedPasswordSchema,
   resetPasswordSchema,
+  updateProfileSchema, 
+  refreshTokenSchema,
 }
 
 
@@ -96,3 +131,5 @@ export type IVerifyResetPasswordOtpType = z.infer<typeof verifyResetPasswordOtpS
 export type IResetPasswordOtpType = z.infer<typeof resetPasswordSchema.shape.body>
 export type IResetPasswordOtpQueryType = z.infer<typeof resetPasswordSchema.shape.query>
 export type IChangedPasswordType = z.infer<typeof changedPasswordSchema.shape.body>
+export type TUpdateProfilePayloadType = z.infer<typeof updateProfileSchema.shape.body>
+export type TRefreshTokenPayloadType = z.infer<typeof refreshTokenSchema.shape.body> | z.infer<typeof refreshTokenSchema.shape.cookies>
