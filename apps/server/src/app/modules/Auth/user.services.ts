@@ -1,5 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { AuthRoles, AuthStatus, Otp, otpTypes, User, verificationStatus, VerificationStatusValues, type IUser } from '@repo/db'
+import {
+  AuthRoles,
+  AuthStatus,
+  Otp,
+  otpTypes,
+  User,
+  verificationStatus,
+  VerificationStatusValues,
+  type IUser,
+} from '@repo/db'
 import type {
   IChangedPasswordType,
   IForgotPasswordType,
@@ -48,9 +57,8 @@ const signUp = async (payload: ISignUpSchemaType, profileImage: TMulterFile) => 
           'An account with this email already exists. Please log in.'
         )
 
-      case AuthStatus.PENDING:{
-
-       const otp = await getNewOtp({
+      case AuthStatus.PENDING: {
+        const otp = await getNewOtp({
           userId: existingUser._id,
           type: otpTypes.SIGNUP,
         })
@@ -61,7 +69,7 @@ const signUp = async (payload: ISignUpSchemaType, profileImage: TMulterFile) => 
             companyName: configs.site.name,
             companyLogo: configs.site.logo as string,
             otpCode: otp?.otp as string,
-            expiresInMin: 1          
+            expiresInMin: 1,
           })
         )
 
@@ -69,14 +77,13 @@ const signUp = async (payload: ISignUpSchemaType, profileImage: TMulterFile) => 
           to: existingUser.email,
           html: htmlTemplate.html,
           subject: 'Your OTP for Account Verification',
-          text: htmlTemplate.text,        
+          text: htmlTemplate.text,
         })
 
         //
         return {
           message:
             'A verification code has been sent to your email. Please verify it to complete your signup!',
-        
         }
       }
 
@@ -97,15 +104,12 @@ const signUp = async (payload: ISignUpSchemaType, profileImage: TMulterFile) => 
     }
   }
 
+  let profileImageUrl: string | undefined = undefined
 
-    let profileImageUrl: string | undefined = undefined
-
-    if (profileImage) { 
-      const { url} = await uploadSingleFileToS3(profileImage, AWS_FOLDER_NAMES.ProfileImage)
-      profileImageUrl = url
-    }
-
-
+  if (profileImage) {
+    const { url } = await uploadSingleFileToS3(profileImage, AWS_FOLDER_NAMES.ProfileImage)
+    profileImageUrl = url
+  }
 
   const mongoSession = await mongoose.startSession()
 
@@ -115,7 +119,7 @@ const signUp = async (payload: ISignUpSchemaType, profileImage: TMulterFile) => 
     // 2. Hash password
     const hashedPassword = await hashPassword(password, configs.passwordSoltRound)
 
-    const isCustomer = role === "customer"
+    const isCustomer = role === 'customer'
 
     // 3. Create user (PENDING)
     const [newUser] = await User.create(
@@ -125,11 +129,12 @@ const signUp = async (payload: ISignUpSchemaType, profileImage: TMulterFile) => 
           email,
           passwordHash: hashedPassword,
           status: AuthStatus.PENDING,
+          role: isCustomer ? AuthRoles.CUSTOMER : AuthRoles.ARTIST,
           verificationStatus: isCustomer ? verificationStatus.VERIFIED : verificationStatus.PENDING,
-          profileImage: profileImageUrl as string, 
-          isProfileCompleted: isCustomer, 
-          isStripeConnected: false, 
-          isOtpVerified: false
+          profileImage: profileImageUrl as string,
+          isProfileCompleted: isCustomer,
+          isStripeConnected: false,
+          isOtpVerified: false,
         },
       ],
       { session: mongoSession }
@@ -152,19 +157,18 @@ const signUp = async (payload: ISignUpSchemaType, profileImage: TMulterFile) => 
         companyName: configs.site.name,
         companyLogo: configs.site.logo as string,
         otpCode: otp?.otp as string,
-        expiresInMin: 1
+        expiresInMin: 1,
       })
     )
 
-   
     await mongoSession.commitTransaction()
 
-     // 7. Send OTP with rendered template
+    // 7. Send OTP with rendered template
     await sendEmail({
       to: newUser.email,
       html: htmlTemplate.html,
       subject: 'Your OTP for Account Verification',
-    })   
+    })
 
     return {
       _id: newUser?._id,
@@ -181,12 +185,12 @@ const signUp = async (payload: ISignUpSchemaType, profileImage: TMulterFile) => 
   } catch (error: any) {
     await mongoSession.abortTransaction()
 
-    if (profileImageUrl){
-       await deleteSingleFileFromS3(profileImageUrl)
+    if (profileImageUrl) {
+      await deleteSingleFileFromS3(profileImageUrl)
     }
-    
-    throw new  error
-   } finally{ 
+
+    throw new error()
+  } finally {
     mongoSession.endSession()
   }
 }
@@ -251,7 +255,7 @@ const resendSignupOTP = async (payload: IResendSignupType) => {
       companyName: configs.site.name,
       companyLogo: configs.site.logo as string,
       otpCode: otp?.otp as string,
-      expiresInMin: 1
+      expiresInMin: 1,
     })
   )
 
@@ -407,7 +411,7 @@ const artistLogin = async (payload: ILoginType) => {
   if (!user.isOtpVerified) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Your account is not verified!')
   }
-  
+
   // 5. compare given password:
   const isPasswordMatched = await comparePassword(password, user.passwordHash)
 
@@ -438,9 +442,10 @@ const artistLogin = async (payload: ILoginType) => {
     configs.jwt.refreshToken.expiresIn
   )
 
-
-  // ?? Write messages here: 
-  const message = user?.isProfileCompleted ? `You are logged in successfully. Please complete your profile.` :  "You are logged in successfully."
+  // ?? Write messages here:
+  const message = user?.isProfileCompleted
+    ? `You are logged in successfully. Please complete your profile.`
+    : 'You are logged in successfully.'
 
   return {
     message,
@@ -479,7 +484,6 @@ const adminLogin = async (payload: ILoginType) => {
   if (user.status === AuthStatus.DELETED) {
     throw new AppError(httpStatus.GONE, 'Your account is deleted!')
   }
-
 
   // 4. check is otp verified ?
   if (!user.isOtpVerified) {
@@ -579,7 +583,7 @@ const forgotPassword = async (payload: IForgotPasswordType) => {
       companyName: configs.site.name,
       companyLogo: configs.site.logo as string,
       otpCode: otp?.otp as string,
-      expirationMinutes: 1
+      expirationMinutes: 1,
     })
   )
 
@@ -706,7 +710,7 @@ const resendOTP = async (payload: IResendSignupType) => {
       companyName: configs.site.name,
       companyLogo: configs.site.logo as string,
       otpCode: newOtp?.otp as string,
-      expirationMinutes: 1
+      expirationMinutes: 1,
     })
   )
 
@@ -826,7 +830,7 @@ const getMe = async (user: IUser) => {
         email: '$email',
         phone: { $ifNull: ['$phone', null] },
         status: '$status',
-        verificationStatus: "$verificationStatus",
+        verificationStatus: '$verificationStatus',
         role: '$role',
         profileImage: { $ifNull: ['$profileImage', null] },
         isProfileCompleted: { $ifNull: ['$isProfileCompleted', null] },
@@ -850,7 +854,7 @@ const updateProfile = async (
   payload: TUpdateProfilePayloadType,
   profileImageFile: TMulterFile
 ) => {
-  const { name,  phone } = payload
+  const { name, phone } = payload
 
   const oldImageUrl = user?.profileImage
   let newImageUrl = undefined
@@ -891,12 +895,7 @@ const updateProfile = async (
 }
 
 // 12. Update Profile:
-const changeProfilePicture = async (
-  user: IUser,
-  profileImageFile: TMulterFile
-) => {
-
-
+const changeProfilePicture = async (user: IUser, profileImageFile: TMulterFile) => {
   const oldImageUrl = user?.profileImage
   let newImageUrl = undefined
   // if the profile file provided:
@@ -908,15 +907,13 @@ const changeProfilePicture = async (
     newImageUrl = url
   }
 
-  
-
   try {
     await user.save({
       validateBeforeSave: true,
     })
   } catch (error) {
     await deleteSingleFileFromS3(newImageUrl as string)
-    throw  error
+    throw error
   }
 
   if (oldImageUrl && newImageUrl) {

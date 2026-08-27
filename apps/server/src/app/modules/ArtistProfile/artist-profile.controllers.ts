@@ -2,12 +2,22 @@ import { catchAsync, sendResponse } from '@repo/shared'
 import httpStatus from 'http-status'
 import { artistProfileServices } from './artist-profile.services'
 import { getUserFromRequest } from '@app/libs/get-user-from-request'
+import type { TMulterFileList } from 'packages/media-hub/src'
 
+interface IArtistProfileFile {
+  drivingLicenseFrontSide: TMulterFileList
+  drivingLicenseBackSide: TMulterFileList
+  selfie: TMulterFileList
+  profileImage: TMulterFileList
+}
 const createArtistProfile = catchAsync(async (req, res) => {
-
   const user = await getUserFromRequest(req)
-  
-  const result = await artistProfileServices.createArtistProfile(user, req.body, req.files)
+
+  const result = await artistProfileServices.createArtistProfile(
+    user,
+    req.body,
+    req.files as unknown as IArtistProfileFile
+  )
 
   sendResponse(res, {
     success: true,
@@ -67,5 +77,5 @@ export const artistProfileControllers = {
   updateArtistProfile,
   getAllArtistProfile,
   getArtistProfileById,
-  deleteArtistProfileById
+  deleteArtistProfileById,
 }

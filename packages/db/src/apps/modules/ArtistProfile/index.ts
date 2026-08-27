@@ -1,3 +1,3 @@
-export * from "./artist-profile.model"
-    export * from "./artist-profile.interfaces"
-    export * from "./artist-profile.constants"
+export * from './artist-profile.model'
+export * from './artist-profile.interfaces'
+export * from './artist-profile.constants'

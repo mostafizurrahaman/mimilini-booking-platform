@@ -8,7 +8,11 @@ import type {
   TUpdateArtistProfilePayloadType,
   TGetAllArtistProfileQueryParamsType,
 } from './artist-profile.validations'
-import { uploadSingleFileToS3, type TMulterFileList } from 'packages/media-hub/src'
+import {
+  deleteMultipleFilesFromS3,
+  uploadSingleFileToS3,
+  type TMulterFileList,
+} from 'packages/media-hub/src'
 import { AWS_FOLDER_NAMES } from '@app/libs/files_folder'
 import mongoose from 'mongoose'
 
@@ -19,7 +23,7 @@ interface IArtistProfileFile {
   profileImage: TMulterFileList
 }
 
-const createArtistProfile = async (
+export const createArtistProfile = async (
   user: IUser,
   payload: TCreateArtistProfilePayloadType,
   files: IArtistProfileFile
@@ -43,114 +47,114 @@ const createArtistProfile = async (
     travelRadius,
   } = payload
 
-  // ?? Check is artist profile already exists ?:
-  const existingArtist = await ArtistProfile.findOne({
-    user: user?._id,
-  })
-
-  if (existingArtist) {
-    throw new AppError(httpStatus.CONFLICT, 'Professional profile already exists.')
+  if (user.isProfileCompleted) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Your professional profile is already completed.')
   }
 
-  // ?? Check the abn number already in used:
-  const hasAnyAssociatedWithThisAbn = await ArtistProfile.findOne({
-    user: {
-      $ne: user?._id,
-    },
-    abn,
-  })
-
-  if (hasAnyAssociatedWithThisAbn) {
-    throw new AppError(httpStatus.CONFLICT, 'The abn number already in use.')
-  }
-
-  // ?? Check the phone number already in used:
-  const hasAnyAssociatedWithThisPhone = await User.findOne({
-    _id: {
-      $ne: user?._id,
-    },
-    phone,
-  })
-
-  if (hasAnyAssociatedWithThisPhone) {
-    throw new AppError(httpStatus.CONFLICT, 'The phone number already in use.')
-  }
-
+  // 1. Validate mandatory files upfront before hitting DB or S3
   const drivingLicenseFrontSideFile = files?.drivingLicenseFrontSide?.[0]
   const drivingLicenseBackSideFile = files?.drivingLicenseBackSide?.[0]
   const selfieFile = files?.selfie?.[0]
-  const profileImageFile = files.profileImage?.[0]
-
-  const deletableFiles = []
+  const profileImageFile = files?.profileImage?.[0]
 
   if (!drivingLicenseFrontSideFile) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Driving license front side is required.')
   }
-
   if (!drivingLicenseBackSideFile) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Driving license backside is required.')
+    throw new AppError(httpStatus.BAD_REQUEST, 'Driving license back side is required.')
   }
-
   if (!selfieFile) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'selfie is required.')
+    throw new AppError(httpStatus.BAD_REQUEST, 'Selfie is required.')
   }
 
-  let drivingLicenseFrontSideUrl = undefined
-  let drivingLicenseBackSideUrl = undefined
-  let selfieUrl = undefined
-  let profileImageUrl = user?.profileImage ?? undefined
+  // 2. Parallelize pre-validation database queries
+  const [existingArtist, hasAnyAssociatedWithThisAbn, hasAnyAssociatedWithThisPhone] =
+    await Promise.all([
+      ArtistProfile.findOne({ user: user?._id }),
+      ArtistProfile.findOne({ user: { $ne: user?._id }, abn }),
+      phone ? User.findOne({ _id: { $ne: user?._id }, phone }) : null,
+    ])
 
-  if (drivingLicenseFrontSideFile) {
-    const { url } = await uploadSingleFileToS3(
-      drivingLicenseFrontSideFile,
-      AWS_FOLDER_NAMES.Licenses
-    )
-
-    drivingLicenseFrontSideUrl = url
+  if (existingArtist) {
+    throw new AppError(httpStatus.CONFLICT, 'Professional profile already exists.')
+  }
+  if (hasAnyAssociatedWithThisAbn) {
+    throw new AppError(httpStatus.CONFLICT, 'The ABN number is already in use.')
+  }
+  if (hasAnyAssociatedWithThisPhone) {
+    throw new AppError(httpStatus.CONFLICT, 'The phone number is already in use.')
   }
 
-  if (drivingLicenseBackSideFile) {
-    const { url } = await uploadSingleFileToS3(
-      drivingLicenseBackSideFile,
-      AWS_FOLDER_NAMES.Licenses
-    )
+  // 3. Upload all files to S3 in parallel
+  const newlyUploadedUrls: string[] = []
+  let drivingLicenseFrontSideUrl = ''
+  let drivingLicenseBackSideUrl = ''
+  let selfieUrl = ''
+  let newProfileImageUrl: string | undefined
 
-    drivingLicenseBackSideUrl = url
+  try {
+    const uploadTasks: Promise<{ type: string; url: string }>[] = [
+      uploadSingleFileToS3(drivingLicenseFrontSideFile, AWS_FOLDER_NAMES.Licenses).then((res) => ({
+        type: 'dlFront',
+        url: res.url,
+      })),
+      uploadSingleFileToS3(drivingLicenseBackSideFile, AWS_FOLDER_NAMES.Licenses).then((res) => ({
+        type: 'dlBack',
+        url: res.url,
+      })),
+      uploadSingleFileToS3(selfieFile, AWS_FOLDER_NAMES.Selfies).then((res) => ({
+        type: 'selfie',
+        url: res.url,
+      })),
+    ]
+
+    if (profileImageFile) {
+      uploadTasks.push(
+        uploadSingleFileToS3(profileImageFile, AWS_FOLDER_NAMES.ProfileImage).then((res) => ({
+          type: 'profileImage',
+          url: res.url,
+        }))
+      )
+    }
+
+    const uploadResults = await Promise.all(uploadTasks)
+
+    for (const item of uploadResults) {
+      newlyUploadedUrls.push(item.url)
+      if (item.type === 'dlFront') drivingLicenseFrontSideUrl = item.url
+      if (item.type === 'dlBack') drivingLicenseBackSideUrl = item.url
+      if (item.type === 'selfie') selfieUrl = item.url
+      if (item.type === 'profileImage') newProfileImageUrl = item.url
+    }
+  } catch (error) {
+    if (newlyUploadedUrls.length > 0) {
+      await deleteMultipleFilesFromS3(newlyUploadedUrls).catch(() => {})
+    }
+    throw error
   }
 
-  if (selfieFile) {
-    const { url } = await uploadSingleFileToS3(selfieFile, AWS_FOLDER_NAMES.Selfies)
-    selfieUrl = url
-  }
-
-  if (profileImageFile) {
-    const { url } = await uploadSingleFileToS3(profileImageFile, AWS_FOLDER_NAMES.ProfileImage)
-
-    if (url && user.profileImage) deletableFiles.push(user.profileImage)
-    profileImageUrl = url
-  }
-
+  // 4. Execute atomic database transaction
   const mongoSession = await mongoose.startSession()
 
   try {
     mongoSession.startTransaction()
 
-    const professionalProfile = await ArtistProfile.create(
+    const [professionalProfile] = await ArtistProfile.create(
       [
         {
           user: user?._id,
           businessName,
-          abn, // Australian Business Number
+          abn,
           businessAddress,
           yearOfExperience,
-          professionalBio,
+          professionalBio: professionalBio!,
 
-          // Verification section:
-          drivingLicenseFrontSide: drivingLicenseFrontSideUrl,
-          drivingLicenseBackSide: drivingLicenseBackSideUrl,
+          // Verification uploads
+          drivingLicenseFrontSide: drivingLicenseFrontSideUrl!,
+          drivingLicenseBackSide: drivingLicenseBackSideUrl!,
           selfie: selfieUrl,
 
-          // Address info:
+          // Location & Social
           location: {
             type: 'Point',
             coordinates: [longitude, latitude],
@@ -158,34 +162,43 @@ const createArtistProfile = async (
           city,
           state,
           postalCode,
-          website,
-          instagram,
+          website: website!,
+          instagram: instagram!,
           facebook,
-
           language,
           travelRadius,
         },
       ],
-      {
-        session: mongoSession,
-      }
+      { session: mongoSession }
     )
 
     if (!professionalProfile) {
-      throw new AppError(httpStatus.BAD_REQUEST, 'Professional profile failed to update.')
+      throw new AppError(httpStatus.BAD_REQUEST, 'Failed to create professional profile.')
     }
 
+    const oldProfileImage = user.profileImage
     if (phone !== undefined) user.phone = phone
-    if (profileImageUrl !== undefined) user.profileImage = profileImageUrl
-
+    if (newProfileImageUrl !== undefined) user.profileImage = newProfileImageUrl
     user.isProfileCompleted = true
 
     await user.save({ session: mongoSession })
 
     await mongoSession.commitTransaction()
+
+    // 5. Cleanup replaced avatar on success (outside transaction)
+    if (newProfileImageUrl && oldProfileImage) {
+      await deleteMultipleFilesFromS3([oldProfileImage]).catch(() => {})
+    }
+
     return professionalProfile
   } catch (error) {
     await mongoSession.abortTransaction()
+
+    // Clean up only the files uploaded during this specific request
+    if (newlyUploadedUrls.length > 0) {
+      await deleteMultipleFilesFromS3(newlyUploadedUrls).catch(() => {})
+    }
+
     throw error
   } finally {
     await mongoSession.endSession()
