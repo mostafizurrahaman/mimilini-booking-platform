@@ -7,6 +7,7 @@ const artistProfileSchema = new Schema<IArtistProfileDoc>(
       type: Schema.Types.ObjectId,
       ref: "User", 
       required: true,
+      unique: true,
     },
     businessName: {
        type: String,
@@ -14,7 +15,8 @@ const artistProfileSchema = new Schema<IArtistProfileDoc>(
     }, 
     abn: { 
       type: String,
-      required: true
+      required: true, 
+      unique: true,
     }, 
     businessAddress: { 
       type: String,
@@ -31,11 +33,11 @@ const artistProfileSchema = new Schema<IArtistProfileDoc>(
     }, 
     drivingLicenseFrontSide: { 
       type: String, 
-      requried: true, 
+      required: true, 
     }, 
     drivingLicenseBackSide: { 
       type: String, 
-      requried: true, 
+      required: true, 
     }, 
     selfie: { 
       type: String, 
@@ -82,7 +84,8 @@ const artistProfileSchema = new Schema<IArtistProfileDoc>(
     }, 
     travelRadius: { 
       type: Number, // km basis 
-      requried: true
+      required: true, 
+      min: 0
     }
   
   },

@@ -69,8 +69,7 @@ const signUp = async (payload: ISignUpSchemaType, profileImage: TMulterFile) => 
           to: existingUser.email,
           html: htmlTemplate.html,
           subject: 'Your OTP for Account Verification',
-          text: htmlTemplate.text,
-        
+          text: htmlTemplate.text,        
         })
 
         //

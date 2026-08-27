@@ -1,9 +1,13 @@
 import { catchAsync, sendResponse } from '@repo/shared'
 import httpStatus from 'http-status'
 import { artistProfileServices } from './artist-profile.services'
+import { getUserFromRequest } from '@app/libs/get-user-from-request'
 
 const createArtistProfile = catchAsync(async (req, res) => {
-  const result = await artistProfileServices.createArtistProfile(req.body)
+
+  const user = await getUserFromRequest(req)
+  
+  const result = await artistProfileServices.createArtistProfile(user, req.body, req.files)
 
   sendResponse(res, {
     success: true,
