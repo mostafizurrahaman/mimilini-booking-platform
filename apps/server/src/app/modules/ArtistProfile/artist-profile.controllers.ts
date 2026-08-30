@@ -2,7 +2,8 @@ import { catchAsync, sendResponse } from '@repo/shared'
 import httpStatus from 'http-status'
 import { artistProfileServices } from './artist-profile.services'
 import { getUserFromRequest } from '@app/libs/get-user-from-request'
-import type { TMulterFileList } from 'packages/media-hub/src'
+import type { TMulterFile, TMulterFileList } from 'packages/media-hub/src'
+import type { TUpdateArtistProfilePayloadType } from './artist-profile.validations'
 
 interface IArtistProfileFile {
   drivingLicenseFrontSide: TMulterFileList
@@ -28,7 +29,10 @@ const createArtistProfile = catchAsync(async (req, res) => {
 })
 
 const updateArtistProfile = catchAsync(async (req, res) => {
-  const result = await artistProfileServices.updateArtistProfile(req.params.id as string, req.body)
+  const user = await getUserFromRequest(req)
+  const payload = req.body as TUpdateArtistProfilePayloadType
+  const profileImage = req.file as TMulterFile
+  const result = await artistProfileServices.updateArtistProfile(user, payload, profileImage)
 
   sendResponse(res, {
     success: true,

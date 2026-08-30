@@ -1,4 +1,10 @@
-import { ArtistProfile, artistProfileSearchableFields, User, type IUser } from '@repo/db'
+import {
+  ArtistProfile,
+  artistProfileSearchableFields,
+  User,
+  verificationStatus,
+  type IUser,
+} from '@repo/db'
 import httpStatus from 'http-status'
 import { AppError } from '@repo/shared'
 import type { PipelineStage } from 'mongoose'
@@ -11,6 +17,7 @@ import type {
 import {
   deleteMultipleFilesFromS3,
   uploadSingleFileToS3,
+  type TMulterFile,
   type TMulterFileList,
 } from 'packages/media-hub/src'
 import { AWS_FOLDER_NAMES } from '@app/libs/files_folder'
@@ -180,6 +187,7 @@ export const createArtistProfile = async (
     if (phone !== undefined) user.phone = phone
     if (newProfileImageUrl !== undefined) user.profileImage = newProfileImageUrl
     user.isProfileCompleted = true
+    user.verificationStatus = verificationStatus.IN_REVIEW
 
     await user.save({ session: mongoSession })
 
@@ -205,7 +213,85 @@ export const createArtistProfile = async (
   }
 }
 
-const updateArtistProfile = async (id: string, payload: TUpdateArtistProfilePayloadType) => {
+const updateArtistProfile = async (
+  user: IUser,
+  payload: TUpdateArtistProfilePayloadType,
+  profileImage?: TMulterFile
+) => {
+  const {
+    fullname,
+    professionalBio,
+    businessAddress,
+    latitude,
+    longitude,
+    phone,
+    facebook,
+    instagram,
+    language,
+    city,
+    state,
+    postalCode,
+    travelRadius,
+  } = payload
+
+  // ?? Check artist profile exists?:
+  const artistProfile = await ArtistProfile.findOne({ user: user?._id })
+  if (!artistProfile) {
+    throw new AppError(httpStatus.NOT_FOUND, "Artist profile doesn't exists.")
+  }
+
+  let newImageUrl: string | undefined = null
+  let oldImageUrl: string = ''
+
+  if (profileImage) {
+    const { url } = await uploadSingleFileToS3(profileImage, AWS_FOLDER_NAMES.ProfileImage)
+    newImageUrl = url
+  }
+
+  if (newImageUrl && user.profileImage) oldImageUrl = user.profileImage
+
+  // ?? Check Is number changed ?:
+  const isPhoneNumberChanged = payload.phone !== undefined && phone?.trim() === user?.phone?.trim()
+
+  if (isPhoneNumberChanged) {
+    const hasAnyAssociatedUserWithThisPhone = await User.findOne({
+      $ne: {
+        user: user?._id,
+      },
+      phone: payload.phone,
+    })
+
+    if (hasAnyAssociatedUserWithThisPhone) {
+      throw new AppError(httpStatus.CONFLICT, 'This phone number is already in use.')
+    }
+
+    user.phone = payload.phone
+  }
+
+  if (fullname !== undefined) user.name = fullname
+
+  // ?? Now update for field of artist profile:
+  if (professionalBio !== undefined) artistProfile.professionalBio = professionalBio
+  if (businessAddress !== undefined) artistProfile.businessAddress = businessAddress
+  if (facebook !== undefined) artistProfile.facebook = facebook
+  if (instagram !== undefined) artistProfile.instagram = instagram as string
+  if (language !== undefined) artistProfile.language = language
+  if (city !== undefined) artistProfile.city = city
+  if (state !== undefined) artistProfile.state = state
+  if (postalCode !== undefined) artistProfile.postalCode = postalCode
+  if (travelRadius !== undefined) artistProfile.travelRadius = travelRadius
+
+  const updatedLatitude =
+    latitude !== undefined ? latitude : artistProfile?.location?.coordinates?.[1]
+  const updatedLongitude =
+    longitude !== undefined ? longitude : artistProfile?.location?.coordinates?.[0]
+
+  // ?? Mongo session :
+  const mongoSession = await mongoose.startSession()
+
+  try {
+  } catch (err) {}
+
   const result = await ArtistProfile.findOneAndUpdate({ _id: id }, { $set: payload }, { new: true })
 
   if (!result) {

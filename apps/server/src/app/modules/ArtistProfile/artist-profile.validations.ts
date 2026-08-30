@@ -60,7 +60,45 @@ const updateArtistProfileSchema = z.object({
   params: z.object({
     id: requiredString('ID'),
   }),
-  body: z.object({}),
+  body: z.object({
+    fullname: optionalString('Full name'),
+    professionalBio: optionalString('Professional bio'),
+    phone: requiredString('Phone').regex(
+      /^(?:(?:\+61|0061)\s?4\d{2}\s?\d{3}\s?\d{3}|0[2-8]\s?\d{4}\s?\d{4})$/,
+      'Invalid Australian phone number'
+    ),
+    businessAddress: optionalString('Business address'),
+    latitude: z.coerce
+      .number()
+      .min(-90, 'Latitude must be between -90 and 90')
+      .max(90, 'Latitude must be between -90 and 90')
+      .optional(),
+    longitude: z.coerce
+      .number()
+      .min(-180, 'Longitude must be between -180 and 180')
+      .max(180, 'Longitude must be between -180 and 180')
+      .optional(),
+    city: optionalString('City'),
+    state: optionalString('State'),
+    postalCode: requiredString('Postal Code')
+      .regex(/^[0-9]{4}$/, { error: 'Invalid Postal code' })
+      .optional(),
+    website: optionalString('Website').nullable(),
+    instagram: requiredString('Instagram username')
+      .regex(/^[a-zA-Z0-9._]{1,30}$/, 'Invalid Instagram username')
+      .optional()
+      .nullable(),
+    facebook: requiredString('Facebook profile url').regex(
+      /^https?:\/\/(www\.)?facebook\.com\/[A-Za-z0-9._-]+\/?$/,
+      'Invalid Facebook URL'
+    ),
+    language: enumString(['english', 'australian english'], 'Language').optional(),
+    travelRadius: requiredNumber('Travel radius')
+      .min(0, {
+        error: 'Min. travel radius must be 0',
+      })
+      .optional(),
+  }),
 })
 
 const getAllArtistProfileSchema = z.object({

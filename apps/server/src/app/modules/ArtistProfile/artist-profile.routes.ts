@@ -38,6 +38,10 @@ router.post(
 
 router.patch(
   '/:id',
+  multerFactory({
+    category: 'image',
+    maxSizeInMB: 10,
+  }).single('profileImage'),
   validateRequest(artistProfileValidations.updateArtistProfileSchema),
   artistProfileControllers.updateArtistProfile
 )
