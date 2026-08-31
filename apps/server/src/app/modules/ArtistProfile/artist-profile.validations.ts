@@ -6,7 +6,6 @@ import {
   optionalString,
   optionalDate,
   sortingOrderValues,
-  sortOrder,
   positiveNumber,
   enumString,
   requiredNumber,
@@ -57,11 +56,8 @@ const createArtistProfileSchema = z.object({
 })
 
 const updateArtistProfileSchema = z.object({
-  params: z.object({
-    id: requiredString('ID'),
-  }),
   body: z.object({
-    fullname: optionalString('Full name'),
+    name: optionalString('Name'),
     professionalBio: optionalString('Professional bio'),
     phone: requiredString('Phone').regex(
       /^(?:(?:\+61|0061)\s?4\d{2}\s?\d{3}\s?\d{3}|0[2-8]\s?\d{4}\s?\d{4})$/,
@@ -88,10 +84,9 @@ const updateArtistProfileSchema = z.object({
       .regex(/^[a-zA-Z0-9._]{1,30}$/, 'Invalid Instagram username')
       .optional()
       .nullable(),
-    facebook: requiredString('Facebook profile url').regex(
-      /^https?:\/\/(www\.)?facebook\.com\/[A-Za-z0-9._-]+\/?$/,
-      'Invalid Facebook URL'
-    ),
+    facebook: requiredString('Facebook profile url')
+      .regex(/^https?:\/\/(www\.)?facebook\.com\/[A-Za-z0-9._-]+\/?$/, 'Invalid Facebook URL')
+      .optional(),
     language: enumString(['english', 'australian english'], 'Language').optional(),
     travelRadius: requiredNumber('Travel radius')
       .min(0, {
@@ -113,34 +108,14 @@ const getAllArtistProfileSchema = z.object({
   }),
 })
 
-const getArtistProfileByIdSchema = z.object({
-  params: z.object({
-    id: requiredString('ID'),
-  }),
-})
-
-const deleteArtistProfileByIdSchema = z.object({
-  params: z.object({
-    id: requiredString('ID'),
-  }),
-})
-
 export const artistProfileValidations = {
   createArtistProfileSchema,
   updateArtistProfileSchema,
   getAllArtistProfileSchema,
-  getArtistProfileByIdSchema,
-  deleteArtistProfileByIdSchema,
 }
 
 export type TCreateArtistProfilePayloadType = z.infer<typeof createArtistProfileSchema.shape.body>
 export type TUpdateArtistProfilePayloadType = z.infer<typeof updateArtistProfileSchema.shape.body>
 export type TGetAllArtistProfileQueryParamsType = z.infer<
   typeof getAllArtistProfileSchema.shape.query
->
-export type TGetArtistProfileByIdParamsType = z.infer<
-  typeof getArtistProfileByIdSchema.shape.params
->
-export type TDeleteArtistProfileByIdParamsType = z.infer<
-  typeof deleteArtistProfileByIdSchema.shape.params
 >

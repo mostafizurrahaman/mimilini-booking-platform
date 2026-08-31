@@ -54,32 +54,8 @@ const getAllArtistProfile = catchAsync(async (req, res) => {
   })
 })
 
-const getArtistProfileById = catchAsync(async (req, res) => {
-  const result = await artistProfileServices.getArtistProfileById(req.params.id as string)
-
-  sendResponse(res, {
-    success: true,
-    statusCode: httpStatus.OK,
-    message: 'The artist profile retrieved successfully!',
-    data: result,
-  })
-})
-
-const deleteArtistProfileById = catchAsync(async (req, res) => {
-  const result = await artistProfileServices.deleteArtistProfileById(req.params.id as string)
-
-  sendResponse(res, {
-    success: true,
-    statusCode: httpStatus.OK,
-    message: 'The artist profile deleted successfully!',
-    data: result,
-  })
-})
-
 export const artistProfileControllers = {
   createArtistProfile,
   updateArtistProfile,
   getAllArtistProfile,
-  getArtistProfileById,
-  deleteArtistProfileById,
 }

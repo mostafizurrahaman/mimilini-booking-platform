@@ -221,7 +221,7 @@ const updateArtistProfile = async (
   profileImage?: TMulterFile
 ) => {
   const {
-    fullname,
+    name,
     professionalBio,
     businessAddress,
     latitude,
@@ -236,114 +236,211 @@ const updateArtistProfile = async (
     travelRadius,
   } = payload
 
-  // ?? Check artist profile exists?:
-  const artistProfile = await ArtistProfile.findOne({ user: user?._id })
-  if (!artistProfile) {
-    throw new AppError(
-      httpStatus.NOT_FOUND,
-      "Artist profile doesn't exists. Please complete your profile first."
-    )
-  }
+  const session = await mongoose.startSession()
 
-  // ?? Check Is number changed ?:
-  const isPhoneNumberChanged = payload.phone !== undefined && phone?.trim() !== user?.phone?.trim()
-
-  if (isPhoneNumberChanged) {
-    const hasAnyAssociatedUserWithThisPhone = await User.findOne({
-      _id: {
-        $ne: user?._id,
-      },
-      phone: payload.phone?.trim(),
-    })
-
-    if (hasAnyAssociatedUserWithThisPhone) {
-      throw new AppError(httpStatus.CONFLICT, 'This phone number is already in use.')
-    }
-
-    user.phone = payload?.phone?.trim()
-  }
-
-  const updatedLatitude =
-    latitude !== undefined ? latitude : artistProfile?.location?.coordinates?.[1]
-  const updatedLongitude =
-    longitude !== undefined ? longitude : artistProfile?.location?.coordinates?.[0]
-
-  if (updatedLatitude === undefined || updatedLatitude === null) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Latitude is required.')
-  }
-
-  if (updatedLongitude === undefined || updatedLongitude === null) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Longitude is required.')
-  }
-
-  const isValidLocation = isValidCoordinates(updatedLatitude, updatedLongitude)
-  if (!isValidLocation) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Provide valid lat,long.')
-  }
-
-  artistProfile.location.coordinates = [updatedLongitude, updatedLatitude]
-
-  let newImageUrl: string | undefined = undefined
-  let oldImageUrl: string = ''
-
-  if (profileImage) {
-    const { url } = await uploadSingleFileToS3(profileImage, AWS_FOLDER_NAMES.ProfileImage)
-    newImageUrl = url
-    oldImageUrl = user.profileImage ?? ''
-    user.profileImage = url
-  }
-
-  if (fullname !== undefined) user.name = fullname
-
-  // ?? Now update for field of artist profile:
-  if (professionalBio !== undefined) artistProfile.professionalBio = professionalBio
-  if (businessAddress !== undefined) artistProfile.businessAddress = businessAddress
-  if (facebook !== undefined) artistProfile.facebook = facebook
-  if (instagram !== undefined) artistProfile.instagram = instagram as string
-  if (language !== undefined) artistProfile.language = language
-  if (city !== undefined) artistProfile.city = city
-  if (state !== undefined) artistProfile.state = state
-  if (postalCode !== undefined) artistProfile.postalCode = postalCode
-  if (travelRadius !== undefined) artistProfile.travelRadius = travelRadius
-
-  // ?? Mongo session :
-  const mongoSession = await mongoose.startSession()
+  let newImageUrl: string | undefined
+  const oldImageUrl = (user.profileImage as string) ?? ''
 
   try {
-    // Start mongoose transaction
-    mongoSession.startTransaction()
+    // Start transaction
+    session.startTransaction()
 
-    // ?? Update user:
-    const updatedUser = await user.save({ session: mongoSession, validateBeforeSave: true })
+    // Find artist profile inside transaction
+    const artistProfile = await ArtistProfile.findOne({
+      user: user._id,
+    }).session(session)
 
-    if (!updatedUser) {
-      throw new AppError(httpStatus.BAD_REQUEST, 'Failed to update user.')
+    if (!artistProfile) {
+      throw new AppError(
+        httpStatus.NOT_FOUND,
+        "Artist profile doesn't exist. Please complete your profile first."
+      )
     }
 
-    // ?? Update the professional profile:
-    const professionalProfile = await artistProfile.save({
-      session: mongoSession,
+    // --------------------------------------------------
+    // Phone number
+    // --------------------------------------------------
+
+    const normalizedPhone = phone !== undefined ? phone.trim() : undefined
+
+    const currentPhone = user.phone?.trim()
+
+    const isPhoneNumberChanged = normalizedPhone !== undefined && normalizedPhone !== currentPhone
+
+    if (isPhoneNumberChanged) {
+      const existingUser = await User.findOne({
+        _id: { $ne: user._id },
+        phone: normalizedPhone,
+      }).session(session)
+
+      if (existingUser) {
+        throw new AppError(httpStatus.CONFLICT, 'This phone number is already in use.')
+      }
+
+      user.phone = normalizedPhone
+    }
+
+    // --------------------------------------------------
+    // Coordinates
+    // --------------------------------------------------
+
+    const currentLatitude = artistProfile.location?.coordinates?.[1]
+
+    const currentLongitude = artistProfile.location?.coordinates?.[0]
+
+    const updatedLatitude = latitude !== undefined ? Number(latitude) : currentLatitude
+
+    const updatedLongitude = longitude !== undefined ? Number(longitude) : currentLongitude
+
+    if (!Number.isFinite(updatedLatitude)) {
+      throw new AppError(httpStatus.BAD_REQUEST, 'Latitude must be a valid number.')
+    }
+
+    if (!Number.isFinite(updatedLongitude)) {
+      throw new AppError(httpStatus.BAD_REQUEST, 'Longitude must be a valid number.')
+    }
+
+    if (!isValidCoordinates(updatedLatitude, updatedLongitude)) {
+      throw new AppError(httpStatus.BAD_REQUEST, 'Provide valid latitude and longitude.')
+    }
+
+    // --------------------------------------------------
+    // Travel radius
+    // --------------------------------------------------
+
+    if (travelRadius !== undefined) {
+      const updatedTravelRadius = Number(travelRadius)
+
+      if (!Number.isFinite(updatedTravelRadius) || updatedTravelRadius < 0) {
+        throw new AppError(
+          httpStatus.BAD_REQUEST,
+          'Travel radius must be a valid non-negative number.'
+        )
+      }
+
+      artistProfile.travelRadius = updatedTravelRadius
+    }
+
+    // --------------------------------------------------
+    // Update location
+    // GeoJSON format:
+    // [longitude, latitude]
+    // --------------------------------------------------
+
+    artistProfile.location = {
+      type: 'Point',
+      coordinates: [updatedLongitude, updatedLatitude],
+    }
+
+    // --------------------------------------------------
+    // Upload new profile image
+    // --------------------------------------------------
+
+    if (profileImage) {
+      const { url } = await uploadSingleFileToS3(profileImage, AWS_FOLDER_NAMES.ProfileImage)
+
+      newImageUrl = url
+
+      user.profileImage = url
+    }
+
+    // --------------------------------------------------
+    // Update User fields
+    // --------------------------------------------------
+
+    if (name !== undefined) {
+      user.name = name
+    }
+
+    // --------------------------------------------------
+    // Update Artist Profile fields
+    // --------------------------------------------------
+
+    if (professionalBio !== undefined) {
+      artistProfile.professionalBio = professionalBio
+    }
+
+    if (businessAddress !== undefined) {
+      artistProfile.businessAddress = businessAddress
+    }
+
+    if (facebook !== undefined) {
+      artistProfile.facebook = facebook
+    }
+
+    if (instagram !== undefined) {
+      artistProfile.instagram = instagram!
+    }
+
+    if (language !== undefined) {
+      artistProfile.language = language
+    }
+
+    if (city !== undefined) {
+      artistProfile.city = city
+    }
+
+    if (state !== undefined) {
+      artistProfile.state = state
+    }
+
+    if (postalCode !== undefined) {
+      artistProfile.postalCode = postalCode
+    }
+
+    // --------------------------------------------------
+    // Save both documents
+    // --------------------------------------------------
+
+    await user.save({
+      session,
+      validateBeforeSave: true,
     })
 
-    if (!professionalProfile) {
-      throw new AppError(httpStatus.BAD_REQUEST, 'Failed to update professional profile.')
+    await artistProfile.save({
+      session,
+      validateBeforeSave: true,
+    })
+
+    // --------------------------------------------------
+    // Commit transaction
+    // --------------------------------------------------
+
+    await session.commitTransaction()
+
+    // --------------------------------------------------
+    // Delete old image AFTER successful transaction
+    // --------------------------------------------------
+
+    if (newImageUrl && oldImageUrl && oldImageUrl !== newImageUrl) {
+      deleteSingleFileFromS3(oldImageUrl).catch((error) => {
+        console.error('Failed to delete old profile image:', error)
+      })
     }
 
-    // ?? Commit mongoose transaction
+    return artistProfile
+  } catch (error) {
+    // --------------------------------------------------
+    // Rollback MongoDB transaction
+    // --------------------------------------------------
 
-    await mongoSession.commitTransaction()
-
-    if (newImageUrl && oldImageUrl) {
-      deleteSingleFileFromS3(oldImageUrl).catch((err) => console.log(err))
+    if (session.inTransaction()) {
+      await session.abortTransaction()
     }
 
-    return professionalProfile
-  } catch (err) {
-    await mongoSession.abortTransaction()
-    if (newImageUrl) deleteSingleFileFromS3(newImageUrl as string).catch((err) => console.log(err))
-    throw err
+    // --------------------------------------------------
+    // Delete newly uploaded image because DB update failed
+    // --------------------------------------------------
+
+    if (newImageUrl) {
+      deleteSingleFileFromS3(newImageUrl).catch((deleteError) => {
+        console.error('Failed to delete newly uploaded profile image:', deleteError)
+      })
+    }
+
+    throw error
   } finally {
-    await mongoSession.endSession()
+    await session.endSession()
   }
 }
 
@@ -404,30 +501,8 @@ const getAllArtistProfile = async (query: TGetAllArtistProfileQueryParamsType) =
   }
 }
 
-const getArtistProfileById = async (id: string) => {
-  const result = await ArtistProfile.findById(id)
-
-  if (!result) {
-    throw new AppError(httpStatus.NOT_FOUND, 'ArtistProfile not found')
-  }
-
-  return result
-}
-
-const deleteArtistProfileById = async (id: string) => {
-  const result = await ArtistProfile.findOneAndDelete({ _id: id })
-
-  if (!result) {
-    throw new AppError(httpStatus.NOT_FOUND, 'ArtistProfile not found')
-  }
-
-  return result
-}
-
 export const artistProfileServices = {
   createArtistProfile,
   updateArtistProfile,
   getAllArtistProfile,
-  getArtistProfileById,
-  deleteArtistProfileById,
 }
