@@ -1,3 +1,4 @@
+import { artistProfileRoutes } from '@app/modules/ArtistProfile/artist-profile.routes'
 import { authRoutes } from '@app/modules/Auth/user.routes'
 import express, { Router } from 'express'
 
@@ -7,6 +8,10 @@ const routes = [
   {
     path: '/auth',
     route: authRoutes,
+  },
+  {
+    path: '/artist',
+    route: artistProfileRoutes,
   },
 ]
 

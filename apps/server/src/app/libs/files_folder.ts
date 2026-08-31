@@ -2,6 +2,7 @@
 
 export const AWS_FOLDER_NAMES = { 
     ProfileImage: "profileImages", 
-    PortfolioImage: "portofolioImages"
-
+    PortfolioImage: "portfoliosImages", 
+    Licenses: "licenses", 
+    Selfies: "selfies"
 } as const

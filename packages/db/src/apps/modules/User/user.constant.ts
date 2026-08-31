@@ -7,16 +7,14 @@ export const AuthStatus = {
 } as const
 
 export const verificationStatus = {
-  PENDING: 'pending',    
-  IN_REVIEW: 'in_review', 
-  VERIFIED: 'verified',   
-  REJECTED: 'rejected',   
+  PENDING: 'pending',
+  IN_REVIEW: 'in_review',
+  VERIFIED: 'verified',
+  REJECTED: 'rejected',
 } as const
+
 export const AuthStatusValues = Object.values(AuthStatus)
 export const VerificationStatusValues = Object.values(verificationStatus)
-
-
-
 
 // Auth Roles:
 export const AuthRoles = {
@@ -27,7 +25,6 @@ export const AuthRoles = {
 } as const
 
 export const AuthRolesValues = Object.values(AuthRoles)
-
 
 export type TAuthStatus = (typeof AuthStatus)[keyof typeof AuthStatus]
 export type TAuthRole = (typeof AuthRoles)[keyof typeof AuthRoles]
