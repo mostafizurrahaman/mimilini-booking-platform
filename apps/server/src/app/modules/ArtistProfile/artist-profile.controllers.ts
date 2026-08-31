@@ -11,6 +11,8 @@ interface IArtistProfileFile {
   selfie: TMulterFileList
   profileImage: TMulterFileList
 }
+
+// 1. Create Artist Profile
 const createArtistProfile = catchAsync(async (req, res) => {
   const user = await getUserFromRequest(req)
 
@@ -28,6 +30,8 @@ const createArtistProfile = catchAsync(async (req, res) => {
   })
 })
 
+
+// 2. Update Artist Profile 
 const updateArtistProfile = catchAsync(async (req, res) => {
   const user = await getUserFromRequest(req)
   const payload = req.body as TUpdateArtistProfilePayloadType
@@ -41,6 +45,10 @@ const updateArtistProfile = catchAsync(async (req, res) => {
     data: result,
   })
 })
+
+// 3. Return  
+
+
 
 const getAllArtistProfile = catchAsync(async (req, res) => {
   const result = await artistProfileServices.getAllArtistProfile(req.query)

@@ -33,7 +33,7 @@ import {
 // import { sendEmail } from '@repo/email-sender'
 import httpStatus from 'http-status'
 import configs from '@app/configs'
-import mongoose from 'mongoose'
+import mongoose, { type PipelineStage } from 'mongoose'
 import { renderEmail, ResetPasswordOTPEmail, SignupOTPEmail } from '@repo/email-templates'
 import { sendEmail } from '@repo/email-sender'
 import { deleteSingleFileFromS3, uploadSingleFileToS3, type TMulterFile } from '@repo/media-hub'
@@ -817,29 +817,81 @@ const changedPassword = async (userInfo: IUser, payload: IChangedPasswordType) =
 
 // 10. Get me :
 const getMe = async (user: IUser) => {
-  const profile = await User.aggregate([
+  const pipeline: PipelineStage[] = [
     {
       $match: {
         _id: user?._id,
       },
     },
-    {
-      $project: {
-        _id: '$_id',
-        name: '$name',
-        email: '$email',
-        phone: { $ifNull: ['$phone', null] },
-        status: '$status',
-        verificationStatus: '$verificationStatus',
-        role: '$role',
-        profileImage: { $ifNull: ['$profileImage', null] },
-        isProfileCompleted: { $ifNull: ['$isProfileCompleted', null] },
-        isStripeConnected: { $ifNull: ['$isStripeConnected', null] },
-        createdAt: '$createdAt',
-        updatedAt: '$updatedAt',
+  ]
+
+  if (user.role === AuthRoles.ARTIST) {
+    pipeline.push(
+      {
+        $lookup: {
+          from: 'artistprofiles',
+          localField: '_id',
+          foreignField: 'user',
+          as: 'artistProfile',
+          pipeline: [
+            {
+              $project: {
+                artistProfileId: '$_id',
+                businessName: '$businessName',
+                abn: '$abn',
+                businessAddress: { $ifNull: ['$businessAddress', null] },
+                yearOfExperience: { $ifNull: ['$yearOfExperience', null] },
+                professionalBio: { $ifNull: ['$professionalBio', null] },
+                drivingLicenseFrontSide: { $ifNull: ['$drivingLicenseFrontSide', null] },
+                drivingLicenseBackSide: { $ifNull: ['$drivingLicenseBackSide', null] },
+                selfie: { $ifNull: ['$selfie', null] },
+                location: {
+                  $ifNull: ['$location', null],
+                },
+                city: { $ifNull: ['$city', null] },
+                state: { $ifNull: ['$state', null] },
+                postalCode: { $ifNull: ['$postalCode', null] },
+                website: { $ifNull: ['$website', null] },
+                instagram: { $ifNull: ['$instagram', null] },
+                facebook: { $ifNull: ['$facebook', null] },
+                portfolioImages: { $ifNull: ['$portfolioImages', []] },
+                language: { $ifNull: ['$language', null] },
+                travelRadius: { $ifNull: ['$travelRadius', null] },
+                createdAt: '$createdAt',
+                updatedAt: '$updatedAt',
+              },
+            },
+          ],
+        },
       },
-    },
-  ])
+
+      {
+        $unwind: {
+          path: '$artistProfile',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $project: {
+          _id: '$_id',
+          name: '$name',
+          email: '$email',
+          phone: { $ifNull: ['$phone', null] },
+          status: '$status',
+          verificationStatus: '$verificationStatus',
+          role: '$role',
+          profileImage: { $ifNull: ['$profileImage', null] },
+          isProfileCompleted: { $ifNull: ['$isProfileCompleted', null] },
+          isStripeConnected: { $ifNull: ['$isStripeConnected', null] },
+          artistProfile: '$artistProfile',
+          createdAt: '$createdAt',
+          updatedAt: '$updatedAt',
+        },
+      }
+    )
+  }
+
+  const profile = await User.aggregate(pipeline)
 
   if (!profile?.[0]) {
     throw new AppError(httpStatus.NOT_FOUND, 'Profile not found!')

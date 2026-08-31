@@ -92,7 +92,10 @@ const checkArtistPermission = (user: IUser, req: Request) => {
       { method: 'POST', route: '/api/v1/artist' }, // Onboarding submit
       { method: 'PATCH', route: '/api/v1/artist/resubmit-documents' }, // Resubmit docs
       { method: 'GET', route: '/api/v1/artist/verification-status' },
-      { method: 'PATCH', route: '/api/v1/artist' }, // Resubmit docs
+      {
+        method: 'PATCH',
+        route: '/api/artist',
+      },
     ]
 
     const isAllowed = limitedAccessRoutes.some(

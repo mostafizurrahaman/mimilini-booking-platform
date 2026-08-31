@@ -36,11 +36,15 @@ router.post(
 router.post('/login', validateRequest(AuthValidations.loginSchema), AuthController.login)
 
 // 4.1. Login :
-router.post('/artist-login', validateRequest(AuthValidations.loginSchema), AuthController.artistLogin)
+router.post(
+  '/artist-login',
+  validateRequest(AuthValidations.loginSchema),
+  AuthController.artistLogin
+)
 // 4.2. Login :
 router.post('/admin-login', validateRequest(AuthValidations.loginSchema), AuthController.adminLogin)
 
-// 5. Forgot passwod:
+// 5. Forgot password:
 router.post(
   '/forgot-password',
   validateRequest(AuthValidations.forgotPasswordSchema),
@@ -91,14 +95,15 @@ router.patch(
   AuthController.updateProfile
 )
 
-// 12. Change Profile picture: 
-router.patch("/change-profile",  
-multerFactory({
+// 12. Change Profile picture:
+router.patch(
+  '/change-profile',
+  multerFactory({
     category: 'image',
     maxSizeInMB: 10,
   }).single('profileImage'),
-  auth(), 
-  AuthController.changeProfilePicture 
+  auth(),
+  AuthController.changeProfilePicture
 )
 
 // // 12. Update User Status:

@@ -1,6 +1,7 @@
 import {
   ArtistProfile,
   artistProfileSearchableFields,
+  AuthStatus,
   User,
   verificationStatus,
   type IUser,
@@ -257,6 +258,10 @@ const updateArtistProfile = async (
       )
     }
 
+    if (!user?.isProfileCompleted) {
+      throw new AppError(httpStatus.NOT_FOUND, 'Please complete your profile first.')
+    }
+
     // --------------------------------------------------
     // Phone number
     // --------------------------------------------------
@@ -444,6 +449,103 @@ const updateArtistProfile = async (
   }
 }
 
+// ?? Verify documents (Admin)
+const verifyArtistDocuments = async (targetUserId: string) => {
+  // ?? Check is user exists ? :
+  const targetedUser = await User.findById(targetUserId)
+  if (!targetedUser) {
+    throw new AppError(httpStatus.NOT_FOUND, "User doesn't exists.")
+  }
+
+  // ?? Check is User Status active?:
+  if (targetedUser.status !== AuthStatus.ACTIVE) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Only active artist documents you can verify. Current Status: "${targetedUser.status}"`
+    )
+  }
+
+  // ?? Check is user profile completed?:
+  if (!targetedUser.isProfileCompleted) {
+    throw new AppError(httpStatus.BAD_REQUEST, `Artist profile is incomplete.`)
+  }
+
+  // ?? Check Artist profile exists?:
+  const artistProfile = await ArtistProfile.findOne({ user: targetedUser?._id })
+  if (!artistProfile) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Artist professional profile does not exists.')
+  }
+
+  // ?? Check verification status: PENDING
+  if (targetedUser.verificationStatus === verificationStatus.PENDING) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Document is not submitted yet.')
+  }
+
+  // ?? Check verification status: VERIFIED
+  if (targetedUser.verificationStatus === verificationStatus.VERIFIED) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'The artist documents have already been verified.')
+  }
+
+  // ?? Check verification status: REJECTED:
+  if (targetedUser.verificationStatus === verificationStatus.REJECTED) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'The artist documents have been rejected.')
+  }
+
+  targetedUser.verificationStatus = verificationStatus.VERIFIED
+  await targetedUser.save()
+
+  return targetedUser
+}
+
+// ?? Reject Documents (Admin)
+const rejectArtistDocuments = async (targetUserId: string, reason: string) => {
+  // ?? Check is user exists ? :
+  const targetedUser = await User.findById(targetUserId)
+  if (!targetedUser) {
+    throw new AppError(httpStatus.NOT_FOUND, "User doesn't exists.")
+  }
+
+  // ?? Check is User Status active?:
+  if (targetedUser.status !== AuthStatus.ACTIVE) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Only active artist documents you can reject. Current Status: "${targetedUser.status}"`
+    )
+  }
+
+  // ?? Check is user profile completed?:
+  if (!targetedUser.isProfileCompleted) {
+    throw new AppError(httpStatus.BAD_REQUEST, `Artist profile is incomplete.`)
+  }
+
+  // ?? Check Artist profile exists?:
+  const artistProfile = await ArtistProfile.findOne({ user: targetedUser?._id })
+  if (!artistProfile) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Artist professional profile does not exists.')
+  }
+
+  // ?? Check verification status: PENDING
+  if (targetedUser.verificationStatus === verificationStatus.PENDING) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Document is not submitted yet.')
+  }
+
+  // ?? Check verification status: VERIFIED
+  if (targetedUser.verificationStatus === verificationStatus.VERIFIED) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'The artist documents have already been verified.')
+  }
+
+  // ?? Check verification status: REJECTED:
+  if (targetedUser.verificationStatus === verificationStatus.REJECTED) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'The artist documents have already been rejected.')
+  }
+
+  targetedUser.verificationStatus = verificationStatus.REJECTED
+  targetedUser.rejectionReason = reason
+  await targetedUser.save()
+
+  return targetedUser
+}
+
 const getAllArtistProfile = async (query: TGetAllArtistProfileQueryParamsType) => {
   const {
     page = 1,
@@ -505,4 +607,8 @@ export const artistProfileServices = {
   createArtistProfile,
   updateArtistProfile,
   getAllArtistProfile,
+
+  // ?? Document Related Route:
+  verifyArtistDocuments,
+  rejectArtistDocuments,
 }
