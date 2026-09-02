@@ -108,10 +108,32 @@ const getAllArtistProfileSchema = z.object({
   }),
 })
 
+const verifyArtistDocumentSchema = z.object({
+  params: z.object({
+    userId: requiredString('User ID'),
+  }),
+})
+
+const rejectArtistDocumentSchema = z.object({
+  params: z.object({
+    userId: requiredString('User ID'),
+  }),
+  body: z.object({
+    reason: z.string({
+      error: 'Rejection reason is required.',
+    }),
+  }),
+})
+
+
 export const artistProfileValidations = {
   createArtistProfileSchema,
   updateArtistProfileSchema,
   getAllArtistProfileSchema,
+
+  // ?? Verification Status:
+  verifyArtistDocumentSchema,
+  rejectArtistDocumentSchema,
 }
 
 export type TCreateArtistProfilePayloadType = z.infer<typeof createArtistProfileSchema.shape.body>
@@ -119,3 +141,6 @@ export type TUpdateArtistProfilePayloadType = z.infer<typeof updateArtistProfile
 export type TGetAllArtistProfileQueryParamsType = z.infer<
   typeof getAllArtistProfileSchema.shape.query
 >
+
+export type TVerificationDocumentParams = z.infer<typeof verifyArtistDocumentSchema.shape.params>
+export type TRejectArtistDocumentPayload = z.infer<typeof rejectArtistDocumentSchema.shape.body>

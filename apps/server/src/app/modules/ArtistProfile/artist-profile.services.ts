@@ -494,7 +494,14 @@ const verifyArtistDocuments = async (targetUserId: string) => {
   targetedUser.verificationStatus = verificationStatus.VERIFIED
   await targetedUser.save()
 
-  return targetedUser
+  return {
+    userId: targetedUser?._id,
+    email: targetedUser?.email,
+    isProfileCompleted: targetedUser?.isProfileCompleted,
+    role: targetedUser?.role,
+    status: targetedUser?.status,
+    verificationStatus: targetedUser?.verificationStatus,
+  }
 }
 
 // ?? Reject Documents (Admin)
@@ -543,7 +550,185 @@ const rejectArtistDocuments = async (targetUserId: string, reason: string) => {
   targetedUser.rejectionReason = reason
   await targetedUser.save()
 
-  return targetedUser
+  return {
+    userId: targetedUser?._id,
+    email: targetedUser?.email,
+    isProfileCompleted: targetedUser?.isProfileCompleted,
+    role: targetedUser?.role,
+    status: targetedUser?.status,
+    verificationStatus: targetedUser?.verificationStatus,
+  }
+}
+
+// ?? Resubmit Documents:
+const resubmitDocuments = async (user: IUser, files: IArtistProfileFile) => {
+  // 1. Validate user state
+  if (!user.isProfileCompleted) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Please complete your professional profile first.')
+  }
+
+  if (user.verificationStatus !== verificationStatus.REJECTED) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'You can only resubmit documents after your previous submission was rejected.'
+    )
+  }
+
+  // 2. Validate uploaded files presence
+  const drivingLicenseFrontSideFile = files?.drivingLicenseFrontSide?.[0]
+  const drivingLicenseBackSideFile = files?.drivingLicenseBackSide?.[0]
+  const selfieFile = files?.selfie?.[0]
+
+  if (!drivingLicenseFrontSideFile && !drivingLicenseBackSideFile && !selfieFile) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'At least one document is required.')
+  }
+
+  // 3. Early check: ensure artist profile exists before spending resources on S3 upload
+  const existingProfile = await ArtistProfile.findOne({ user: user?._id })
+  if (!existingProfile) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Artist profile doesn't exist.")
+  }
+
+  // 4. Upload files to S3 (track URLs immediately on success)
+  const newlyUploadedUrls: string[] = []
+  let newLicenseFrontSideUrl: string | undefined
+  let newLicenseBackSideUrl: string | undefined
+  let newSelfieUrl: string | undefined
+
+  try {
+    const uploadTasks: Promise<void>[] = []
+
+    if (drivingLicenseFrontSideFile) {
+      uploadTasks.push(
+        uploadSingleFileToS3(drivingLicenseFrontSideFile, AWS_FOLDER_NAMES.Licenses).then((res) => {
+          newlyUploadedUrls.push(res.url)
+          newLicenseFrontSideUrl = res.url
+        })
+      )
+    }
+
+    if (drivingLicenseBackSideFile) {
+      uploadTasks.push(
+        uploadSingleFileToS3(drivingLicenseBackSideFile, AWS_FOLDER_NAMES.Licenses).then((res) => {
+          newlyUploadedUrls.push(res.url)
+          newLicenseBackSideUrl = res.url
+        })
+      )
+    }
+
+    if (selfieFile) {
+      uploadTasks.push(
+        uploadSingleFileToS3(selfieFile, AWS_FOLDER_NAMES.Selfies).then((res) => {
+          newlyUploadedUrls.push(res.url)
+          newSelfieUrl = res.url
+        })
+      )
+    }
+
+    await Promise.all(uploadTasks)
+  } catch (error) {
+    if (newlyUploadedUrls.length > 0) {
+      deleteMultipleFilesFromS3(newlyUploadedUrls).catch((s3Err) => console.error(s3Err))
+    }
+    throw error
+  }
+
+  // 5. Database transaction
+  const oldImagesUrls: string[] = []
+  const mongoSession = await mongoose.startSession()
+
+  try {
+    mongoSession.startTransaction()
+
+    const artistProfile = await ArtistProfile.findOne({ user: user._id }).session(mongoSession)
+    if (!artistProfile) {
+      throw new AppError(httpStatus.BAD_REQUEST, "Artist profile doesn't exist.")
+    }
+
+    if (newLicenseFrontSideUrl) {
+      if (artistProfile.drivingLicenseFrontSide) {
+        oldImagesUrls.push(artistProfile.drivingLicenseFrontSide)
+      }
+      artistProfile.drivingLicenseFrontSide = newLicenseFrontSideUrl
+    }
+
+    if (newLicenseBackSideUrl) {
+      if (artistProfile.drivingLicenseBackSide) {
+        oldImagesUrls.push(artistProfile.drivingLicenseBackSide)
+      }
+      artistProfile.drivingLicenseBackSide = newLicenseBackSideUrl
+    }
+
+    if (newSelfieUrl) {
+      if (artistProfile.selfie) {
+        oldImagesUrls.push(artistProfile.selfie)
+      }
+      artistProfile.selfie = newSelfieUrl
+    }
+
+    // Save profile changes
+    await artistProfile.save({ session: mongoSession })
+
+    // Update user status safely
+    await User.findByIdAndUpdate(
+      user._id,
+      {
+        $set: {
+          verificationStatus: verificationStatus.IN_REVIEW,
+          rejectionReason: null,
+        },
+      },
+      { session: mongoSession }
+    )
+
+    await mongoSession.commitTransaction()
+
+    // Clean up replaced files from S3 asynchronously
+    if (oldImagesUrls.length > 0) {
+      deleteMultipleFilesFromS3(oldImagesUrls).catch((err) => console.error(err))
+    }
+
+    return artistProfile
+  } catch (err) {
+    await mongoSession.abortTransaction()
+
+    // Rollback S3 uploads if DB transaction fails
+    if (newlyUploadedUrls.length > 0) {
+      deleteMultipleFilesFromS3(newlyUploadedUrls).catch((s3Err) => console.error(s3Err))
+    }
+
+    throw err
+  } finally {
+    await mongoSession.endSession()
+  }
+}
+
+// ?? Get your verification status :
+const getVerificationStatus = async (user: IUser) => {
+  // ?? Check is profile completed?:
+  if (!user.isProfileCompleted) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Please complete your profile first.')
+  }
+
+  // ?? Check is artist profile exists:?
+  const artistProfile = await ArtistProfile.findOne({
+    user: user?._id,
+  })
+
+  if (!artistProfile) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Artist profiles does not exists.')
+  }
+
+  return {
+    userId: user._id,
+    artistProfile: artistProfile?._id,
+    status: user.status,
+    verificationStatus: user.verificationStatus,
+    drivingLicenseFrontSide: artistProfile.drivingLicenseFrontSide ?? null,
+    drivingLicenseBackSide: artistProfile.drivingLicenseBackSide ?? null,
+    selfie: artistProfile.selfie ?? null,
+    rejectionReason: user.rejectionReason,
+  }
 }
 
 const getAllArtistProfile = async (query: TGetAllArtistProfileQueryParamsType) => {
@@ -611,4 +796,6 @@ export const artistProfileServices = {
   // ?? Document Related Route:
   verifyArtistDocuments,
   rejectArtistDocuments,
+  resubmitDocuments,
+  getVerificationStatus,
 }

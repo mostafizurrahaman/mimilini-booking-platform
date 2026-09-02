@@ -4,7 +4,7 @@ import type { TAuthRole, TAuthStatus, TVerificationStatus } from './user.constan
 export interface IUser extends Document {
   name: string
   email: string
-  
+
   passwordHash: string
   status: TAuthStatus
   verificationStatus: TVerificationStatus
@@ -29,7 +29,7 @@ export interface IUser extends Document {
   // reason:
   blockedReason?: string
   deletionReason?: string
-  rejectionReason?: string; 
+  rejectionReason?: string | undefined
 
   // common timestamps:
   lastLogin?: Date
@@ -41,7 +41,7 @@ export interface IUser extends Document {
   updatedAt: Date
 }
 
-export interface IUserDoc  extends IUser, Document { }
+export interface IUserDoc extends IUser, Document {}
 
 export interface IUserModel extends Model<IUserDoc> {
   getUserById(id: string): Promise<IUserDoc | null>
