@@ -47,6 +47,53 @@ router.patch(
   artistProfileControllers.updateArtistProfile
 )
 
+// ?? Admin route:
+router.patch(
+  '/verify/:userId',
+  auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
+  validateRequest(artistProfileValidations.verifyArtistDocumentSchema),
+  artistProfileControllers.verifyDocument
+)
+
+// ?? Admin route:
+router.patch(
+  '/reject/:userId',
+  auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
+  validateRequest(artistProfileValidations.rejectArtistDocumentSchema),
+  artistProfileControllers.rejectDocument
+)
+
+// ?? Resubmit Documents:
+router.patch(
+  '/resubmit',
+  multerFactory({
+    category: 'image',
+    maxSizeInMB: 10,
+  }).fields([
+    {
+      name: 'drivingLicenseFrontSide',
+      maxCount: 1,
+    },
+    {
+      name: 'drivingLicenseBackSide',
+      maxCount: 1,
+    },
+    {
+      name: 'selfie',
+      maxCount: 1,
+    },
+  ]),
+  auth(AuthRoles.ARTIST),
+  artistProfileControllers.resubmitDocuments
+)
+
+// Verification Status Retrieved:
+router.get(
+  '/verification-status',
+  auth(AuthRoles.ARTIST),
+  artistProfileControllers.checkVerificationStatus
+)
+
 router.get(
   '/all',
   validateRequest(artistProfileValidations.getAllArtistProfileSchema),
