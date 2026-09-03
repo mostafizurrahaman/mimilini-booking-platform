@@ -6,7 +6,6 @@ import {
   otpTypes,
   User,
   verificationStatus,
-  VerificationStatusValues,
   type IUser,
 } from '@repo/db'
 import type {
@@ -355,6 +354,7 @@ const login = async (payload: ILoginType) => {
     name: user?.name,
     profileImage: user?.profileImage as string,
     status: user?.status,
+    role: user?.role,
   }
 
   // 7. Generate access token :
@@ -426,6 +426,7 @@ const artistLogin = async (payload: ILoginType) => {
     name: user?.name,
     profileImage: user?.profileImage as string,
     status: user?.status,
+    role: user?.role,
   }
 
   // 7. Generate access token :
@@ -504,6 +505,7 @@ const adminLogin = async (payload: ILoginType) => {
     name: user?.name,
     profileImage: user?.profileImage as string,
     status: user?.status,
+    role: user?.role,
   }
 
   // 7. Generate access token :

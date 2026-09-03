@@ -1,0 +1,69 @@
+name: Memillennial Booking
+
+'on':
+  push:
+    branches: ['main']
+  pull_request:
+    branches: ['main']
+jobs:
+  # PRE BUILD:  Test Build before build inside actual machine
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+      - name: Setup Node JS
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24.16.0'
+      - name: Install Dependencies
+        run: npm install  --frozen-lockfile
+  # BUILD: Now Connect with SSH AND Build inside machain
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-deploy
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+      - name: Setup Node JS
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24.16.0'
+      - name: Install pnpm
+        run: npm install -g pnpm
+      - name: Install Dependencies
+        run: pnpm install
+      - name: COPY FILE VIA SCP
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          source: '.'
+          target: '/home/${{secrets.EC2_USER}}/${{ secrets.PROJECT_FOLDER }}'
+          rm: false
+          strip_components: 0
+
+      - name: Deploy
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script: |
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
+            node -v
+            npm -v
+            pnpm -v
+            pm2 -v
+
+            npm install -g pnpm
+            cd ${{ secrets.PROJECT_FOLDER }}/apps/server
+
+            echo '${{ secrets.ENV_FILE }}' > .env.development
+            cd /home/${{secrets.EC2_USER}}/${{ secrets.PROJECT_FOLDER }}
+            export CI=true
+            pnpm install --frozen-lockfile
+            pm2 restart ecosystem.config.js

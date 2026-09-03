@@ -114,6 +114,20 @@ const checkVerificationStatus = catchAsync(async (req, res) => {
   })
 })
 
+// 7. Add Portfolio Images:
+const addNewPortfolioImage = catchAsync(async (req, res) => {
+  const user = await getUserFromRequest(req)
+  const files = req.files as TMulterFileList
+  const result = await artistProfileServices.addPortFolio(user, files)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'The portfolio images uploaded successfully.',
+    data: result,
+  })
+})
+
 export const artistProfileControllers = {
   createArtistProfile,
   updateArtistProfile,
@@ -124,4 +138,7 @@ export const artistProfileControllers = {
   rejectDocument,
   resubmitDocuments,
   checkVerificationStatus,
+
+  // Portfolio:
+  addNewPortfolioImage,
 }
