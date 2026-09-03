@@ -7,7 +7,7 @@ import {
   type IUser,
 } from '@repo/db'
 import httpStatus from 'http-status'
-import { AppError } from '@repo/shared'
+import { AppError, getUserFromRequest } from '@repo/shared'
 import type { PipelineStage } from 'mongoose'
 
 import type {
@@ -18,6 +18,7 @@ import type {
 import {
   deleteMultipleFilesFromS3,
   deleteSingleFileFromS3,
+  uploadMultipleFileToS3,
   uploadSingleFileToS3,
   type TMulterFile,
   type TMulterFileList,
@@ -731,6 +732,101 @@ const getVerificationStatus = async (user: IUser) => {
   }
 }
 
+// ?? Add Portfolio image
+const addPortFolio = async (user: IUser, portfolioImages: TMulterFileList) => {
+  // 1. Check if artist profile exists
+  const artistProfile = await ArtistProfile.findOne({
+    user: user?._id,
+  })
+
+  if (!artistProfile) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Artist profile doesn't exist.")
+  }
+
+  // 2. Validate new files
+  const newFilesLength = portfolioImages?.length ?? 0
+
+  if (newFilesLength < 1) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Minimum one portfolio image is required.')
+  }
+
+  // 3. Get existing portfolio images
+  const previousFiles = artistProfile.portfolioImages ?? []
+  const previousFilesLength = previousFiles.length
+
+  // 4. Check maximum limit
+  const totalFilesLength = previousFilesLength + newFilesLength
+
+  if (totalFilesLength > 10) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `You cannot upload more than 10 portfolio images. Already uploaded ${previousFilesLength} and newly added ${newFilesLength}.`
+    )
+  }
+
+  // 5. Upload new files to S3
+  const uploadedImages = await uploadMultipleFileToS3(
+    portfolioImages,
+    AWS_FOLDER_NAMES.PortfolioImage
+  )
+
+  // 6. Extract valid uploaded URLs
+  const newlyUploadedUrls = uploadedImages
+    ?.map((item) => item?.url)
+    .filter((url): url is string => Boolean(url))
+
+  // 7. Make sure all requested files were uploaded successfully
+  if (newlyUploadedUrls.length !== newFilesLength) {
+    throw new AppError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      'Some portfolio images failed to upload. Please try again.'
+    )
+  }
+
+  // 8. Append new images to existing images
+  artistProfile.portfolioImages = [...previousFiles, ...newlyUploadedUrls]
+
+  // 9. Save profile
+  await artistProfile.save()
+
+  return artistProfile
+}
+
+// ?? Remove Portfolio images:
+const removePortfolioImage = async (user: IUser, url: string) => {
+  // ?? Check is artist profile exists ?:
+  const artistProfile = await ArtistProfile.findOne({ user: user?._id })
+  if (!artistProfile) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Artist profile doesn't exists.")
+  }
+
+  // ?? Has any portfolio images ?:
+  const portfolioImageUrls = artistProfile?.portfolioImages ?? []
+  if (portfolioImageUrls?.length < 1) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'No portfolio image exists.')
+  }
+
+  // ?? Filter out the url :
+  const currentUrlExists = portfolioImageUrls.find(
+    (portfolioUrl) => portfolioUrl?.trim() === url?.trim()
+  )
+  if (!currentUrlExists) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Given url not found.')
+  }
+
+  // ?? Other images:
+  const otherImages = portfolioImageUrls.filter((img) => img?.trim() !== url?.trim())
+
+  // ?? Attempt to delete the url:
+  artistProfile.portfolioImages = otherImages
+
+  await artistProfile.save()
+
+  deleteSingleFileFromS3(currentUrlExists).catch((err) => console.log(err))
+
+  return artistProfile
+}
+
 const getAllArtistProfile = async (query: TGetAllArtistProfileQueryParamsType) => {
   const {
     page = 1,
@@ -798,4 +894,8 @@ export const artistProfileServices = {
   rejectArtistDocuments,
   resubmitDocuments,
   getVerificationStatus,
+
+  // ?? Portfolios:
+  addPortFolio,
+  removePortfolioImage,
 }

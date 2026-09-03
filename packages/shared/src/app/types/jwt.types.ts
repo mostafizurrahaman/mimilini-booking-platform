@@ -5,5 +5,6 @@ export interface IJwtUserPayload extends JwtPayload {
   name: string
   email: string
   profileImage: string
+  role: string
   status: string
 }

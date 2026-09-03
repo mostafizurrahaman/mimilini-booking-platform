@@ -94,6 +94,17 @@ router.get(
   artistProfileControllers.checkVerificationStatus
 )
 
+// ?? Add Portfolio image:
+router.patch(
+  '/add-portfolio',
+  multerFactory({
+    category: 'image',
+    maxSizeInMB: 10,
+  }).array('portfolioImages', 10),
+  auth(AuthRoles.ARTIST),
+  artistProfileControllers.addNewPortfolioImage
+)
+
 router.get(
   '/all',
   validateRequest(artistProfileValidations.getAllArtistProfileSchema),
