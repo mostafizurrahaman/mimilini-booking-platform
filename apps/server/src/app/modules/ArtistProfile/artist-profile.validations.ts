@@ -44,10 +44,9 @@ const createArtistProfileSchema = z.object({
       .regex(/^[a-zA-Z0-9._]{1,30}$/, 'Invalid Instagram username')
       .optional()
       .nullable(),
-    facebook: requiredString('Facebook profile url').regex(
-      /^https?:\/\/(www\.)?facebook\.com\/[A-Za-z0-9._-]+\/?$/,
-      'Invalid Facebook URL'
-    ),
+    facebook: requiredString('Facebook profile url')
+      .regex(/^https?:\/\/(www\.)?facebook\.com\/[A-Za-z0-9._-]+\/?$/, 'Invalid Facebook URL')
+      .optional(),
     language: enumString(['english', 'australian english'], 'Language'),
     travelRadius: requiredNumber('Travel radius').min(0, {
       error: 'Min. travel radius must be 0',
@@ -124,7 +123,6 @@ const rejectArtistDocumentSchema = z.object({
     }),
   }),
 })
-
 
 export const artistProfileValidations = {
   createArtistProfileSchema,
