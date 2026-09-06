@@ -1,12 +1,10 @@
 module.exports = {
   apps: [
     {
-      name: 'memillennial-be',
+      name: 'mimilini-be',
       script: 'pnpm',
       args: 'run dev',
       interpreter: 'none',
-
-      cwd: '/home/ubuntu/funraisingit/apps/server',
 
       instances: 1,
       exec_mode: 'fork',
