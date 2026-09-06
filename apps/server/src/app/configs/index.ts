@@ -55,6 +55,7 @@ const envSchema = z.object({
   // Admin & OTP
   SUPER_ADMIN_PASSWORD: z.string(),
   SUPER_ADMIN_EMAIL: z.string().email(),
+  SUPER_ADMIN_PHONE: z.string(),
   OTP_EXPIRES_IN: z.string().transform(Number).default(5),
   OTP_DIGITS: z.string().transform(Number).default(6),
 })
@@ -130,7 +131,7 @@ const configs = {
   superAdmin: {
     password: env.SUPER_ADMIN_PASSWORD,
     email: env.SUPER_ADMIN_EMAIL,
-    phone: env.SUPER_ADMIN_PHONE,
+    phone: env.SUPER_ADMIN_PHONE!,
   },
 
   otpSettings: {
@@ -139,7 +140,7 @@ const configs = {
   },
 } as const
 
-console.log(configs.corsOrigins)
+console.log(configs)
 
 export default configs
 

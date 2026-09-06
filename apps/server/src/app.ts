@@ -11,7 +11,7 @@ import { allRoutes } from '@app/routes'
 import { logger } from '@app/libs/logger'
 import dns from 'node:dns'
 
-dns.setServers(["1.1.1.1"])
+dns.setServers(['1.1.1.1'])
 
 const app: express.Application = express()
 
@@ -31,6 +31,7 @@ app.use(
     stream,
   })
 )
+
 app.use(helmet())
 app.use(express.json())
 app.use(cookieParser())
