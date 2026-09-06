@@ -9,6 +9,7 @@ import {
   sortOrder,
   requiredDate,
   enumString,
+  AppError,
 } from '@repo/shared'
 import {
   BannerPriority,
@@ -43,7 +44,7 @@ const createBannerSchema = z.object({
 
       // 1. Check if startDate is before today
       if (startDate.isBefore(todayStart)) {
-        return ctx.addIssue({
+        ctx.addIssue({
           code: 'custom',
           path: ['startDate'],
           message: 'Start date must be present or future date.',
@@ -52,7 +53,7 @@ const createBannerSchema = z.object({
 
       // 2. Check if endDate is before today
       if (endDate.isBefore(todayStart)) {
-        return ctx.addIssue({
+        ctx.addIssue({
           code: 'custom',
           path: ['endDate'],
           message: 'End date must be present or future date.',
@@ -61,7 +62,7 @@ const createBannerSchema = z.object({
 
       // 3. Check if endDate is before startDate
       if (endDate.isBefore(startDate)) {
-        return ctx.addIssue({
+        ctx.addIssue({
           code: 'custom',
           path: ['endDate'],
           message: 'End date must be after start date.',
@@ -74,21 +75,53 @@ const updateBannerSchema = z.object({
   params: z.object({
     bannerId: requiredString('BannerId'),
   }),
-  body: z.object({
-    title: optionalString('Title'),
-    subtitle: optionalString('subtitle'),
-    ctaBtnText: optionalString('ctaBtnText'),
-    ctaDestination: optionalString('ctaDestination'),
-    startDate: optionalDate('Start date'),
-    endDate: optionalDate('End date'),
-    priority: optionalEnumString(
-      bannerPriorityValues?.map((item) => String(item)),
-      'Priority'
-    )
-      .default(BannerPriority.MEDIUM?.toString())
-      .transform((val) => Number(val)),
-    status: optionalEnumString(bannerStatusValues, 'Status'),
-  }),
+  body: z
+    .object({
+      title: optionalString('Title'),
+      subtitle: optionalString('subtitle'),
+      ctaBtnText: optionalString('ctaBtnText'),
+      ctaDestination: optionalString('ctaDestination'),
+      startDate: optionalDate('Start date'),
+      endDate: optionalDate('End date'),
+      priority: optionalEnumString(
+        bannerPriorityValues?.map((item) => String(item)),
+        'Priority'
+      )
+        .default(BannerPriority.MEDIUM?.toString())
+        .transform((val) => Number(val)),
+      status: optionalEnumString(bannerStatusValues, 'Status'),
+    })
+    .superRefine((data, ctx) => {
+      // ?? Get current date:
+      const todayStart = moment().startOf('day')
+
+      const startDate = data?.startDate ? moment(data?.startDate) : null
+      const endDate = data?.endDate ? moment(data?.endDate) : null
+
+      if (startDate && startDate.isBefore(todayStart)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['startDate'],
+          message: 'Start date must be present or future date.',
+        })
+      }
+
+      if (endDate && endDate.isBefore(todayStart)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['endDate'],
+          message: 'End date must be present or future date.',
+        })
+      }
+
+      if (startDate && endDate && endDate.isBefore(startDate)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['endDate'],
+          message: 'End date must be after start.',
+        })
+      }
+    }),
 })
 
 const getAllBannerSchema = z.object({
