@@ -130,7 +130,7 @@ const configs = {
   superAdmin: {
     password: env.SUPER_ADMIN_PASSWORD,
     email: env.SUPER_ADMIN_EMAIL,
-    phone: env.SUPER_ADMIN_PHONE
+    phone: env.SUPER_ADMIN_PHONE,
   },
 
   otpSettings: {
@@ -139,7 +139,7 @@ const configs = {
   },
 } as const
 
-// console.log(configs)
+console.log(configs.corsOrigins)
 
 export default configs
 
