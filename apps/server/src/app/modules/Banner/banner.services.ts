@@ -1,9 +1,10 @@
 import {
   Banner,
   bannerSearchableFields,
+  bannerSortableFields,
+  BannerStatus,
   type IUser,
   type TBannerPriorityStatus,
-  type TBannerStatusType,
 } from '@repo/db'
 import httpStatus from 'http-status'
 import { AppError } from '@repo/shared'
@@ -13,6 +14,8 @@ import type {
   TCreateBannerPayloadType,
   TUpdateBannerPayloadType,
   TGetAllBannerQueryParamsType,
+  TGetAllActiveBannerQueryParamsType,
+  TUpdateStatusPayloadType,
 } from './banner.validations'
 import moment from 'moment'
 import {
@@ -20,7 +23,7 @@ import {
   uploadSingleFileToS3,
   type TMulterFile,
 } from 'packages/media-hub/src'
-import { AWS_FOLDER_NAMES, logger } from '@app/libs'
+import { AWS_FOLDER_NAMES, formatQuery, logger } from '@app/libs'
 
 // ?? 1. Create Banner.
 const createBanner = async (user: IUser, payload: TCreateBannerPayloadType, file: TMulterFile) => {
@@ -138,27 +141,92 @@ const updateBanner = async (id: string, payload: TUpdateBannerPayloadType, file:
   return existingBanner
 }
 
+const updateBannerStatus = async (bannerId: string, payload: TUpdateStatusPayloadType) => {
+  const { status } = payload
+
+  // ?? Check is the banner exists ?:
+  const existingBanner = await Banner.findById(bannerId)
+  if (!existingBanner) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Banner doesn't exists.")
+  }
+
+  if (existingBanner.status === BannerStatus.ACTIVE && status === BannerStatus.ACTIVE) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Banner already in active status.')
+  }
+
+  if (existingBanner.status === BannerStatus.INACTIVE && status === BannerStatus.INACTIVE) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Banner already in inactive status.')
+  }
+
+  existingBanner.status = status as TBannerStatusType
+
+  await existingBanner.save()
+
+  return existingBanner
+}
+
 const getAllBanner = async (query: TGetAllBannerQueryParamsType) => {
-  const {
-    page = 1,
-    limit = 10,
-    searchTerm,
-    sortOrder = 'desc',
-    sortBy = 'createdAt',
-    fromDate,
-    toDate,
-  } = query
+  const { page, limit, searchTerm, sortOrder, sortBy, fromDate, toDate } = formatQuery(
+    query,
+    bannerSortableFields
+  )
 
   const skip = (page - 1) * limit
   const pipeline: PipelineStage[] = []
 
   if (fromDate || toDate) {
     const dateFilter: Record<string, unknown> = {}
-    if (fromDate) dateFilter.$gte = new Date(fromDate)
-    if (toDate) dateFilter.$lte = new Date(toDate)
-
-    pipeline.push({ $match: { createdAt: dateFilter } })
+    if (fromDate) {
+      dateFilter.startDate = {
+        $gte: moment(fromDate)?.startOf('day')?.toDate(),
+      }
+    }
+    if (toDate) {
+      dateFilter.endDate = {
+        $lte: moment(fromDate)?.endOf('day')?.toDate(),
+      }
+    }
   }
+
+  pipeline.push(
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'user',
+        foreignField: '_id',
+        as: 'userDetails',
+        pipeline: [
+          {
+            $project: {
+              userId: '$_id',
+              userName: '$name',
+              userEmail: '$email',
+            },
+          },
+        ],
+      },
+    },
+    {
+      $unwind: {
+        path: '$userDetails',
+        preserveNullAndEmptyArrays: true,
+      },
+    }
+  )
+
+  pipeline.push({
+    $addFields: {
+      userId: '$userDetails._id',
+      userName: '$userDetails.userName',
+      userEmail: '$userDetails.userEmail',
+    },
+  })
+
+  pipeline.push({
+    $project: {
+      userDetails: 0,
+    },
+  })
 
   if (searchTerm) {
     pipeline.push({
@@ -170,11 +238,124 @@ const getAllBanner = async (query: TGetAllBannerQueryParamsType) => {
     })
   }
 
-  pipeline.push({ $sort: { [sortBy]: sortOrder === 'asc' ? 1 : -1 } })
+  pipeline.push({ $sort: { [sortBy]: sortOrder } })
 
   pipeline.push({
     $facet: {
       data: [{ $skip: skip }, { $limit: limit }],
+      meta: [{ $count: 'total' }],
+    },
+  })
+
+  const aggregated = await Banner.aggregate(pipeline)
+
+  const data = aggregated?.[0]?.data || []
+  const total = aggregated?.[0]?.meta?.[0]?.total || 0
+
+  return {
+    data,
+    meta: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit) || 1,
+    },
+  }
+}
+
+const getAllActiveBanner = async (query: TGetAllActiveBannerQueryParamsType) => {
+  const { skipPagination } = query
+  const { page, limit, searchTerm } = formatQuery(query, bannerSortableFields)
+
+  const skip = (page - 1) * limit
+  const pipeline: PipelineStage[] = []
+  const isPaginationSkipped =
+    typeof skipPagination === 'string'
+      ? skipPagination === 'true'
+      : typeof skipPagination === 'boolean'
+        ? skipPagination
+        : false
+
+  // ?? Start Date:
+  const today = moment()
+
+  pipeline.push({
+    $match: {
+      startDate: {
+        $lte: today?.toDate(),
+      },
+      endDate: {
+        $gte: today?.toDate(),
+      },
+      status: BannerStatus.ACTIVE,
+    },
+  })
+
+  pipeline.push(
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'user',
+        foreignField: '_id',
+        as: 'userDetails',
+        pipeline: [
+          {
+            $project: {
+              userId: '$_id',
+              userName: '$name',
+              userEmail: '$email',
+            },
+          },
+        ],
+      },
+    },
+    {
+      $unwind: {
+        path: '$userDetails',
+        preserveNullAndEmptyArrays: true,
+      },
+    }
+  )
+
+  pipeline.push({
+    $addFields: {
+      userId: '$userDetails._id',
+      userName: '$userDetails.userName',
+      userEmail: '$userDetails.userEmail',
+    },
+  })
+
+  pipeline.push({
+    $project: {
+      userDetails: 0,
+    },
+  })
+
+  if (searchTerm) {
+    pipeline.push({
+      $match: {
+        $or: bannerSearchableFields.map((field) => ({
+          [field]: { $regex: searchTerm, $options: 'i' },
+        })),
+      },
+    })
+  }
+
+  pipeline.push({ $sort: { priority: -1 } })
+
+  const paginationStage: PipelineStage.FacetPipelineStage[] = []
+
+  if (isPaginationSkipped) {
+    paginationStage.push({
+      $match: {},
+    })
+  } else {
+    paginationStage.push({ $skip: skip }, { $limit: limit })
+  }
+
+  pipeline.push({
+    $facet: {
+      data: paginationStage,
       meta: [{ $count: 'total' }],
     },
   })
@@ -221,4 +402,6 @@ export const bannerServices = {
   getAllBanner,
   getBannerById,
   deleteBannerById,
+  getAllActiveBanner,
+  updateBannerStatus,
 }

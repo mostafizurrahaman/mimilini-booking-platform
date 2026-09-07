@@ -6,10 +6,9 @@ import {
   optionalString,
   optionalDate,
   sortingOrderValues,
-  sortOrder,
   requiredDate,
   enumString,
-  AppError,
+  skipPagination,
 } from '@repo/shared'
 import {
   BannerPriority,
@@ -116,6 +115,15 @@ const updateBannerSchema = z.object({
     }),
 })
 
+const updateBannerStatusSchema = z.object({
+  params: z.object({
+    bannerId: requiredString('BannerId'),
+  }),
+  body: z.object({
+    status: optionalEnumString(bannerStatusValues, 'Status'),
+  }),
+})
+
 const getAllBannerSchema = z.object({
   query: z.object({
     page: optionalNumber('Page'),
@@ -125,6 +133,17 @@ const getAllBannerSchema = z.object({
     sortBy: optionalEnumString(bannerSortableFields, 'Sort by'),
     fromDate: optionalDate('From date'),
     toDate: optionalDate('To date'),
+  }),
+})
+
+const getAllActiveBannerSchema = z.object({
+  query: z.object({
+    page: optionalNumber('Page'),
+    limit: optionalNumber('Limit'),
+    searchTerm: optionalString('Search term'),
+    sortOrder: optionalEnumString(sortingOrderValues, 'Sort order'),
+    sortBy: optionalEnumString(bannerSortableFields, 'Sort by'),
+    skipPagination: skipPagination(),
   }),
 })
 
@@ -146,10 +165,16 @@ export const bannerValidations = {
   getAllBannerSchema,
   getBannerByIdSchema,
   deleteBannerByIdSchema,
+  getAllActiveBannerSchema,
+  updateBannerStatusSchema,
 }
 
 export type TCreateBannerPayloadType = z.infer<typeof createBannerSchema.shape.body>
 export type TUpdateBannerPayloadType = z.infer<typeof updateBannerSchema.shape.body>
 export type TGetAllBannerQueryParamsType = z.infer<typeof getAllBannerSchema.shape.query>
+export type TGetAllActiveBannerQueryParamsType = z.infer<
+  typeof getAllActiveBannerSchema.shape.query
+>
 export type TGetBannerByIdParamsType = z.infer<typeof getBannerByIdSchema.shape.params>
 export type TDeleteBannerByIdParamsType = z.infer<typeof deleteBannerByIdSchema.shape.params>
+export type TUpdateStatusPayloadType = z.infer<typeof updateBannerStatusSchema.shape.body>

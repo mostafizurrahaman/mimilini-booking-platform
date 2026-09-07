@@ -38,3 +38,8 @@ export const optionalEnumString = <T extends readonly string[]>(values: T, field
  */
 export const nullableEnumString = <T extends readonly string[]>(values: T, fieldName = 'Value') =>
   enumString(values, fieldName).nullable()
+
+export const skipPagination = () =>
+  z.enum(['true', 'false'], {
+    error: 'skipPagination must be either true or false.',
+  })

@@ -31,21 +31,37 @@ router.patch(
   bannerControllers.updateBanner
 )
 
+router.patch(
+  '/:bannerId/status',
+  auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
+  validateRequest(bannerValidations.updateBannerStatusSchema),
+  bannerControllers.updateBannerStatus
+)
+
 router.get(
   '/all',
-
+  auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
   validateRequest(bannerValidations.getAllBannerSchema),
   bannerControllers.getAllBanner
 )
 
 router.get(
+  '/active',
+  // auth(AuthRoles.ARTIST, AuthRoles.CUSTOMER),
+  validateRequest(bannerValidations.getAllActiveBannerSchema),
+  bannerControllers.getAllActiveBanner
+)
+
+router.get(
   '/:id',
+  auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
   validateRequest(bannerValidations.getBannerByIdSchema),
   bannerControllers.getBannerById
 )
 
 router.delete(
   '/:id',
+  auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
   validateRequest(bannerValidations.deleteBannerByIdSchema),
   bannerControllers.deleteBannerById
 )
