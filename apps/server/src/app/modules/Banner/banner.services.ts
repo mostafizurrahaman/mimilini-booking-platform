@@ -1,4 +1,10 @@
-import { Banner, bannerSearchableFields, type IUser, type TBannerPriorityStatus } from '@repo/db'
+import {
+  Banner,
+  bannerSearchableFields,
+  type IUser,
+  type TBannerPriorityStatus,
+  type TBannerStatusType,
+} from '@repo/db'
 import httpStatus from 'http-status'
 import { AppError } from '@repo/shared'
 import type { PipelineStage } from 'mongoose'
@@ -9,10 +15,14 @@ import type {
   TGetAllBannerQueryParamsType,
 } from './banner.validations'
 import moment from 'moment'
-import { uploadSingleFileToS3, type TMulterFile } from 'packages/media-hub/src'
-import { AWS_FOLDER_NAMES } from '@app/libs'
+import {
+  deleteSingleFileFromS3,
+  uploadSingleFileToS3,
+  type TMulterFile,
+} from 'packages/media-hub/src'
+import { AWS_FOLDER_NAMES, logger } from '@app/libs'
 
-// 1. Create Banner.
+// ?? 1. Create Banner.
 const createBanner = async (user: IUser, payload: TCreateBannerPayloadType, file: TMulterFile) => {
   const {
     title,
@@ -47,6 +57,10 @@ const createBanner = async (user: IUser, payload: TCreateBannerPayloadType, file
     throw new AppError(httpStatus.BAD_REQUEST, 'End date must be after start date.')
   }
 
+  if (endDate && startDate && startDate.isSame(edDate)) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'End date should be after start date.')
+  }
+
   // ?? upload the banner url:
   const { url } = await uploadSingleFileToS3(file, AWS_FOLDER_NAMES.Banner)
 
@@ -67,14 +81,61 @@ const createBanner = async (user: IUser, payload: TCreateBannerPayloadType, file
   return result
 }
 
-const updateBanner = async (id: string, payload: TUpdateBannerPayloadType) => {
-  const result = await Banner.findOneAndUpdate({ _id: id }, { $set: payload }, { new: true })
+// ?? Update banner:
+const updateBanner = async (id: string, payload: TUpdateBannerPayloadType, file: TMulterFile) => {
+  const { title, subtitle, priority, ctaBtnText, ctaDestination, endDate, startDate, status } =
+    payload
 
-  if (!result) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Banner not found')
+  // ?? Check is the banner exists ?:
+  const existingBanner = await Banner.findById(id)
+  if (!existingBanner) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Banner doesn't exists.")
   }
 
-  return result
+  // ?? Images:
+  const oldImageUrl: string | undefined = existingBanner?.url
+  let newImageUrl: string | undefined = undefined
+
+  if (file) {
+    const { url } = await uploadSingleFileToS3(file, AWS_FOLDER_NAMES.Banner)
+    newImageUrl = url
+    existingBanner.url = url
+  }
+
+  // ?? Filter out the dates:
+  const today = moment().startOf('day')
+  const stDate = startDate ? moment(startDate) : moment(existingBanner?.startDate)
+  const edDate = endDate ? moment(endDate) : moment(existingBanner?.endDate)
+
+  if (edDate && edDate.isBefore(today)) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'End date should be future date.')
+  }
+
+  if (edDate && stDate && edDate.isBefore(stDate)) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'End date should be after start date.')
+  }
+
+  if (edDate && stDate && stDate.isSame(edDate)) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'End date should be after start date.')
+  }
+
+  existingBanner.startDate = stDate?.toDate()
+  existingBanner.endDate = edDate?.toDate()
+
+  if (title !== undefined) existingBanner.title = title
+  if (subtitle !== undefined) existingBanner.subtitle = subtitle
+  if (priority !== undefined) existingBanner.priority = priority as TBannerPriorityStatus
+  if (ctaBtnText !== undefined) existingBanner.ctaBtnText = ctaBtnText
+  if (ctaDestination !== undefined) existingBanner.ctaDestination = ctaDestination
+  if (status !== undefined) existingBanner.status = status
+
+  await existingBanner.save()
+
+  if (newImageUrl && oldImageUrl) {
+    deleteSingleFileFromS3(oldImageUrl).catch((err) => logger.error('File upload error', err))
+  }
+
+  return existingBanner
 }
 
 const getAllBanner = async (query: TGetAllBannerQueryParamsType) => {

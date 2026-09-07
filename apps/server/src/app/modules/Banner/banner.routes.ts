@@ -21,13 +21,19 @@ router.post(
 )
 
 router.patch(
-  '/:id',
+  '/:bannerId',
+  multerFactory({
+    category: 'image',
+    maxSizeInMB: 10,
+  }).single('bannerImage'),
+  auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
   validateRequest(bannerValidations.updateBannerSchema),
   bannerControllers.updateBanner
 )
 
 router.get(
   '/all',
+
   validateRequest(bannerValidations.getAllBannerSchema),
   bannerControllers.getAllBanner
 )

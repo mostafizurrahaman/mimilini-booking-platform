@@ -98,14 +98,6 @@ const updateBannerSchema = z.object({
       const startDate = data?.startDate ? moment(data?.startDate) : null
       const endDate = data?.endDate ? moment(data?.endDate) : null
 
-      if (startDate && startDate.isBefore(todayStart)) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['startDate'],
-          message: 'Start date must be present or future date.',
-        })
-      }
-
       if (endDate && endDate.isBefore(todayStart)) {
         ctx.addIssue({
           code: 'custom',

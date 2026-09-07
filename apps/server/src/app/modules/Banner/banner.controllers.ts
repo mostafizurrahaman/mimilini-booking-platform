@@ -18,7 +18,8 @@ const createBanner = catchAsync(async (req, res) => {
 })
 
 const updateBanner = catchAsync(async (req, res) => {
-  const result = await bannerServices.updateBanner(req.params.id as string, req.body)
+  const file = req.file as TMulterFile
+  const result = await bannerServices.updateBanner(req.params.bannerId as string, req.body, file)
 
   sendResponse(res, {
     success: true,
