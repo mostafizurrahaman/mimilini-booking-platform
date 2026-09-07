@@ -1,8 +1,7 @@
 import httpStatus from 'http-status'
 import { AppError } from '@repo/shared'
-import type { PipelineStage } from 'mongoose'
 
-export const formatQuery = (query: Record<string, unknown>, sortableFields: string[]) => {
+export const formatQuery = (query: Record<string, unknown>, sortableFields: readonly string[]) => {
   const {
     limit,
     page,
