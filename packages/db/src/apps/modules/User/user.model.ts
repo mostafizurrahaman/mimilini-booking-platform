@@ -1,6 +1,11 @@
 import { model, Schema } from 'mongoose'
 
-import { AuthRoles, AuthStatus, verificationStatus, VerificationStatusValues } from './user.constant'
+import {
+  AuthRoles,
+  AuthStatus,
+  verificationStatus,
+  VerificationStatusValues,
+} from './user.constant'
 import type { IUser, IUserDoc, IUserModel } from './user.interface'
 
 const userSchema = new Schema<IUserDoc, IUserModel>(
@@ -21,7 +26,7 @@ const userSchema = new Schema<IUserDoc, IUserModel>(
     phone: {
       type: String,
     },
-  
+
     //  profile image:
     profileImage: {
       type: String,
@@ -30,10 +35,10 @@ const userSchema = new Schema<IUserDoc, IUserModel>(
       type: Boolean,
       default: false,
     },
-    isProfileCompleted: { 
-      type: Boolean, 
+    isProfileCompleted: {
+      type: Boolean,
       default: false,
-    }, 
+    },
 
     // roles:
     role: {
@@ -78,7 +83,7 @@ const userSchema = new Schema<IUserDoc, IUserModel>(
     deletionReason: {
       type: String,
     },
-    rejectionReason: { 
+    rejectionReason: {
       type: String,
     },
     // blocked at:
@@ -115,7 +120,6 @@ userSchema.statics.isUserExistByEmail = async function (email: string): Promise<
     email,
   })
 }
-
 
 // 8. remove hash password :
 userSchema.post('save', async function (doc, next) {

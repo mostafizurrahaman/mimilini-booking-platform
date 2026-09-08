@@ -96,7 +96,7 @@ const getAllUsers = async (user: IUser, query: TGetAllUserQueryType) => {
           userId: '$_id',
           name: '$name',
           email: '$email',
-
+          profileImage: { $ifNull: ['$profileImage', null] },
           isStripeConnected: '$isStripeConnected',
           isProfileCompleted: '$isProfileCompleted',
           role: '$role',
@@ -104,7 +104,8 @@ const getAllUsers = async (user: IUser, query: TGetAllUserQueryType) => {
           verificationStatus: '$verificationStatus',
           isTwoFactorEnabled: '$isTwoFactorEnabled',
           isOtpVerified: '$isOtpVerified',
-
+          blockedReason: { $ifNull: ['$blockedReason', null] },
+          blockedAt: { $ifNull: ['$blockedAt', null] },
           createdAt: '$createdAt',
           updatedAt: '$updatedAt',
         },

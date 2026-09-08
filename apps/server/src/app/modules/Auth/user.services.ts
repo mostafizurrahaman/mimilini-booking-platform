@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
+  AuthPermission,
   AuthRoles,
   AuthStatus,
   Otp,
@@ -18,6 +19,7 @@ import type {
   IVerifyResetPasswordOtpType,
   IVerifySignupOtpType,
   TUpdateProfilePayloadType,
+  TUpdateUserStatusPayloadType,
 } from './user.validations'
 import {
   addTime,
@@ -636,6 +638,7 @@ const verifyResetPasswordOtp = async (payload: IVerifyResetPasswordOtpType) => {
     name: user.name,
     profileImage: user.profileImage as string,
     status: user.status,
+    role: user.role,
   }
 
   // 5. Reset password token:
@@ -988,7 +991,7 @@ const changeProfilePicture = async (user: IUser, profileImageFile: TMulterFile) 
 const updateUserStatusIntoDB = async (
   user: IUser,
   targetUserId: string,
-  payload: IUpdateUserStatusPayload
+  payload: TUpdateUserStatusPayloadType
 ) => {
   const { status, reason } = payload
 
