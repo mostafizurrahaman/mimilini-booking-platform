@@ -20,6 +20,7 @@ export const uploadSingleFileToS3 = async (
         Key: key,
         Body: file.buffer,
         ContentType: file.mimetype,
+        ContentDisposition: 'inline',
         ACL: 'public-read',
       })
     )
