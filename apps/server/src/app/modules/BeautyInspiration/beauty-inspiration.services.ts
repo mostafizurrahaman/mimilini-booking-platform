@@ -12,7 +12,11 @@ import type {
   TUpdateBeautyInspirationPayloadType,
   TGetAllBeautyInspirationQueryParamsType,
 } from './beauty-inspiration.validations'
-import { uploadSingleFileToS3, type TMulterFile } from 'packages/media-hub/src'
+import {
+  deleteSingleFileFromS3,
+  uploadSingleFileToS3,
+  type TMulterFile,
+} from 'packages/media-hub/src'
 import { AWS_FOLDER_NAMES, formatQuery } from '@app/libs'
 
 /**
@@ -84,9 +88,13 @@ const updateBeautyInspiration = async (
     updateDoc.tags = cleanTags
   }
 
+  const oldUrl: string | undefined = existingInspiration.url
+  let newUrl: string | undefined = undefined
+
   if (image) {
     const { url } = await uploadSingleFileToS3(image, AWS_FOLDER_NAMES.BannerInspiration)
     updateDoc.url = url
+    newUrl = url
   }
 
   if (Object.keys(updateDoc).length === 0) {
@@ -98,6 +106,10 @@ const updateBeautyInspiration = async (
     { $set: updateDoc },
     { new: true, runValidators: true }
   )
+
+  if (oldUrl && newUrl) {
+    await deleteSingleFileFromS3(oldUrl)
+  }
 
   return result
 }
@@ -129,7 +141,7 @@ const getAllBeautyInspiration = async (query: TGetAllBeautyInspirationQueryParam
     })
   }
 
-  pipeline.push({ $sort: { [sortBy]: sortOrder === 'asc' ? 1 : -1 } })
+  pipeline.push({ $sort: { [sortBy]: sortOrder } })
 
   pipeline.push({
     $facet: {
@@ -169,6 +181,10 @@ const deleteBeautyInspirationById = async (id: string) => {
 
   if (!result) {
     throw new AppError(httpStatus.NOT_FOUND, 'BeautyInspiration not found')
+  }
+
+  if (result.url) {
+    deleteSingleFileFromS3(result.url).catch((err) => console.log(err))
   }
 
   return result
