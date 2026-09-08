@@ -8,6 +8,8 @@ export const ContentType = {
   PRIVACY_POLICY: 'privacy_policy',
   CANCELLATION_POLICY: 'cancellation_policy',
   REFUND_POLICY: 'refund_policy',
+  INCIDENT_REPORT: 'incident_report',
+  SAFETY_POLICY: 'safety_policy',
   ABOUT_US: 'about_us',
 } as const
 
