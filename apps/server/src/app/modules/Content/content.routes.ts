@@ -19,5 +19,4 @@ router.get(
   validateRequest(contentValidations.getContentByIdSchema),
   contentControllers.getContentType
 )
-
 export const contentRoutes = router
