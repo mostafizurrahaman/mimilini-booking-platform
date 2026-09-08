@@ -4,6 +4,7 @@ import { bannerRoutes } from '@app/modules/Banner/banner.routes'
 import { beautyInspirationRoutes } from '@app/modules/BeautyInspiration/beauty-inspiration.routes'
 import { categoryRoutes } from '@app/modules/Category/category.routes'
 import { contentRoutes } from '@app/modules/Content/content.routes'
+import { faqRoutes } from '@app/modules/Faq/faq.routes'
 import express, { Router } from 'express'
 
 const router: Router = express.Router()
@@ -33,6 +34,10 @@ const routes = [
   {
     path: '/content',
     route: contentRoutes,
+  },
+  {
+    path: '/faq',
+    route: faqRoutes,
   },
 ]
 
