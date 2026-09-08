@@ -4,6 +4,7 @@ import { AuthValidations } from './user.validations'
 import { AuthController } from './user.controllers'
 import { auth } from '@app/middlewares/auth'
 import { multerFactory } from '@repo/media-hub'
+import { AuthRoles } from 'packages/db/src'
 
 const router: Router = express()
 
@@ -106,13 +107,13 @@ router.patch(
   AuthController.changeProfilePicture
 )
 
-// // 12. Update User Status:
-// router.patch(
-//   '/update-status/:id',
-//   auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
-//   validateRequest(AuthValidations.updateUserStatusSchema),
-//   AuthController.updateUserStatusByID
-// )
+// 12. Update User Status:
+router.patch(
+  '/update-status/:id',
+  auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
+  validateRequest(AuthValidations.updateUserStatusSchema),
+  AuthController.updateUserStatusByID
+)
 
 // 13. Refresh Token:
 router.post(

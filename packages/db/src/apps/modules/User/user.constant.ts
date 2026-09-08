@@ -45,6 +45,13 @@ export const AuthRoles = {
 
 export const AuthRolesValues = Object.values(AuthRoles)
 
+export const AuthPermission = {
+  [AuthRoles.SUPER_ADMIN]: 10,
+  [AuthRoles.ADMIN]: 5,
+  [AuthRoles.ARTIST]: 2,
+  [AuthRoles.CUSTOMER]: 2,
+}
+
 export type TAuthStatus = (typeof AuthStatus)[keyof typeof AuthStatus]
 export type TAuthRole = (typeof AuthRoles)[keyof typeof AuthRoles]
 export type TVerificationStatus = (typeof verificationStatus)[keyof typeof verificationStatus]

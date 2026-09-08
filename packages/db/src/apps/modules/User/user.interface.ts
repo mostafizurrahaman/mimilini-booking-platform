@@ -27,15 +27,15 @@ export interface IUser extends Document {
   isStripeConnected: boolean
 
   // reason:
-  blockedReason?: string
-  deletionReason?: string
+  blockedReason?: string | undefined
+  deletionReason?: string | undefined
   rejectionReason?: string | undefined
 
   // common timestamps:
   lastLogin?: Date
   lastActivity?: Date
-  blockedAt?: Date
-  deletedAt?: Date
+  blockedAt?: Date | undefined
+  deletedAt?: Date | undefined
   passwordChangedAt?: Date
   createdAt: Date
   updatedAt: Date
