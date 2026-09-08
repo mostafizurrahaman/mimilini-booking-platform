@@ -5,6 +5,7 @@ import { beautyInspirationRoutes } from '@app/modules/BeautyInspiration/beauty-i
 import { categoryRoutes } from '@app/modules/Category/category.routes'
 import { contentRoutes } from '@app/modules/Content/content.routes'
 import { faqRoutes } from '@app/modules/Faq/faq.routes'
+import { userRoutes } from '@app/modules/User/user.routes'
 import express, { Router } from 'express'
 
 const router: Router = express.Router()
@@ -38,6 +39,10 @@ const routes = [
   {
     path: '/faq',
     route: faqRoutes,
+  },
+  {
+    path: '/users',
+    route: userRoutes,
   },
 ]
 

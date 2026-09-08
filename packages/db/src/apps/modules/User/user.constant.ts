@@ -1,3 +1,22 @@
+export const userSearchableFields = [
+  'name',
+  'email',
+  'address',
+  'phone',
+  'state',
+  'city',
+  'role',
+] as const
+export const userSortableFields = [
+  'createdAt',
+  'updatedAt',
+  'name',
+  'email',
+  'status',
+  'verificationStatus',
+  'role',
+] as const
+
 // Auth Status
 export const AuthStatus = {
   PENDING: 'pending', // signup completed, waiting for next step
