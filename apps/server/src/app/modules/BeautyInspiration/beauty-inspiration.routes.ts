@@ -11,7 +11,7 @@ router.post(
   multerFactory({
     category: 'image',
     maxSizeInMB: 10,
-  }).single('image'),
+  }).single('beautyImage'),
   validateRequest(beautyInspirationValidations.createBeautyInspirationSchema),
   beautyInspirationControllers.createBeautyInspiration
 )
