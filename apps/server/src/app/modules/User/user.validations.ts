@@ -9,6 +9,7 @@ import {
   optionalEnumString,
   optionalNumber,
   optionalString,
+  requiredMongooseId,
   sortingOrderValues,
 } from 'packages/shared/src'
 import z from 'zod'
@@ -28,9 +29,37 @@ const getAllUserSchema = z.object({
   }),
 })
 
+const getAllVerificationsDocs = z.object({
+  query: getAllUserSchema.shape.query.omit({
+    role: true,
+  }),
+})
+
+// Year regex:
+const yearRegex = /^(19|20|21)\d{2}$/
+const getUserOverview = z.object({
+  query: z.object({
+    year: z
+      .string({ error: 'Year is required' })
+      .regex(yearRegex, { error: 'Year must be a 4-digit number' })
+      .optional(),
+  }),
+})
+
+export const getUserDetailsByID = z.object({
+  params: z.object({
+    id: requiredMongooseId('User ID'),
+  }),
+})
+
 export const UserValidations = {
   getAllUserSchema,
+  getUserOverview,
+  getAllVerificationsDocs,
+  getUserDetailsByID,
 }
 
 // ?? Types
 export type TGetAllUserQueryType = z.infer<typeof getAllUserSchema.shape.query>
+export type TGetUserOverviewQueryType = z.infer<typeof getUserOverview.shape.query>
+export type TGetVerificationsDocsQueryType = z.infer<typeof getAllVerificationsDocs.shape.query>

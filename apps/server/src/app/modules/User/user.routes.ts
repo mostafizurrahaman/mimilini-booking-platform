@@ -13,4 +13,25 @@ router.get(
   userControllers.getAllUsers
 )
 
+router.get(
+  '/overview',
+  auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
+  validateRequest(UserValidations.getUserOverview),
+  userControllers.getOverview
+)
+
+router.get(
+  '/verifications',
+  auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
+  validateRequest(UserValidations.getAllVerificationsDocs),
+  userControllers.getAllVerifications
+)
+
+router.get(
+  '/:id/details',
+  auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
+  validateRequest(UserValidations.getUserDetailsByID),
+  userControllers.getUserDetailsById
+)
+
 export const userRoutes = router

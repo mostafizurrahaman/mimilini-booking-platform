@@ -175,7 +175,7 @@ export const createArtistProfile = async (
           postalCode,
           website: website!,
           instagram: instagram!,
-          facebook,
+          facebook: facebook!,
           language,
           travelRadius,
         },
