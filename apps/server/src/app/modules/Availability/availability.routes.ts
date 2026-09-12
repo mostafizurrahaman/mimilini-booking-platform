@@ -2,11 +2,14 @@ import express, { Router } from 'express'
 import { validateRequest } from '@app/middlewares'
 import { availabilityControllers } from './availability.controllers'
 import { availabilityValidations } from './availability.validations'
+import { AuthRoles } from 'packages/db/src'
+import { auth } from '@app/middlewares/auth'
 
-const router : Router = express.Router()
+const router: Router = express.Router()
 
 router.post(
   '/',
+  auth(AuthRoles.ARTIST),
   validateRequest(availabilityValidations.createAvailabilitySchema),
   availabilityControllers.createAvailability
 )
@@ -23,11 +26,7 @@ router.get(
   availabilityControllers.getAllAvailability
 )
 
-router.get(
-  '/:id',
-  validateRequest(availabilityValidations.getAvailabilityByIdSchema),
-  availabilityControllers.getAvailabilityById
-)
+router.get('/', auth(AuthRoles.ARTIST), availabilityControllers.getAvailabilityByUserId)
 
 router.delete(
   '/:id',

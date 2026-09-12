@@ -1,4 +1,5 @@
 import moment from 'moment'
+import momentTz from 'moment-timezone'
 
 /**
  * Get current timestamp
@@ -59,4 +60,8 @@ export const formatDate = (date: Date, format = 'YYYY-MM-DD HH:mm:ss', utc = fal
  */
 export const isExpired = (date: Date): boolean => {
   return moment().isAfter(moment(date))
+}
+
+export const isValidTimeZone = (timezone: string): boolean => {
+  return momentTz?.tz?.zone(timezone) !== null
 }
