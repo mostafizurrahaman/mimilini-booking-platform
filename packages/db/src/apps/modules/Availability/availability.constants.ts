@@ -19,7 +19,7 @@ export const REPETITION_TYPES = {
 } as const
 
 export const daysValues = Object.values(DAYS)
-export const repetitionType = Object.values(REPETITION_TYPES)
+export const repetitionTypeValues = Object.values(REPETITION_TYPES)
 // Types (optional but recommended)
 export type TAvailabilitySearchableField = (typeof availabilitySearchableFields)[number]
 

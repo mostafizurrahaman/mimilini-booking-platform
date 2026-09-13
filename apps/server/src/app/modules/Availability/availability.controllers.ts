@@ -1,9 +1,11 @@
 import { catchAsync, sendResponse } from '@repo/shared'
 import httpStatus from 'http-status'
 import { availabilityServices } from './availability.services'
+import { getUserFromRequest } from '@app/libs'
 
 const createAvailability = catchAsync(async (req, res) => {
-  const result = await availabilityServices.createAvailability(req.body)
+  const user = await getUserFromRequest(req)
+  const result = await availabilityServices.createAvailability(user, req.body)
 
   sendResponse(res, {
     success: true,
@@ -36,8 +38,9 @@ const getAllAvailability = catchAsync(async (req, res) => {
   })
 })
 
-const getAvailabilityById = catchAsync(async (req, res) => {
-  const result = await availabilityServices.getAvailabilityById(req.params.id as string)
+const getAvailabilityByUserId = catchAsync(async (req, res) => {
+  const user = await getUserFromRequest(req)
+  const result = await availabilityServices.getAvailabilityByUserId(user)
 
   sendResponse(res, {
     success: true,
@@ -62,6 +65,6 @@ export const availabilityControllers = {
   createAvailability,
   updateAvailability,
   getAllAvailability,
-  getAvailabilityById,
-  deleteAvailabilityById
+  getAvailabilityByUserId,
+  deleteAvailabilityById,
 }

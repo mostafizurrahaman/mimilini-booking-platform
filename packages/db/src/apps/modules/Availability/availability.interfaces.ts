@@ -6,8 +6,8 @@ export interface IWorkingDay {
   isWorkingDay: boolean
   startTime?: string
   endTime?: string
-  breakStartTime?: string
-  breakEndTime?: string
+  breakStartTime?: string | null
+  breakEndTime?: string | null
 }
 
 // ? 2. Weekly Schedule:

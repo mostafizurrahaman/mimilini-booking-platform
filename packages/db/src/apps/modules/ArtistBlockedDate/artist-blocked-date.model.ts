@@ -1,9 +1,24 @@
 import { Schema, model } from 'mongoose'
-  import type { IArtistBlockedDateDoc } from './artist-blocked-date.interfaces'
+import type { IArtistBlockedDateDoc } from './artist-blocked-date.interfaces'
+import { blockedDateTypeValues } from './artist-blocked-date.constants'
 
 const artistBlockedDateSchema = new Schema<IArtistBlockedDateDoc>(
   {
-    name: {
+    user: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    date: {
+      type: Date,
+      required: true,
+    },
+    reason: {
+      type: String,
+      enum: blockedDateTypeValues,
+      required: true,
+    },
+    note: {
       type: String,
     },
   },
