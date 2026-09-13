@@ -6,15 +6,15 @@ import {
   optionalString,
   optionalDate,
   sortingOrderValues,
-  sortOrder,
   optionalNullableDate,
   optionalNullableString,
   requiredNumber,
   positiveNumber,
   enumString,
+  isValidTimeZone,
 } from '@repo/shared'
 import { availabilitySortableFields, repetitionTypeValues } from '@repo/db'
-import moment from 'moment'
+import moment from 'moment-timezone'
 
 // Validate 24 hours format:
 const timeFormatRegex = /^([01]\d|2[0-3]):([0-5]\d)$/
@@ -165,7 +165,11 @@ const workingDayValidationSchema = z
 const createAvailabilitySchema = z.object({
   body: z
     .object({
-      timezone: optionalString('Timezone').default('Australia/Sydney'),
+      timezone: optionalString('Timezone')
+        .refine((val) => isValidTimeZone(val as string), {
+          error: 'Invalid timezone',
+        })
+        .default('Australia/Sydney'),
 
       // ?? Full week schedule:
       weeklySchedule: z.object({
@@ -222,6 +226,16 @@ const createAvailabilitySchema = z.object({
       repetitionType: enumString(repetitionTypeValues, 'Repetition type'),
     })
     .superRefine((data, ctx) => {
+      if (!isValidTimeZone(data.timezone)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['timezone'],
+          message: 'Invalid timezone',
+        })
+      }
+
+      const tz = data.timezone
+
       // ?? If vacation mode enabled, start and end vacation date is required:
       if (data.isVacationEnabled) {
         if (!data.vacationStartDate) {
@@ -240,10 +254,26 @@ const createAvailabilitySchema = z.object({
         }
 
         if (data.vacationStartDate && data.vacationEndDate) {
-          const start = moment(data.vacationStartDate)
-          const end = moment(data.vacationEndDate)
+          const start = moment.tz(data.vacationStartDate, tz).startOf('day')
+          const end = moment(data.vacationEndDate, tz).startOf('day')
 
-          if (end.isSameOrBefore(start)) {
+          if (!start.isValid()) {
+            ctx.addIssue({
+              code: 'custom',
+              path: ['vacationStartDate'],
+              message: 'Invalid vacation start date',
+            })
+          }
+
+          if (!end.isValid()) {
+            ctx.addIssue({
+              code: 'custom',
+              path: ['vacationEndDate'],
+              message: 'Invalid vacation end date',
+            })
+          }
+
+          if (start.isValid() && end.isValid() && end.isSameOrBefore(start)) {
             ctx.addIssue({
               code: 'custom',
               path: ['vacationEndDate'],
