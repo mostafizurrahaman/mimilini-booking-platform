@@ -3,6 +3,7 @@ import {
   availabilitySearchableFields,
   type IUser,
   type IWeeklySchedule,
+  type TDay,
 } from '@repo/db'
 import httpStatus from 'http-status'
 import { AppError, isValidTimeZone } from '@repo/shared'
@@ -13,6 +14,7 @@ import type {
   TUpdateAvailabilityPayloadType,
   TGetAllAvailabilityQueryParamsType,
 } from './availability.validations'
+import moment from 'moment-timezone'
 
 const createAvailability = async (user: IUser, payload: TCreateAvailabilityPayloadType) => {
   const {
@@ -53,13 +55,21 @@ const createAvailability = async (user: IUser, payload: TCreateAvailabilityPaylo
     throw new AppError(httpStatus.BAD_REQUEST, 'Invalid timezone.')
   }
 
+  // ?? format dates:
+  const formattedVacationStartDate = isVacationEnabled
+    ? moment.tz(vacationStartDate, timezone).startOf('day').toDate()
+    : null
+  const formattedVacationEndDate = isVacationEnabled
+    ? moment.tz(vacationEndDate, timezone).startOf('day').toDate()
+    : null
+
   const result = await Availability.create({
     user: user?._id,
     timezone,
     weeklySchedule: weeklySchedule as IWeeklySchedule,
     isVacationEnabled,
-    vacationStartDate: vacationStartDate!,
-    vacationEndDate: vacationEndDate!,
+    vacationStartDate: formattedVacationStartDate,
+    vacationEndDate: formattedVacationEndDate,
     vacationMessage: vacationMessage!,
 
     isQuickBookingEnabled,
@@ -72,14 +82,233 @@ const createAvailability = async (user: IUser, payload: TCreateAvailabilityPaylo
   return result
 }
 
-const updateAvailability = async (id: string, payload: TUpdateAvailabilityPayloadType) => {
-  const result = await Availability.findOneAndUpdate({ _id: id }, { $set: payload }, { new: true })
+const updateAvailability = async (user: IUser, payload: TUpdateAvailabilityPayloadType) => {
+  // ?? Check is there any scheduled for this user:
+  const existingScheduled = await Availability.findOne({
+    user: user?._id,
+  })
 
-  if (!result) {
+  if (!existingScheduled) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'You scheduled not found.')
+  }
+
+  const {
+    timezone,
+    weeklySchedule,
+
+    // ?? Vacation :
+    isVacationEnabled,
+    vacationStartDate,
+    vacationEndDate,
+    vacationMessage,
+
+    // ?? Quick Booking Settings:
+    isQuickBookingEnabled,
+    bufferTime,
+    minNotice,
+    maxBookingPerDay,
+
+    // ?? Recurring Setup:
+    repetitionType,
+  } = payload
+
+  // ?? If Time zone changed
+  if (timezone !== undefined) {
+    if (!isValidTimeZone(timezone)) {
+      throw new AppError(httpStatus.BAD_REQUEST, 'Invalid timezone.')
+    }
+
+    existingScheduled.timezone = timezone
+  }
+
+  // ?? Check weekly Schedule changed:
+  if (weeklySchedule) {
+    const newWeeklySchedule = weeklySchedule as IWeeklySchedule
+    // ?? Get existing schedule:
+    const existingWeeklySchedule = existingScheduled.weeklySchedule as IWeeklySchedule
+
+    /*
+     * TODO:
+     * 1. When working hours are reduced (startTime/endTime changed to a smaller
+     *    available time range), check whether any existing/future booking falls
+     *    within the removed/skipped time. If a booking exists in that period,
+     *    prevent the schedule update.
+     *
+     * 2. When break time is increased or moved, calculate the newly unavailable
+     *    break period and check whether any existing/future booking overlaps
+     *    with that period. If a booking exists during the newly added break time,
+     *    prevent the schedule update.
+     */
+
+    for (const [day, schedule] of Object.entries(newWeeklySchedule)) {
+      if (schedule.isWorkingDay) {
+        // ?? Existing day :
+        const existingDay = existingWeeklySchedule?.[day as TDay]
+
+        // ?? Map Data:
+        const startTime = schedule?.startTime ?? existingDay?.startTime
+        const endTime = schedule?.endTime ?? existingDay?.endTime
+        const breakStartTime =
+          schedule?.breakStartTime !== undefined
+            ? schedule?.breakStartTime
+            : existingDay?.breakStartTime
+        const breakEndTime =
+          schedule?.breakEndTime !== undefined ? schedule?.breakEndTime : existingDay?.breakEndTime
+
+        if (!startTime) {
+          throw new AppError(httpStatus.BAD_REQUEST, 'Start time is required')
+        }
+
+        if (!endTime) {
+          throw new AppError(httpStatus.BAD_REQUEST, 'End time is required')
+        }
+
+        if (startTime && endTime) {
+          const stTime = moment(startTime, 'HH:mm')
+          const edTime = moment(endTime, 'HH:mm')
+
+          // ?? Check is end date before start date?:
+          if (edTime.isSameOrBefore(stTime)) {
+            throw new AppError(httpStatus.BAD_REQUEST, 'Endtime should be after start time.')
+          }
+
+          if (breakStartTime && !breakEndTime) {
+            throw new AppError(
+              httpStatus.BAD_REQUEST,
+              'If breakStart time provided, break end time is required.'
+            )
+          }
+
+          if (breakEndTime && !breakStartTime) {
+            throw new AppError(
+              httpStatus.BAD_REQUEST,
+              'If breakEnd time is provided, break start time is required.'
+            )
+          }
+
+          if (breakStartTime && breakEndTime) {
+            const breakStTime = moment(breakStartTime, 'HH:mm', true)
+            const breakEdTime = moment(breakEndTime, 'HH:mm', true)
+
+            // Break start must be >= working start
+            if (breakStTime.isBefore(stTime)) {
+              throw new AppError(
+                httpStatus.BAD_REQUEST,
+                'Break start time should be at or after start time.'
+              )
+            }
+
+            // Break end must be <= working end
+            if (breakEdTime.isAfter(edTime)) {
+              throw new AppError(
+                httpStatus.BAD_REQUEST,
+                'Break end time should be at or before end time.'
+              )
+            }
+
+            // Break end must be after break start
+            if (breakEdTime.isSameOrBefore(breakStTime)) {
+              throw new AppError(
+                httpStatus.BAD_REQUEST,
+                'Break end time should be after break start time.'
+              )
+            }
+          }
+
+          existingWeeklySchedule[day as TDay] = {
+            isWorkingDay: true,
+            startTime,
+            endTime,
+            breakStartTime: breakStartTime ?? null,
+            breakEndTime: breakEndTime ?? null,
+          }
+        }
+      } else {
+        existingWeeklySchedule[day as TDay] = {
+          isWorkingDay: false,
+          startTime: null,
+          endTime: null,
+          breakStartTime: null,
+          breakEndTime: null,
+        }
+      }
+    }
+  }
+
+  const isFinalVacationEnabled =
+    isVacationEnabled !== undefined ? isVacationEnabled : existingScheduled.isVacationEnabled
+
+  if (isFinalVacationEnabled) {
+    existingScheduled.isVacationEnabled = true
+    existingScheduled.vacationMessage =
+      vacationMessage !== undefined
+        ? (vacationMessage as string)
+        : (existingScheduled.vacationMessage as string)
+    // ?? Check vacation start:
+    const vacationStDate =
+      vacationStartDate !== undefined ? vacationStartDate : existingScheduled.vacationStartDate
+    const vacationEdDate =
+      vacationEndDate !== undefined ? vacationEndDate : existingScheduled.vacationEndDate
+
+    if (!vacationStDate) {
+      throw new AppError(httpStatus.BAD_REQUEST, 'Vacation start date is required')
+    }
+
+    if (!vacationEdDate) {
+      throw new AppError(httpStatus.BAD_REQUEST, 'Vacation end date is required')
+    }
+
+    if (vacationStDate && vacationEdDate) {
+      const vStDate = moment.tz(vacationStDate, existingScheduled.timezone).startOf('day')
+      const vEdDate = moment.tz(vacationEdDate, existingScheduled.timezone).startOf('day')
+
+      // ?? Check is Vacation End after Vacation start?:
+      if (vEdDate.isSameOrBefore(vStDate)) {
+        throw new AppError(httpStatus.BAD_REQUEST, 'Vacation end date should be after ')
+      }
+
+      // ?? Start and end date difference should be one day at list:
+      if (vEdDate.diff(vStDate, 'days') < 1) {
+        throw new AppError(
+          httpStatus.BAD_REQUEST,
+          'Vacation end date must be at least one day after the start date.'
+        )
+      }
+
+      // TODO: Check has any bookings within this vacation timeframe:
+
+      existingScheduled.vacationStartDate = vStDate?.toDate()
+      existingScheduled.vacationEndDate = vEdDate?.toDate()
+    }
+  } else {
+    existingScheduled.isVacationEnabled = false
+    existingScheduled.vacationStartDate = null
+    existingScheduled.vacationEndDate = null
+    existingScheduled.vacationMessage = undefined
+  }
+
+  if (isQuickBookingEnabled !== undefined)
+    existingScheduled.isQuickBookingEnabled = isQuickBookingEnabled
+
+  if (bufferTime !== undefined) existingScheduled.bufferTime = bufferTime
+  if (minNotice !== undefined) existingScheduled.minNotice = minNotice
+  if (maxBookingPerDay !== undefined) {
+    // TODO: Retrieve all the bookings for that day, Check is already cross new maxBookingPerDay?
+
+    existingScheduled.maxBookingPerDay = maxBookingPerDay
+  }
+
+  if (repetitionType !== undefined) existingScheduled.repetitionType = repetitionType
+
+  if (!existingScheduled) {
     throw new AppError(httpStatus.NOT_FOUND, 'Availability not found')
   }
 
-  return result
+  await existingScheduled.save({
+    validateBeforeSave: true,
+  })
+
+  return existingScheduled
 }
 
 const getAllAvailability = async (query: TGetAllAvailabilityQueryParamsType) => {

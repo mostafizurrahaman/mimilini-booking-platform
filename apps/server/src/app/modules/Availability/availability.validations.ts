@@ -194,15 +194,29 @@ const createAvailabilitySchema = z.object({
           error: 'isQuickBookingEnabled should be true/false',
         })
         .default(true),
-      minNotice: requiredNumber('Minimum notice hours').min(0, {
-        error: 'Minimum notice cannot be negative',
-      }),
-      bufferTime: requiredNumber('Buffer time in minutes').min(0, {
-        error: 'Buffer time cannot be negative',
-      }),
-      maxBookingPerDay: positiveNumber('Maximum bookings per day').min(1, {
-        error: 'Max booking per day must be at least 1',
-      }),
+      minNotice: requiredNumber('Minimum notice hours')
+        .min(0, {
+          error: 'Minimum notice cannot be negative',
+        })
+        .max(120, {
+          error: 'Minimum notice cannot exceed 120 hours',
+        }),
+
+      bufferTime: requiredNumber('Buffer time in minutes')
+        .min(0, {
+          error: 'Buffer time cannot be negative',
+        })
+        .max(120, {
+          error: 'Buffer time cannot exceed 120 minutes',
+        }),
+
+      maxBookingPerDay: positiveNumber('Maximum bookings per day')
+        .min(1, {
+          error: 'Maximum bookings per day must be at least 1',
+        })
+        .max(100, {
+          error: 'Maximum bookings per day cannot exceed 100',
+        }),
 
       // Repetition Pattern
       repetitionType: enumString(repetitionTypeValues, 'Repetition type'),
@@ -387,9 +401,32 @@ const updateAvailabilitySchema = z.object({
           error: 'isQuickBookingEnabled must be true/false',
         })
         .optional(),
-      minNotice: optionalNumber('Minimum notice hours'),
-      bufferTime: optionalNumber('Buffer time in minutes'),
-      maxBookingPerDay: optionalNumber('Maximum bookings per day'),
+      minNotice: requiredNumber('Minimum notice hours')
+        .min(0, {
+          error: 'Minimum notice cannot be negative',
+        })
+        .max(120, {
+          error: 'Minimum notice cannot exceed 120 hours',
+        })
+        .optional(),
+
+      bufferTime: requiredNumber('Buffer time in minutes')
+        .min(0, {
+          error: 'Buffer time cannot be negative',
+        })
+        .max(120, {
+          error: 'Buffer time cannot exceed 120 minutes',
+        })
+        .optional(),
+
+      maxBookingPerDay: positiveNumber('Maximum bookings per day')
+        .min(1, {
+          error: 'Maximum bookings per day must be at least 1',
+        })
+        .max(100, {
+          error: 'Maximum bookings per day cannot exceed 100',
+        })
+        .optional(),
 
       // Repetition Pattern
       repetitionType: enumString(repetitionTypeValues, 'Repetition type').optional(),
@@ -423,6 +460,14 @@ const updateAvailabilitySchema = z.object({
             code: 'custom',
             path: ['vacationEndDate'],
             message: 'Vacation end date cannot be earlier than start date',
+          })
+        }
+
+        if (end.diff(start, 'days') < 1) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['vacationEndDate'],
+            message: 'Vacation end date must be at least one day after the start date.',
           })
         }
       }

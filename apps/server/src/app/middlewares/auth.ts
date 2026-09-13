@@ -52,7 +52,7 @@ export const auth = (...requiredRoles: TAuthRole[]) => {
       throw new AppError(httpStatus.FORBIDDEN, 'Your account is not active')
     }
 
-    // ?? TODO: Write the logic for verification status for artist user:
+    //  TODO: Write the logic for verification status for artist user:
 
     /**
      * 5. Token invalidation check

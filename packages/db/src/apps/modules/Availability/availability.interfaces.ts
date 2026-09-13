@@ -4,8 +4,8 @@ import type { TDay, TRepeatType } from './availability.constants'
 // ?? 1. IWorkingDay:
 export interface IWorkingDay {
   isWorkingDay: boolean
-  startTime?: string
-  endTime?: string
+  startTime?: string | null
+  endTime?: string | null
   breakStartTime?: string | null
   breakEndTime?: string | null
 }
@@ -21,9 +21,9 @@ export interface IAvailability {
   weeklySchedule: IWeeklySchedule
   // ?? Vacation fields:
   isVacationEnabled: boolean
-  vacationStartDate?: Date
-  vacationEndDate?: Date
-  vacationMessage?: string
+  vacationStartDate?: Date | null
+  vacationEndDate?: Date | null
+  vacationMessage?: string | undefined
 
   // ?? Is Quick booking enabled:
   isQuickBookingEnabled: boolean // If enable client can book without your approval.

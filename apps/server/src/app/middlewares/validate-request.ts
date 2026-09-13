@@ -3,7 +3,6 @@ import { catchAsync } from '@repo/shared'
 import type { ZodObject } from 'zod'
 
 export const validateRequest = (schema: ZodObject) => {
-  
   return catchAsync(async (req, res, next) => {
     logger.debug('Data before validation', {
       body: req.body,
