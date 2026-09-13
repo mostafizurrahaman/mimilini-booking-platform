@@ -23,7 +23,7 @@ const timeFormatRegex = /^([01]\d|2[0-3]):([0-5]\d)$/
 const workingDayValidationSchema = z
   .object(
     {
-      isWorkingDay: z.coerce.boolean({
+      isWorkingDay: z.boolean({
         error: 'isWorkingDay must be a true/false',
       }),
 
@@ -161,7 +161,7 @@ const workingDayValidationSchema = z
     }
   })
 
-// ২. মূল Create / Save Availability Schema
+// 1.  Create / Save Availability Schema
 const createAvailabilitySchema = z.object({
   body: z
     .object({
@@ -179,7 +179,7 @@ const createAvailabilitySchema = z.object({
       }),
 
       // Vacation Mode
-      isVacationEnabled: z.coerce
+      isVacationEnabled: z
         .boolean({
           error: 'isQuickBookingEnabled should be true/false',
         })
@@ -189,7 +189,7 @@ const createAvailabilitySchema = z.object({
       vacationMessage: optionalNullableString('Vacation message'),
 
       // Quick / Instant Booking
-      isQuickBookingEnabled: z.coerce
+      isQuickBookingEnabled: z
         .boolean({
           error: 'isQuickBookingEnabled should be true/false',
         })
@@ -241,11 +241,192 @@ const createAvailabilitySchema = z.object({
     }),
 })
 
+const updateWorkingDayValidationSchema = z
+  .object({
+    isWorkingDay: z
+      .boolean({
+        error: 'isWorkingDay must be a boolean (true/false)',
+      })
+      .optional(),
+
+    startTime: z
+      .string()
+      .regex(timeFormatRegex, {
+        error: 'Start time must be in HH:mm (24-hour) format',
+      })
+      .optional()
+      .nullable(),
+
+    endTime: z
+      .string()
+      .regex(timeFormatRegex, {
+        error: 'End time must be in HH:mm (24-hour) format',
+      })
+      .optional()
+      .nullable(),
+
+    breakStartTime: z
+      .string()
+      .regex(timeFormatRegex, {
+        error: 'Break start time must be in HH:mm (24-hour) format',
+      })
+      .optional()
+      .nullable(),
+
+    breakEndTime: z
+      .string()
+      .regex(timeFormatRegex, {
+        error: 'Break end time must be in HH:mm (24-hour) format',
+      })
+      .optional()
+      .nullable(),
+  })
+  .superRefine((data, ctx) => {
+    // If working day is false
+    if (data.isWorkingDay === false) return
+
+    // Start Time and End Time:
+    if (data.startTime && data.endTime) {
+      const startTime = moment(data.startTime, 'HH:mm')
+      const endTime = moment(data.endTime, 'HH:mm')
+
+      if (endTime.isSameOrBefore(startTime)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['endTime'],
+          message: 'End time must be after start time',
+        })
+      }
+    }
+
+    // Validate break start and end date
+    if (!data.breakStartTime && data.breakEndTime) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['breakStartTime'],
+        message: 'Break start time is required when break end time is provided',
+      })
+    }
+
+    if (data.breakStartTime && !data.breakEndTime) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['breakEndTime'],
+        message: 'Break end time is required when break start time is provided',
+      })
+    }
+
+    if (!data.breakStartTime || !data.breakEndTime) return
+
+    const breakStartTime = moment(data.breakStartTime, 'HH:mm')
+    const breakEndTime = moment(data.breakEndTime, 'HH:mm')
+
+    // Break end must be after break start
+    if (breakEndTime.isSameOrBefore(breakStartTime)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['breakEndTime'],
+        message: 'Break end time must be after break start time',
+      })
+    }
+
+    if (data.startTime && data.endTime) {
+      const startTime = moment(data.startTime, 'HH:mm')
+      const endTime = moment(data.endTime, 'HH:mm')
+
+      if (breakStartTime.isSameOrBefore(startTime) || breakStartTime.isSameOrAfter(endTime)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['breakStartTime'],
+          message: 'Break start time must be inside working hours',
+        })
+      }
+
+      if (breakEndTime.isSameOrBefore(startTime) || breakEndTime.isSameOrAfter(endTime)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['breakEndTime'],
+          message: 'Break end time must be inside working hours',
+        })
+      }
+    }
+  })
+
+// 2. Update Availability Schema:
 const updateAvailabilitySchema = z.object({
-  params: z.object({
-    id: requiredString('ID'),
-  }),
-  body: z.object({}),
+  body: z
+    .object({
+      timezone: optionalString('Timezone'),
+
+      // Weekly Schedule:
+      weeklySchedule: z
+        .object({
+          monday: updateWorkingDayValidationSchema.optional(),
+          tuesday: updateWorkingDayValidationSchema.optional(),
+          wednesday: updateWorkingDayValidationSchema.optional(),
+          thursday: updateWorkingDayValidationSchema.optional(),
+          friday: updateWorkingDayValidationSchema.optional(),
+          saturday: updateWorkingDayValidationSchema.optional(),
+          sunday: updateWorkingDayValidationSchema.optional(),
+        })
+        .optional(),
+
+      // Vacation Mode
+      isVacationEnabled: z
+        .boolean({
+          error: 'isVacationEnabled must be true/false',
+        })
+        .optional(),
+      vacationStartDate: optionalNullableDate('Vacation start date'),
+      vacationEndDate: optionalNullableDate('Vacation end date'),
+      vacationMessage: optionalNullableString('Vacation message'),
+
+      // Quick / Instant Booking
+      isQuickBookingEnabled: z
+        .boolean({
+          error: 'isQuickBookingEnabled must be true/false',
+        })
+        .optional(),
+      minNotice: optionalNumber('Minimum notice hours'),
+      bufferTime: optionalNumber('Buffer time in minutes'),
+      maxBookingPerDay: optionalNumber('Maximum bookings per day'),
+
+      // Repetition Pattern
+      repetitionType: enumString(repetitionTypeValues, 'Repetition type').optional(),
+    })
+    .superRefine((data, ctx) => {
+      // If validation mode is true:
+      if (data.isVacationEnabled === true) {
+        if (!data.vacationStartDate) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['vacationStartDate'],
+            message: 'Vacation start date is required when enabling vacation mode',
+          })
+        }
+        if (!data.vacationEndDate) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['vacationEndDate'],
+            message: 'Vacation end date is required when enabling vacation mode',
+          })
+        }
+      }
+
+      // ??
+      if (data.vacationStartDate && data.vacationEndDate) {
+        const start = moment(data.vacationStartDate).startOf('day')
+        const end = moment(data.vacationEndDate).startOf('day')
+
+        if (end.isBefore(start)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['vacationEndDate'],
+            message: 'Vacation end date cannot be earlier than start date',
+          })
+        }
+      }
+    }),
 })
 
 const getAllAvailabilitySchema = z.object({

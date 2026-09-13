@@ -15,7 +15,7 @@ router.post(
 )
 
 router.patch(
-  '/:id',
+  '/',
   validateRequest(availabilityValidations.updateAvailabilitySchema),
   availabilityControllers.updateAvailability
 )
