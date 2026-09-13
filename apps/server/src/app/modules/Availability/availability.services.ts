@@ -115,7 +115,7 @@ const updateAvailability = async (user: IUser, payload: TUpdateAvailabilityPaylo
   if (weeklySchedule) {
     const newWeeklySchedule = weeklySchedule as IWeeklySchedule
     const existingWeeklySchedule = existingScheduled.weeklySchedule as IWeeklySchedule
-/*
+    /*
      * TODO:
      * 1. When working hours are reduced (startTime/endTime changed to a smaller
      *    available time range), check whether any existing/future booking falls
@@ -247,12 +247,14 @@ const updateAvailability = async (user: IUser, payload: TUpdateAvailabilityPaylo
     existingScheduled.vacationStartDate = vStDate.toDate()
     existingScheduled.vacationEndDate = vEdDate.toDate()
     existingScheduled.vacationMessage =
-      vacationMessage !== undefined ? vacationMessage as string : existingScheduled.vacationMessage as string
+      vacationMessage !== undefined
+        ? (vacationMessage as string)
+        : (existingScheduled.vacationMessage as string)
   } else {
     existingScheduled.isVacationEnabled = false
     existingScheduled.vacationStartDate = null
     existingScheduled.vacationEndDate = null
-    existingScheduled.vacationMessage = undefined
+    existingScheduled.vacationMessage = null
   }
 
   // Other settings

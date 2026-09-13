@@ -464,41 +464,25 @@ const updateAvailabilitySchema = z.object({
     .superRefine((data, ctx) => {
       // If validation mode is true:
       if (data.isVacationEnabled === true) {
-        if (!data.vacationStartDate) {
-          ctx.addIssue({
-            code: 'custom',
-            path: ['vacationStartDate'],
-            message: 'Vacation start date is required when enabling vacation mode',
-          })
-        }
-        if (!data.vacationEndDate) {
-          ctx.addIssue({
-            code: 'custom',
-            path: ['vacationEndDate'],
-            message: 'Vacation end date is required when enabling vacation mode',
-          })
-        }
-      }
+        if (data.vacationStartDate && data.vacationEndDate) {
+          const start = moment(data.vacationStartDate).startOf('day')
+          const end = moment(data.vacationEndDate).startOf('day')
 
-      // ??
-      if (data.vacationStartDate && data.vacationEndDate) {
-        const start = moment(data.vacationStartDate).startOf('day')
-        const end = moment(data.vacationEndDate).startOf('day')
+          if (end.isBefore(start)) {
+            ctx.addIssue({
+              code: 'custom',
+              path: ['vacationEndDate'],
+              message: 'Vacation end date cannot be earlier than start date',
+            })
+          }
 
-        if (end.isBefore(start)) {
-          ctx.addIssue({
-            code: 'custom',
-            path: ['vacationEndDate'],
-            message: 'Vacation end date cannot be earlier than start date',
-          })
-        }
-
-        if (end.diff(start, 'days') < 1) {
-          ctx.addIssue({
-            code: 'custom',
-            path: ['vacationEndDate'],
-            message: 'Vacation end date must be at least one day after the start date.',
-          })
+          if (end.diff(start, 'days') < 1) {
+            ctx.addIssue({
+              code: 'custom',
+              path: ['vacationEndDate'],
+              message: 'Vacation end date must be at least one day after the start date.',
+            })
+          }
         }
       }
     }),

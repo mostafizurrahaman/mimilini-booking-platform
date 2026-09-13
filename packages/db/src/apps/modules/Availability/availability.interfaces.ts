@@ -23,7 +23,7 @@ export interface IAvailability {
   isVacationEnabled: boolean
   vacationStartDate?: Date | null
   vacationEndDate?: Date | null
-  vacationMessage?: string | undefined
+  vacationMessage?: string | undefined | null
 
   // ?? Is Quick booking enabled:
   isQuickBookingEnabled: boolean // If enable client can book without your approval.
