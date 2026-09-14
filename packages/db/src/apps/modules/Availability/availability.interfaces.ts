@@ -1,13 +1,18 @@
 import { Document, Types } from 'mongoose'
 import type { TDay, TRepeatType } from './availability.constants'
 
+export interface IBreakTime {
+  title: string | null
+  startTime: string | null
+  endTime: string | null
+}
+
 // ?? 1. IWorkingDay:
 export interface IWorkingDay {
   isWorkingDay: boolean
   startTime?: string | null
   endTime?: string | null
-  breakStartTime?: string | null
-  breakEndTime?: string | null
+  breakTimes: IBreakTime[]
 }
 
 // ? 2. Weekly Schedule:

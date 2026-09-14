@@ -15,9 +15,85 @@ import {
 } from '@repo/shared'
 import { availabilitySortableFields, repetitionTypeValues } from '@repo/db'
 import moment from 'moment-timezone'
+import { getInvalidBreakTimeIssues, type TBreakTimeInput } from './availability.utils'
 
 // Validate 24 hours format:
 const timeFormatRegex = /^([01]\d|2[0-3]):([0-5]\d)$/
+
+const applyBreakTimesRules = (
+  data: {
+    isWorkingDay?: boolean | undefined
+    startTime?: string | null | undefined
+    endTime?: string | null | undefined
+    breakTimes?: TBreakTimeInput[] | undefined
+  },
+  ctx: z.RefinementCtx
+) => {
+  if (data.isWorkingDay === false && data.breakTimes && data.breakTimes.length > 0) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['breakTimes'],
+      message: 'Break times are not allowed on a non-working day',
+    })
+    return
+  }
+
+  if (!data.breakTimes?.length) return
+
+  const issues = getInvalidBreakTimeIssues(data.breakTimes, data.startTime, data.endTime)
+
+  for (const issue of issues) {
+    ctx.addIssue({
+      code: 'custom',
+      path: issue.path,
+      message: issue.message,
+    })
+  }
+}
+
+// 1. Working Day BreakTime Validation Schema:
+const breakTimeSchema = z
+  .object({
+    title: z
+      .string({ error: 'Title must be a string' })
+      .trim()
+      .optional()
+      .nullable(),
+    startTime: z.string().regex(timeFormatRegex, {
+      error: 'Break start time must be in HH:mm (24-hour) format',
+    }),
+    endTime: z.string().regex(timeFormatRegex, {
+      error: 'Break end time must be in HH:mm (24-hour) format',
+    }),
+  })
+  .superRefine((data, ctx) => {
+    const startTime = moment(data.startTime, 'HH:mm', true)
+    const endTime = moment(data.endTime, 'HH:mm', true)
+
+    if (!startTime.isValid()) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['startTime'],
+        message: 'Break start time format should be HH:mm.',
+      })
+    }
+
+    if (!endTime.isValid()) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['endTime'],
+        message: 'Break end time format should be HH:mm.',
+      })
+    }
+
+    if (startTime.isValid() && endTime.isValid() && endTime.isSameOrBefore(startTime)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['endTime'],
+        message: 'Break end time must be after break start time',
+      })
+    }
+  })
 
 // 1. Working Day validation Schema:
 const workingDayValidationSchema = z
@@ -42,22 +118,15 @@ const workingDayValidationSchema = z
         })
         .optional()
         .nullable(),
-
-      breakStartTime: z
-        .string()
-        .regex(timeFormatRegex, {
-          error: 'Break start time must be in HH:mm (24-hour) format',
+      breakTimes: z
+        .array(breakTimeSchema, {
+          error: 'Break times should be an array.',
+        })
+        .max(10, {
+          error: 'You cannot add more than 10 breaks in a day',
         })
         .optional()
-        .nullable(),
-
-      breakEndTime: z
-        .string()
-        .regex(timeFormatRegex, {
-          error: 'Break end time must be in HH:mm (24-hour) format',
-        })
-        .optional()
-        .nullable(),
+        .default([]),
     },
     {
       error: (issue) => {
@@ -78,7 +147,10 @@ const workingDayValidationSchema = z
   .superRefine((data, ctx) => {
     // If the day is not a working day,
     // no time validation is required.
-    if (!data.isWorkingDay) return
+    if (!data.isWorkingDay) {
+      applyBreakTimesRules(data, ctx)
+      return
+    }
 
     // Working day requires start and end time
     if (!data.startTime) {
@@ -99,11 +171,26 @@ const workingDayValidationSchema = z
 
     if (!data.startTime || !data.endTime) return
 
-    const startTime = moment(data.startTime, 'HH:mm')
-    const endTime = moment(data.endTime, 'HH:mm')
+    const startTime = moment(data.startTime, 'HH:mm', true)
+    const endTime = moment(data.endTime, 'HH:mm', true)
 
-    // Start time must be before end time
-    if (endTime.isSameOrBefore(startTime)) {
+    if (!startTime.isValid()) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['startTime'],
+        message: 'Start time must be in HH:mm (24-hour) format',
+      })
+    }
+
+    if (!endTime.isValid()) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['endTime'],
+        message: 'End time must be in HH:mm (24-hour) format',
+      })
+    }
+
+    if (startTime.isValid() && endTime.isValid() && endTime.isSameOrBefore(startTime)) {
       ctx.addIssue({
         code: 'custom',
         path: ['endTime'],
@@ -111,54 +198,7 @@ const workingDayValidationSchema = z
       })
     }
 
-    // Break start and break end must be provided together
-    if (!data.breakStartTime && data.breakEndTime) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['breakStartTime'],
-        message: 'Break start time is required when break end time is provided',
-      })
-    }
-
-    if (data.breakStartTime && !data.breakEndTime) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['breakEndTime'],
-        message: 'Break end time is required when break start time is provided',
-      })
-    }
-
-    if (!data.breakStartTime || !data.breakEndTime) return
-
-    const breakStartTime = moment(data.breakStartTime, 'HH:mm')
-    const breakEndTime = moment(data.breakEndTime, 'HH:mm')
-
-    // Break end must be after break start
-    if (breakEndTime.isSameOrBefore(breakStartTime)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['breakEndTime'],
-        message: 'Break end time must be after break start time',
-      })
-    }
-
-    // Break start must be inside working hours
-    if (!breakStartTime.isBetween(startTime, endTime)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['breakStartTime'],
-        message: 'Break start time must be between start time and end time',
-      })
-    }
-
-    // Break end must be inside working hours
-    if (!breakEndTime.isBetween(startTime, endTime)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['breakEndTime'],
-        message: 'Break end time must be between start time and end time',
-      })
-    }
+    applyBreakTimesRules(data, ctx)
   })
 
 // 1.  Create / Save Availability Schema
@@ -309,32 +349,26 @@ const updateWorkingDayValidationSchema = z
       .optional()
       .nullable(),
 
-    breakStartTime: z
-      .string()
-      .regex(timeFormatRegex, {
-        error: 'Break start time must be in HH:mm (24-hour) format',
+    breakTimes: z
+      .array(breakTimeSchema, {
+        error: 'Break times should be an array.',
       })
-      .optional()
-      .nullable(),
-
-    breakEndTime: z
-      .string()
-      .regex(timeFormatRegex, {
-        error: 'Break end time must be in HH:mm (24-hour) format',
+      .max(10, {
+        error: 'You cannot add more than 10 breaks in a day',
       })
-      .optional()
-      .nullable(),
+      .optional(),
   })
   .superRefine((data, ctx) => {
-    // If working day is false
-    if (data.isWorkingDay === false) return
+    if (data.isWorkingDay === false) {
+      applyBreakTimesRules(data, ctx)
+      return
+    }
 
-    // Start Time and End Time:
     if (data.startTime && data.endTime) {
-      const startTime = moment(data.startTime, 'HH:mm')
-      const endTime = moment(data.endTime, 'HH:mm')
+      const startTime = moment(data.startTime, 'HH:mm', true)
+      const endTime = moment(data.endTime, 'HH:mm', true)
 
-      if (endTime.isSameOrBefore(startTime)) {
+      if (startTime.isValid() && endTime.isValid() && endTime.isSameOrBefore(startTime)) {
         ctx.addIssue({
           code: 'custom',
           path: ['endTime'],
@@ -343,57 +377,7 @@ const updateWorkingDayValidationSchema = z
       }
     }
 
-    // Validate break start and end date
-    if (!data.breakStartTime && data.breakEndTime) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['breakStartTime'],
-        message: 'Break start time is required when break end time is provided',
-      })
-    }
-
-    if (data.breakStartTime && !data.breakEndTime) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['breakEndTime'],
-        message: 'Break end time is required when break start time is provided',
-      })
-    }
-
-    if (!data.breakStartTime || !data.breakEndTime) return
-
-    const breakStartTime = moment(data.breakStartTime, 'HH:mm')
-    const breakEndTime = moment(data.breakEndTime, 'HH:mm')
-
-    // Break end must be after break start
-    if (breakEndTime.isSameOrBefore(breakStartTime)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['breakEndTime'],
-        message: 'Break end time must be after break start time',
-      })
-    }
-
-    if (data.startTime && data.endTime) {
-      const startTime = moment(data.startTime, 'HH:mm')
-      const endTime = moment(data.endTime, 'HH:mm')
-
-      if (breakStartTime.isSameOrBefore(startTime) || breakStartTime.isSameOrAfter(endTime)) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['breakStartTime'],
-          message: 'Break start time must be inside working hours',
-        })
-      }
-
-      if (breakEndTime.isSameOrBefore(startTime) || breakEndTime.isSameOrAfter(endTime)) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['breakEndTime'],
-          message: 'Break end time must be inside working hours',
-        })
-      }
-    }
+    applyBreakTimesRules(data, ctx)
   })
 
 // 2. Update Availability Schema:

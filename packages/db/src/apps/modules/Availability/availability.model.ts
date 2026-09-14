@@ -1,14 +1,33 @@
 import { Schema, model } from 'mongoose'
-import type { IAvailabilityDoc, IWorkingDay } from './availability.interfaces'
+import type { IAvailabilityDoc, IBreakTime, IWorkingDay } from './availability.interfaces'
 import { REPETITION_TYPES, repetitionTypeValues } from './availability.constants'
 
-const createDefaultDay = (isWorking = true, start = '09:00', end = '18:00'): IWorkingDay => ({
+const createDefaultDay = (isWorking = false, start = null, end = null): IWorkingDay => ({
   isWorkingDay: isWorking,
   startTime: start,
   endTime: end,
-  breakStartTime: null,
-  breakEndTime: null,
+  breakTimes: [],
 })
+
+const breakTimeSchema = new Schema<IBreakTime>(
+  {
+    title: {
+      type: String,
+      default: null,
+    },
+    startTime: {
+      type: String,
+      default: null,
+    },
+    endTime: {
+      type: String,
+      default: null,
+    },
+  },
+  {
+    _id: false,
+  }
+)
 
 // Working Day Schema:
 const workingDaySchema = new Schema<IWorkingDay>(
@@ -26,13 +45,9 @@ const workingDaySchema = new Schema<IWorkingDay>(
       type: String,
       default: '18:00',
     },
-    breakStartTime: {
-      type: String,
-      default: null,
-    },
-    breakEndTime: {
-      type: String,
-      default: null,
+    breakTimes: {
+      type: [breakTimeSchema],
+      default: [],
     },
   },
   {

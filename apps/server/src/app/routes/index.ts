@@ -1,3 +1,4 @@
+import { artistBlockedDateRoutes } from '@app/modules/ArtistBlockedDate/artist-blocked-date.routes'
 import { artistProfileRoutes } from '@app/modules/ArtistProfile/artist-profile.routes'
 import { authRoutes } from '@app/modules/Auth/user.routes'
 import { availabilityRoutes } from '@app/modules/Availability/availability.routes'
@@ -48,6 +49,10 @@ const routes = [
   {
     path: '/schedules',
     route: availabilityRoutes,
+  },
+  {
+    path: '/blocked-dates',
+    route: artistBlockedDateRoutes,
   },
 ]
 

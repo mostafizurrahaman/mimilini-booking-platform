@@ -15,6 +15,11 @@ import type {
   TGetAllAvailabilityQueryParamsType,
 } from './availability.validations'
 import moment from 'moment-timezone'
+import {
+  getBreakTimesValidationError,
+  normalizeBreakTimes,
+  normalizeWorkingDay,
+} from './availability.utils'
 
 const createAvailability = async (user: IUser, payload: TCreateAvailabilityPayloadType) => {
   const {
@@ -63,10 +68,35 @@ const createAvailability = async (user: IUser, payload: TCreateAvailabilityPaylo
     ? moment.tz(vacationEndDate, timezone).startOf('day').toDate()
     : null
 
+  const normalizedWeeklySchedule = Object.fromEntries(
+    Object.entries(weeklySchedule).map(([day, schedule]) => {
+      const normalizedDay = normalizeWorkingDay({
+        isWorkingDay: schedule.isWorkingDay,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime,
+        breakTimes: schedule.breakTimes,
+      })
+
+      if (normalizedDay.isWorkingDay && normalizedDay.startTime && normalizedDay.endTime) {
+        const breakTimesError = getBreakTimesValidationError(
+          normalizedDay.breakTimes,
+          normalizedDay.startTime,
+          normalizedDay.endTime
+        )
+
+        if (breakTimesError) {
+          throw new AppError(httpStatus.BAD_REQUEST, breakTimesError)
+        }
+      }
+
+      return [day, normalizedDay]
+    })
+  ) as IWeeklySchedule
+
   const result = await Availability.create({
     user: user?._id,
     timezone,
-    weeklySchedule: weeklySchedule as IWeeklySchedule,
+    weeklySchedule: normalizedWeeklySchedule,
     isVacationEnabled,
     vacationStartDate: formattedVacationStartDate,
     vacationEndDate: formattedVacationEndDate,
@@ -113,7 +143,7 @@ const updateAvailability = async (user: IUser, payload: TUpdateAvailabilityPaylo
 
   // Weekly Schedule update
   if (weeklySchedule) {
-    const newWeeklySchedule = weeklySchedule as IWeeklySchedule
+    const newWeeklySchedule = weeklySchedule
     const existingWeeklySchedule = existingScheduled.weeklySchedule as IWeeklySchedule
     /*
      * TODO:
@@ -128,92 +158,54 @@ const updateAvailability = async (user: IUser, payload: TUpdateAvailabilityPaylo
      *    prevent the schedule update.
      */
     for (const [day, schedule] of Object.entries(newWeeklySchedule)) {
+      if (!schedule) continue
+
       const dayKey = day as TDay
       const existingDay = existingWeeklySchedule?.[dayKey]
+      const isWorkingDay = schedule.isWorkingDay ?? existingDay?.isWorkingDay ?? false
 
-      if (schedule.isWorkingDay) {
-        const startTime = schedule?.startTime ?? existingDay?.startTime
-        const endTime = schedule?.endTime ?? existingDay?.endTime
-
-        if (!startTime || !endTime) {
-          throw new AppError(httpStatus.BAD_REQUEST, 'Both start time and end time are required.')
-        }
-
-        const stTime = moment(startTime, 'HH:mm', true)
-        const edTime = moment(endTime, 'HH:mm', true)
-
-        if (!stTime.isValid() || !edTime.isValid()) {
-          throw new AppError(httpStatus.BAD_REQUEST, 'Invalid time format. Use HH:mm.')
-        }
-
-        if (edTime.isSameOrBefore(stTime)) {
-          throw new AppError(httpStatus.BAD_REQUEST, 'End time must be after start time.')
-        }
-
-        // Break time handling
-        const breakStartTime =
-          schedule?.breakStartTime !== undefined
-            ? schedule.breakStartTime
-            : existingDay?.breakStartTime
-        const breakEndTime =
-          schedule?.breakEndTime !== undefined ? schedule.breakEndTime : existingDay?.breakEndTime
-
-        const hasBreakStart = Boolean(breakStartTime)
-        const hasBreakEnd = Boolean(breakEndTime)
-
-        if (hasBreakStart !== hasBreakEnd) {
-          throw new AppError(
-            httpStatus.BAD_REQUEST,
-            'Both break start time and break end time must be provided together.'
-          )
-        }
-
-        if (breakStartTime && breakEndTime) {
-          const breakStTime = moment(breakStartTime, 'HH:mm', true)
-          const breakEdTime = moment(breakEndTime, 'HH:mm', true)
-
-          if (!breakStTime.isValid() || !breakEdTime.isValid()) {
-            throw new AppError(httpStatus.BAD_REQUEST, 'Invalid break time format. Use HH:mm.')
-          }
-
-          if (breakStTime.isBefore(stTime)) {
-            throw new AppError(
-              httpStatus.BAD_REQUEST,
-              'Break start time must be at or after start time.'
-            )
-          }
-
-          if (breakEdTime.isAfter(edTime)) {
-            throw new AppError(
-              httpStatus.BAD_REQUEST,
-              'Break end time must be at or before end time.'
-            )
-          }
-
-          if (breakEdTime.isSameOrBefore(breakStTime)) {
-            throw new AppError(
-              httpStatus.BAD_REQUEST,
-              'Break end time must be after break start time.'
-            )
-          }
-        }
-
-        existingWeeklySchedule[dayKey] = {
-          isWorkingDay: true,
-          startTime,
-          endTime,
-          breakStartTime: breakStartTime ?? null,
-          breakEndTime: breakEndTime ?? null,
-        }
-      } else {
-        existingWeeklySchedule[dayKey] = {
+      if (!isWorkingDay) {
+        existingWeeklySchedule[dayKey] = normalizeWorkingDay({
           isWorkingDay: false,
-          startTime: null,
-          endTime: null,
-          breakStartTime: null,
-          breakEndTime: null,
-        }
+        })
+        continue
       }
+
+      const startTime =
+        schedule.startTime !== undefined ? schedule.startTime : existingDay?.startTime
+      const endTime = schedule.endTime !== undefined ? schedule.endTime : existingDay?.endTime
+
+      if (!startTime || !endTime) {
+        throw new AppError(httpStatus.BAD_REQUEST, 'Both start time and end time are required.')
+      }
+
+      const stTime = moment(startTime, 'HH:mm', true)
+      const edTime = moment(endTime, 'HH:mm', true)
+
+      if (!stTime.isValid() || !edTime.isValid()) {
+        throw new AppError(httpStatus.BAD_REQUEST, 'Invalid time format. Use HH:mm.')
+      }
+
+      if (edTime.isSameOrBefore(stTime)) {
+        throw new AppError(httpStatus.BAD_REQUEST, 'End time must be after start time.')
+      }
+
+      const breakTimes =
+        schedule.breakTimes !== undefined
+          ? normalizeBreakTimes(schedule.breakTimes)
+          : (existingDay?.breakTimes ?? [])
+
+      const breakTimesError = getBreakTimesValidationError(breakTimes, startTime, endTime)
+      if (breakTimesError) {
+        throw new AppError(httpStatus.BAD_REQUEST, breakTimesError)
+      }
+
+      existingWeeklySchedule[dayKey] = normalizeWorkingDay({
+        isWorkingDay: true,
+        startTime,
+        endTime,
+        breakTimes,
+      })
     }
 
     existingScheduled.markModified('weeklySchedule')

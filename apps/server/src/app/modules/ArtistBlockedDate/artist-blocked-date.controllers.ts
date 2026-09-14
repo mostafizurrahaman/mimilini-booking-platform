@@ -1,9 +1,11 @@
 import { catchAsync, sendResponse } from '@repo/shared'
 import httpStatus from 'http-status'
 import { artistBlockedDateServices } from './artist-blocked-date.services'
+import { getUserFromRequest } from '@app/libs'
 
 const createArtistBlockedDate = catchAsync(async (req, res) => {
-  const result = await artistBlockedDateServices.createArtistBlockedDate(req.body)
+  const user = await getUserFromRequest(req)
+  const result = await artistBlockedDateServices.createArtistBlockedDate(user, req.body)
 
   sendResponse(res, {
     success: true,
@@ -14,7 +16,12 @@ const createArtistBlockedDate = catchAsync(async (req, res) => {
 })
 
 const updateArtistBlockedDate = catchAsync(async (req, res) => {
-  const result = await artistBlockedDateServices.updateArtistBlockedDate(req.params.id as string, req.body)
+  const user = await getUserFromRequest(req)
+  const result = await artistBlockedDateServices.updateArtistBlockedDate(
+    user,
+    req.params.id as string,
+    req.body
+  )
 
   sendResponse(res, {
     success: true,
@@ -26,6 +33,22 @@ const updateArtistBlockedDate = catchAsync(async (req, res) => {
 
 const getAllArtistBlockedDate = catchAsync(async (req, res) => {
   const result = await artistBlockedDateServices.getAllArtistBlockedDate(req.query)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'The artist blocked date retrieved successfully!',
+    data: result.data,
+    meta: result.meta,
+  })
+})
+
+const getMyArtistBlockedDate = catchAsync(async (req, res) => {
+  const user = await getUserFromRequest(req)
+  const result = await artistBlockedDateServices.getAllArtistBlockedDate({
+    ...req.query,
+    user: String(user._id),
+  })
 
   sendResponse(res, {
     success: true,
@@ -48,7 +71,11 @@ const getArtistBlockedDateById = catchAsync(async (req, res) => {
 })
 
 const deleteArtistBlockedDateById = catchAsync(async (req, res) => {
-  const result = await artistBlockedDateServices.deleteArtistBlockedDateById(req.params.id as string)
+  const user = await getUserFromRequest(req)
+  const result = await artistBlockedDateServices.deleteArtistBlockedDateById(
+    user,
+    req.params.id as string
+  )
 
   sendResponse(res, {
     success: true,
@@ -62,6 +89,7 @@ export const artistBlockedDateControllers = {
   createArtistBlockedDate,
   updateArtistBlockedDate,
   getAllArtistBlockedDate,
+  getMyArtistBlockedDate,
   getArtistBlockedDateById,
-  deleteArtistBlockedDateById
+  deleteArtistBlockedDateById,
 }

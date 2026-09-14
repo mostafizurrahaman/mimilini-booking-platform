@@ -1,0 +1,213 @@
+{
+  "info": {
+    "_postman_id": "a1c4e8b2-7d31-4f6a-9b20-blocked-dates-api",
+    "name": "Artist Blocked Dates",
+    "description": "Artist blocked-date APIs. Dates are stored as YYYY-MM-DD.\n\nSet `baseUrl` (example: `http://localhost:5000/api/v1`) and `accessToken` (artist JWT).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api/v1"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "blockedDateId",
+      "value": ""
+    },
+    {
+      "key": "artistUserId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Create blocked date (single)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 201) {",
+              "  const json = pm.response.json();",
+              "  const data = json.data;",
+              "  const id = Array.isArray(data) ? data[0]?._id : data?._id;",
+              "  if (id) pm.collectionVariables.set('blockedDateId', id);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"date\": \"2026-10-01\",\n  \"reason\": \"holiday\",\n  \"note\": \"Family trip\"\n}"
+        },
+        "url": "{{baseUrl}}/blocked-dates",
+        "description": "Artist only. `reason`: holiday | personal_work | medical_leave | private_event | other. If reason is `other`, `note` is required. Past dates are rejected."
+      }
+    },
+    {
+      "name": "Create blocked dates (multiple)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 201) {",
+              "  const json = pm.response.json();",
+              "  const data = json.data;",
+              "  const first = Array.isArray(data) ? data[0] : data;",
+              "  if (first?._id) pm.collectionVariables.set('blockedDateId', first._id);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"dates\": [\"2026-10-02\", \"2026-10-03\", \"2026-10-04\"],\n  \"reason\": \"personal_work\",\n  \"note\": \"Private bookings closed\"\n}"
+        },
+        "url": "{{baseUrl}}/blocked-dates",
+        "description": "Creates one document per date. Duplicate dates for the same artist return 409."
+      }
+    },
+    {
+      "name": "Create blocked date (reason other)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"date\": \"2026-10-10\",\n  \"reason\": \"other\",\n  \"note\": \"Studio renovation\"\n}"
+        },
+        "url": "{{baseUrl}}/blocked-dates"
+      }
+    },
+    {
+      "name": "Get my blocked dates",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/blocked-dates?page=1&limit=20&sortBy=date&sortOrder=asc&fromDate=2026-10-01&toDate=2026-10-31&skipPagination=false",
+          "host": ["{{baseUrl}}"],
+          "path": ["blocked-dates"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" },
+            { "key": "sortBy", "value": "date" },
+            { "key": "sortOrder", "value": "asc" },
+            { "key": "fromDate", "value": "2026-10-01" },
+            { "key": "toDate", "value": "2026-10-31" },
+            { "key": "reason", "value": "", "disabled": true },
+            { "key": "searchTerm", "value": "", "disabled": true },
+            { "key": "skipPagination", "value": "false" }
+          ]
+        },
+        "description": "Artist only. Returns the logged-in artist's blocked dates."
+      }
+    },
+    {
+      "name": "Get all blocked dates",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/blocked-dates/all?page=1&limit=20&sortBy=date&sortOrder=asc&user={{artistUserId}}&fromDate=2026-10-01&toDate=2026-10-31",
+          "host": ["{{baseUrl}}"],
+          "path": ["blocked-dates", "all"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" },
+            { "key": "sortBy", "value": "date" },
+            { "key": "sortOrder", "value": "asc" },
+            { "key": "user", "value": "{{artistUserId}}" },
+            { "key": "fromDate", "value": "2026-10-01" },
+            { "key": "toDate", "value": "2026-10-31" },
+            { "key": "reason", "value": "holiday", "disabled": true },
+            { "key": "searchTerm", "value": "", "disabled": true },
+            { "key": "skipPagination", "value": "true", "disabled": true }
+          ]
+        },
+        "description": "Public. Use `user` to load one artist's calendar. `skipPagination=true` returns the full list."
+      }
+    },
+    {
+      "name": "Get blocked date by id",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/blocked-dates/{{blockedDateId}}"
+      }
+    },
+    {
+      "name": "Update blocked date",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"date\": \"2026-10-05\",\n  \"reason\": \"medical_leave\",\n  \"note\": \"Doctor appointment\"\n}"
+        },
+        "url": "{{baseUrl}}/blocked-dates/{{blockedDateId}}",
+        "description": "Artist/admin. Past blocked dates cannot be updated."
+      }
+    },
+    {
+      "name": "Delete blocked date",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": "{{baseUrl}}/blocked-dates/{{blockedDateId}}",
+        "description": "Artist/admin. Past blocked dates cannot be deleted."
+      }
+    }
+  ]
+}
