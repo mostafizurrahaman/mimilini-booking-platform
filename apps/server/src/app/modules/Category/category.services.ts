@@ -186,7 +186,7 @@ const getCategoryById = async (id: string) => {
 const deleteCategoryById = async (id: string) => {
   const result = await Category.findOneAndDelete({ _id: id })
 
-  // ?? Todo: Has to check is this category used any where else:
+  // Todo: Has to check is this category used any where else:
 
   if (!result) {
     throw new AppError(httpStatus.NOT_FOUND, 'Category not found')

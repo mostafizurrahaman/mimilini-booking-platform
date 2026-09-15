@@ -16,6 +16,7 @@ router.post(
 
 router.patch(
   '/',
+  auth(AuthRoles.ARTIST),
   validateRequest(availabilityValidations.updateAvailabilitySchema),
   availabilityControllers.updateAvailability
 )

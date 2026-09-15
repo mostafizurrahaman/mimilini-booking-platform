@@ -1,13 +1,18 @@
 import { Document, Types } from 'mongoose'
 import type { TDay, TRepeatType } from './availability.constants'
 
+export interface IBreakTime {
+  title: string | null
+  startTime: string | null
+  endTime: string | null
+}
+
 // ?? 1. IWorkingDay:
 export interface IWorkingDay {
   isWorkingDay: boolean
-  startTime?: string
-  endTime?: string
-  breakStartTime?: string | null
-  breakEndTime?: string | null
+  startTime?: string | null
+  endTime?: string | null
+  breakTimes: IBreakTime[]
 }
 
 // ? 2. Weekly Schedule:
@@ -21,9 +26,9 @@ export interface IAvailability {
   weeklySchedule: IWeeklySchedule
   // ?? Vacation fields:
   isVacationEnabled: boolean
-  vacationStartDate?: Date
-  vacationEndDate?: Date
-  vacationMessage?: string
+  vacationStartDate?: Date | null
+  vacationEndDate?: Date | null
+  vacationMessage?: string | undefined | null
 
   // ?? Is Quick booking enabled:
   isQuickBookingEnabled: boolean // If enable client can book without your approval.

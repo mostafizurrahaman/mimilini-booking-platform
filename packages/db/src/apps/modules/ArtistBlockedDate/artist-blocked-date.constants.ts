@@ -10,11 +10,10 @@ export type TBlockedDateType = (typeof BLOCKED_DATE_TYPES)[keyof typeof BLOCKED_
 
 export const blockedDateTypeValues = Object.values(BLOCKED_DATE_TYPES)
 
-export const artistBlockedDateSearchableFields = ['name'] as const
+export const artistBlockedDateSearchableFields = ['reason', 'note'] as const
 
-export const artistBlockedDateSortableFields = ['createdAt', 'updatedAt'] as const
+export const artistBlockedDateSortableFields = ['createdAt', 'updatedAt', 'date'] as const
 
-// Types (optional but recommended)
 export type TArtistBlockedDateSearchableField = (typeof artistBlockedDateSearchableFields)[number]
 
 export type TArtistBlockedDateSortableField = (typeof artistBlockedDateSortableFields)[number]

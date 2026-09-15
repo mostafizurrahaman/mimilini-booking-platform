@@ -8,10 +8,12 @@ const artistBlockedDateSchema = new Schema<IArtistBlockedDateDoc>(
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: true,
+      index: true,
     },
     date: {
-      type: Date,
+      type: String,
       required: true,
+      match: [/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format'],
     },
     reason: {
       type: String,
@@ -28,10 +30,7 @@ const artistBlockedDateSchema = new Schema<IArtistBlockedDateDoc>(
   }
 )
 
-// Static method
-// artistBlockedDateSchema.statics.getById = async function (id: string) {
-//   return this.findById(id)
-// }
+artistBlockedDateSchema.index({ user: 1, date: 1 }, { unique: true })
 
 export const ArtistBlockedDate = model<IArtistBlockedDateDoc>(
   'ArtistBlockedDate',

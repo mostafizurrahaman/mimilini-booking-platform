@@ -65,3 +65,30 @@ export const isExpired = (date: Date): boolean => {
 export const isValidTimeZone = (timezone: string): boolean => {
   return momentTz?.tz?.zone(timezone) !== null
 }
+
+export const DATE_ONLY_FORMAT = 'YYYY-MM-DD'
+
+export const isValidDateOnly = (value: string): boolean => {
+  return moment(value, DATE_ONLY_FORMAT, true).isValid()
+}
+
+/**
+ * Normalize a date input to a calendar date string (YYYY-MM-DD).
+ * If the value already starts with YYYY-MM-DD, that calendar date is kept
+ * so timezone conversion cannot shift the stored day.
+ */
+export const toDateOnly = (value: string | Date): string => {
+  if (typeof value === 'string') {
+    const match = value.trim().match(/^(\d{4}-\d{2}-\d{2})/)
+    if (match?.[1] && isValidDateOnly(match[1])) {
+      return match[1]
+    }
+  }
+
+  const parsed = moment(value)
+  if (!parsed.isValid()) {
+    throw new Error('Invalid date')
+  }
+
+  return parsed.format(DATE_ONLY_FORMAT)
+}

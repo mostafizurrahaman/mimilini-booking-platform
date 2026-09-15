@@ -16,7 +16,8 @@ const createAvailability = catchAsync(async (req, res) => {
 })
 
 const updateAvailability = catchAsync(async (req, res) => {
-  const result = await availabilityServices.updateAvailability(req.params.id as string, req.body)
+  const user = await getUserFromRequest(req)
+  const result = await availabilityServices.updateAvailability(user, req.body)
 
   sendResponse(res, {
     success: true,
