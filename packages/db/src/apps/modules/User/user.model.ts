@@ -6,7 +6,7 @@ import {
   verificationStatus,
   VerificationStatusValues,
 } from './user.constant'
-import type { IUser, IUserDoc, IUserModel } from './user.interface'
+import type { IUserDoc, IUserModel } from './user.interface'
 
 const userSchema = new Schema<IUserDoc, IUserModel>(
   {
