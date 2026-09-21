@@ -70,6 +70,18 @@ const getAllArtistServicesSchema = z.object({
   }),
 })
 
+const getAllActiveArtistServicesSchema = z.object({
+  query: getAllArtistServicesSchema.shape.query.omit({
+    isActive: true,
+  }),
+})
+
+const getMyAllServicesSchema = z.object({
+  query: getAllArtistServicesSchema.shape.query.omit({
+    artist: true,
+  }),
+})
+
 const getArtistServicesByIdSchema = z.object({
   params: z.object({
     id: requiredString('ID'),
@@ -86,6 +98,8 @@ export const artistServicesValidations = {
   createArtistServicesSchema,
   updateArtistServicesSchema,
   getAllArtistServicesSchema,
+  getAllActiveArtistServicesSchema,
+  getMyAllServicesSchema,
   getArtistServicesByIdSchema,
   deleteArtistServicesByIdSchema,
   toggleArtistServicesFeaturedSchema,
@@ -96,6 +110,12 @@ export type TCreateArtistServicesPayloadType = z.infer<typeof createArtistServic
 export type TUpdateArtistServicesPayloadType = z.infer<typeof updateArtistServicesSchema.shape.body>
 export type TGetAllArtistServicesQueryParamsType = z.infer<
   typeof getAllArtistServicesSchema.shape.query
+>
+export type TGetAllActiveArtistServicesQueryParamsType = z.infer<
+  typeof getAllActiveArtistServicesSchema.shape.query
+>
+export type TGetMyAllServicesQueryParamsType = z.infer<
+  typeof getAllActiveArtistServicesSchema.shape.query
 >
 export type TGetArtistServicesByIdParamsType = z.infer<
   typeof getArtistServicesByIdSchema.shape.params
