@@ -42,6 +42,7 @@ import { deleteSingleFileFromS3, uploadSingleFileToS3, type TMulterFile } from '
 import { AWS_FOLDER_NAMES } from '@app/libs/files_folder'
 import { getNewOtp } from '@app/libs/get-new-otp'
 import { logger } from '@app/libs/logger'
+import moment from 'moment'
 
 // 1. Signup
 const signUp = async (payload: ISignUpSchemaType, profileImage: TMulterFile) => {
@@ -884,6 +885,76 @@ const getMe = async (user: IUser) => {
           phone: { $ifNull: ['$phone', null] },
           status: '$status',
           verificationStatus: '$verificationStatus',
+          role: '$role',
+          profileImage: { $ifNull: ['$profileImage', null] },
+          isProfileCompleted: { $ifNull: ['$isProfileCompleted', null] },
+          isStripeConnected: { $ifNull: ['$isStripeConnected', null] },
+          artistProfile: '$artistProfile',
+          createdAt: '$createdAt',
+          updatedAt: '$updatedAt',
+        },
+      }
+    )
+  }
+
+  if (user.role === AuthRoles.CUSTOMER) {
+    pipeline.push(
+      {
+        $lookup: {
+          from: 'beautypreferences',
+          as: 'customerPreferences',
+          pipeline: [
+            {
+              $match: {
+                customer: user?._id,
+              },
+            },
+            {
+              $lookup: {
+                from: 'categories',
+                localField: 'category',
+                foreignField: '_id',
+                as: 'categoryDetails',
+                pipeline: [
+                  {
+                    $project: {
+                      _id: 0,
+                      categoryId: '$_id',
+                      categoryName: '$name',
+                      isCategoryActive: '$isActive',
+                    },
+                  },
+                ],
+              },
+            },
+            {
+              $unwind: {
+                path: '$categoryDetails',
+                preserveNullAndEmptyArrays: true,
+              },
+            },
+            {
+              $project: {
+                _id: 0,
+                preferenceId: '$_id',
+                categoryId: '$categoryDetails.categoryId',
+                categoryName: '$categoryDetails.categoryName',
+                isCategoryActive: '$categoryDetails.isCategoryActive',
+              },
+            },
+          ],
+        },
+      },
+
+      {
+        $project: {
+          _id: '$_id',
+          name: '$name',
+          email: '$email',
+          phone: { $ifNull: ['$phone', null] },
+          status: '$status',
+          verificationStatus: '$verificationStatus',
+          customerPreferences: '$customerPreferences',
           role: '$role',
           profileImage: { $ifNull: ['$profileImage', null] },
           isProfileCompleted: { $ifNull: ['$isProfileCompleted', null] },

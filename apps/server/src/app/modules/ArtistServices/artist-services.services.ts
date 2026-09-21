@@ -13,6 +13,8 @@ import type {
   TCreateArtistServicesPayloadType,
   TUpdateArtistServicesPayloadType,
   TGetAllArtistServicesQueryParamsType,
+  TGetAllActiveArtistServicesQueryParamsType,
+  TGetMyAllServicesQueryParamsType,
 } from './artist-services.validations'
 import { formatQuery, getSlug } from '@app/libs'
 
@@ -314,11 +316,25 @@ const getAllArtistServices = async (query: TGetAllArtistServicesQueryParamsType)
   }
 }
 
+const getAllActiveArtistServices = (query: TGetAllActiveArtistServicesQueryParamsType) => {
+  return getAllArtistServices({
+    ...query,
+    isActive: true,
+  })
+}
+
+const getMyArtistServices = (user: IUserDoc, query: TGetMyAllServicesQueryParamsType) => {
+  return getAllArtistServices({
+    ...query,
+    artist: user?._id?.toString(),
+  })
+}
+
 const getArtistServicesById = async (id: string) => {
   const result = await ArtistServices.findById(id)
 
   if (!result) {
-    throw new AppError(httpStatus.NOT_FOUND, 'ArtistServices not found')
+    throw new AppError(httpStatus.NOT_FOUND, 'Service not found')
   }
 
   return result
@@ -338,6 +354,8 @@ export const artistServicesServices = {
   createArtistServices,
   updateArtistServices,
   getAllArtistServices,
+  getAllActiveArtistServices,
+  getMyArtistServices,
   getArtistServicesById,
   deleteArtistServicesById,
   togglePopular,

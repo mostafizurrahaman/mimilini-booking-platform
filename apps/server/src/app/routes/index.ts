@@ -5,6 +5,7 @@ import { authRoutes } from '@app/modules/Auth/user.routes'
 import { availabilityRoutes } from '@app/modules/Availability/availability.routes'
 import { bannerRoutes } from '@app/modules/Banner/banner.routes'
 import { beautyInspirationRoutes } from '@app/modules/BeautyInspiration/beauty-inspiration.routes'
+import { beautyPreferencesRoutes } from '@app/modules/BeautyPreferences/beauty-preferences.routes'
 import { categoryRoutes } from '@app/modules/Category/category.routes'
 import { contentRoutes } from '@app/modules/Content/content.routes'
 import { faqRoutes } from '@app/modules/Faq/faq.routes'
@@ -58,6 +59,10 @@ const routes = [
   {
     path: '/services',
     route: artistServicesRoutes,
+  },
+  {
+    path: '/beauty-preferences',
+    route: beautyPreferencesRoutes,
   },
 ]
 

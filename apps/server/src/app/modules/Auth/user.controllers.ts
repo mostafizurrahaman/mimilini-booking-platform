@@ -1,4 +1,4 @@
-import { catchAsync,  sendResponse, setCookie } from '@repo/shared'
+import { catchAsync, sendResponse, setCookie } from '@repo/shared'
 import { AuthServices } from './user.services'
 import httpStatus from 'http-status'
 import configs from '@app/configs'
@@ -60,10 +60,9 @@ const login = catchAsync(async (req, res) => {
     message: `You have logged in successfully!`,
     data: result,
   })
-
 })
 
-// 4.1. Artist Login: 
+// 4.1. Artist Login:
 const artistLogin = catchAsync(async (req, res) => {
   const result = await AuthServices.artistLogin(req.body)
 
@@ -78,13 +77,12 @@ const artistLogin = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: result?.message ?? "You have logged in successfully",
+    message: result?.message ?? 'You have logged in successfully',
     data: result,
   })
 })
 
-
-// 4.2. Admin Login 
+// 4.2. Admin Login
 const adminLogin = catchAsync(async (req, res) => {
   const result = await AuthServices.adminLogin(req.body)
 
@@ -169,8 +167,6 @@ const changedPassword = catchAsync(async (req, res) => {
   })
 })
 
-
-
 const getMe = catchAsync(async (req, res) => {
   const user = await getUserFromRequest(req)
 
@@ -199,10 +195,10 @@ const updateProfile = catchAsync(async (req, res) => {
   })
 })
 const changeProfilePicture = catchAsync(async (req, res) => {
-    const user = await getUserFromRequest(req)
+  const user = await getUserFromRequest(req)
   const profileFile = req.file as TMulterFile
 
-  const result = await AuthServices.changeProfilePicture(user,  profileFile)
+  const result = await AuthServices.changeProfilePicture(user, profileFile)
 
   sendResponse(res, {
     success: true,
@@ -228,7 +224,7 @@ const updateUserStatusByID = catchAsync(async (req, res) => {
 })
 
 const refreshToken = catchAsync(async (req, res) => {
-  const token = req.cookies?.refreshToken || req.body?.refreshToken 
+  const token = req.cookies?.refreshToken || req.body?.refreshToken
 
   const result = await AuthServices.refreshToken(token)
 
@@ -240,26 +236,21 @@ const refreshToken = catchAsync(async (req, res) => {
   })
 })
 
-
-
-
 export const AuthController = {
   signUp,
   resendSignupOTP,
   verifySignupOTP,
   login,
   artistLogin,
-  adminLogin, 
+  adminLogin,
   forgotPassword,
   verifyResetPasswordOtp,
   resendOTP,
   resetPassword,
   changedPassword,
-  getMe, 
-  updateProfile, 
+  getMe,
+  updateProfile,
   changeProfilePicture,
   refreshToken,
-  updateUserStatusByID
-
-
+  updateUserStatusByID,
 }

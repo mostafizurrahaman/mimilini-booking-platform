@@ -66,6 +66,30 @@ const getAllArtistServices = catchAsync(async (req, res) => {
     meta: result.meta,
   })
 })
+const getAllActiveArtistServices = catchAsync(async (req, res) => {
+  const result = await artistServicesServices.getAllActiveArtistServices(req.query)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'All active artists are services retrieved successfully!',
+    data: result.data,
+    meta: result.meta,
+  })
+})
+
+const getMyArtistServices = catchAsync(async (req, res) => {
+  const user = await getUserFromRequest(req)
+  const result = await artistServicesServices.getMyArtistServices(user, req.query)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'Your services are retrieved successfully!',
+    data: result.data,
+    meta: result.meta,
+  })
+})
 
 const getArtistServicesById = catchAsync(async (req, res) => {
   const result = await artistServicesServices.getArtistServicesById(req.params.id as string)
@@ -93,6 +117,8 @@ export const artistServicesControllers = {
   createArtistServices,
   updateArtistServices,
   getAllArtistServices,
+  getAllActiveArtistServices,
+  getMyArtistServices,
   getArtistServicesById,
   deleteArtistServicesById,
   toggleFeatured,
