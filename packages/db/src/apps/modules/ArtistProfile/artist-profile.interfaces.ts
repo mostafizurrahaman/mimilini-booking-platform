@@ -1,6 +1,6 @@
 import { Document, Types } from 'mongoose'
 
-interface ILocation {
+export interface ILocation {
   type: 'Point'
   coordinates: [number, number] // [longitude, latitude]
 }

@@ -812,11 +812,12 @@ const changedPassword = async (userInfo: IUser, payload: IChangedPasswordType) =
       _id: user._id,
     },
     {
-      password: hashedPassword,
+      passwordHash: hashedPassword,
       passwordChangedAt: new Date(),
     },
     {
       new: true,
+      runValidators: true,
     }
   )
 }
