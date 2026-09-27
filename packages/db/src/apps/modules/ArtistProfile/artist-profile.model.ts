@@ -94,6 +94,10 @@ const artistProfileSchema = new Schema<IArtistProfileDoc>(
   }
 )
 
+artistProfileSchema.index({
+  location: '2dsphere',
+})
+
 // Static method
 // artistProfileSchema.statics.getById = async function (id: string) {
 //   return this.findById(id)

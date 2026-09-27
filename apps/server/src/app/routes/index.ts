@@ -1,3 +1,4 @@
+import { addressRoutes } from '@app/modules/Address/address.routes'
 import { artistBlockedDateRoutes } from '@app/modules/ArtistBlockedDate/artist-blocked-date.routes'
 import { artistProfileRoutes } from '@app/modules/ArtistProfile/artist-profile.routes'
 import { artistServicesRoutes } from '@app/modules/ArtistServices/artist-services.routes'
@@ -63,6 +64,10 @@ const routes = [
   {
     path: '/beauty-preferences',
     route: beautyPreferencesRoutes,
+  },
+  {
+    path: '/addresses',
+    route: addressRoutes,
   },
 ]
 
