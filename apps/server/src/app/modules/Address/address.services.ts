@@ -24,6 +24,15 @@ const createAddress = async (user: IUser, payload: TCreateAddressPayloadType) =>
     isDefault,
   } = payload
 
+  // Count address :
+  const addresses = await Address.countDocuments({
+    customer: user._id,
+  })
+
+  if (addresses >= 3) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'You can only create 3 addresses.')
+  }
+
   const existingDefaultAddress = await Address.findOne({
     customer: user._id,
     isDefault: true,
@@ -281,6 +290,8 @@ const deleteAddressById = async (user: IUser, id: string) => {
   if (!addressToDelete) {
     throw new AppError(httpStatus.NOT_FOUND, 'Address not found')
   }
+
+  // Todo: Has any associated active booking with this Address:
 
   const mongoSession = await mongoose.startSession()
 
