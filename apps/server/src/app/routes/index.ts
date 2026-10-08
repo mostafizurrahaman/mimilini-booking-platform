@@ -10,6 +10,7 @@ import { beautyPreferencesRoutes } from '@app/modules/BeautyPreferences/beauty-p
 import { categoryRoutes } from '@app/modules/Category/category.routes'
 import { contentRoutes } from '@app/modules/Content/content.routes'
 import { faqRoutes } from '@app/modules/Faq/faq.routes'
+import { promoCodeRoutes } from '@app/modules/PromoCode/promo-code.routes'
 import { userRoutes } from '@app/modules/User/user.routes'
 import express, { Router } from 'express'
 
@@ -69,6 +70,10 @@ const routes = [
     path: '/addresses',
     route: addressRoutes,
   },
+  {
+    path: '/promo-codes',
+    route: promoCodeRoutes
+  }
 ]
 
 routes.forEach((route) => router.use(route.path, route.route))

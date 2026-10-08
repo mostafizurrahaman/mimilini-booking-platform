@@ -5,6 +5,7 @@ import {
   BannerStatus,
   type IUser,
   type TBannerPriorityStatus,
+  type TBannerStatusType,
 } from '@repo/db'
 import httpStatus from 'http-status'
 import { AppError } from '@repo/shared'

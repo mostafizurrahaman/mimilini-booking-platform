@@ -1,6 +1,18 @@
-export const promoCodeSearchableFields = ['name'] as const
+export const promoCodeSearchableFields = ['promotionName', 'promoCode'] as const
 
-export const promoCodeSortableFields = ['createdAt', 'updatedAt'] as const
+export const promoCodeSortableFields = [
+  'promotionName',
+  'promoCode',
+  'discountValue',
+  'minBookingValue',
+  'usageLimit',
+  'usageCount',
+  'startDate',
+  'endDate',
+  'status',
+  'createdAt',
+  'updatedAt',
+] as const
 
 export const DISCOUNT_TYPES = {
   PERCENTAGE: 'percentage',

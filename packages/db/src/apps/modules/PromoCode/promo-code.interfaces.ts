@@ -9,6 +9,7 @@ export interface IPromoCode {
   usageCount: number
   discountType: TDiscountType
   discountValue: number
+  maxDiscountAmount?: number | undefined
   startDate: Date
   endDate: Date
   status: TDiscountStatusType
