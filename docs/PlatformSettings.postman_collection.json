@@ -1,0 +1,205 @@
+{
+  "info": {
+    "_postman_id": "8f3b2a14-4a21-4f18-b29d-8c4d1e2e99c2",
+    "name": "Mimilini - Platform Settings APIs (Admin Only)",
+    "description": "Complete Postman collection for the Platform Settings module on Mimilini Booking Platform. Admin & Super Admin only. Includes Create (singleton), Update (partial & tier-safe), and Get endpoints with full edge case coverage.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "YOUR_ADMIN_JWT_ACCESS_TOKEN",
+      "type": "string"
+    },
+    {
+      "key": "platformSettingsId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Create Platform Settings (Admin Only)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "if (jsonData && jsonData.data && jsonData.data._id) {",
+              "    pm.collectionVariables.set('platformSettingsId', jsonData.data._id);",
+              "    console.log('Saved platformSettingsId:', jsonData.data._id);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"platformPercentage\": 20,\n  \"gstPercentage\": 10,\n  \"travelingFeePerKm\": 2.5,\n  \"parkingFee\": 15,\n  \"peakTimeSurcharge\": 25,\n  \"lowMaxAmount\": 200,\n  \"mediumMaxAmount\": 500,\n  \"low\": {\n    \"moreThan14Days\": 0,\n    \"sevenTo13Days\": 15,\n    \"within48Hours\": 30\n  },\n  \"medium\": {\n    \"moreThan14Days\": 15,\n    \"sevenTo13Days\": 35,\n    \"within48Hours\": 60\n  },\n  \"high\": {\n    \"moreThan14Days\": 30,\n    \"sevenTo13Days\": 60,\n    \"within48Hours\": 120\n  }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/platform-settings",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "platform-settings"
+          ]
+        },
+        "description": "Creates initial Platform Settings. Only Admin and Super Admin can access. Fails with 409 Conflict if settings already exist."
+      },
+      "response": []
+    },
+    {
+      "name": "2. Get Platform Settings (Singleton - Admin Only)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "if (jsonData && jsonData.data && jsonData.data._id) {",
+              "    pm.collectionVariables.set('platformSettingsId', jsonData.data._id);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/platform-settings",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "platform-settings"
+          ]
+        },
+        "description": "Retrieves active platform settings singleton, including admin population on updatedBy."
+      },
+      "response": []
+    },
+    {
+      "name": "3. Get Platform Settings by ID (Admin Only)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/platform-settings/{{platformSettingsId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "platform-settings",
+            "{{platformSettingsId}}"
+          ]
+        },
+        "description": "Retrieves platform settings by ID."
+      },
+      "response": []
+    },
+    {
+      "name": "4. Update Platform Settings (Singleton - Admin Only)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"platformPercentage\": 18,\n  \"travelingFeePerKm\": 3.0,\n  \"parkingFee\": 20,\n  \"peakTimeSurcharge\": 30,\n  \"low\": {\n    \"within48Hours\": 35\n  }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/platform-settings",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "platform-settings"
+          ]
+        },
+        "description": "Partially updates platform settings. Automatically preserves untouched subdocument cancellation tiers via dot-notation and records updatedBy."
+      },
+      "response": []
+    },
+    {
+      "name": "5. Update Platform Settings by ID (Admin Only)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"platformPercentage\": 20,\n  \"mediumMaxAmount\": 550\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/platform-settings/{{platformSettingsId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "platform-settings",
+            "{{platformSettingsId}}"
+          ]
+        },
+        "description": "Updates platform settings by document ID."
+      },
+      "response": []
+    }
+  ]
+}
