@@ -1,0 +1,309 @@
+{
+  "info": {
+    "_postman_id": "7b8e5a14-3a21-4f18-b29d-8c4d1e2e99a1",
+    "name": "Mimilini - Promo Code & Promotions APIs",
+    "description": "Complete Postman collection for the Promo Code / Promotion Engine on the Mimilini Booking Platform. Includes Artist campaigns, Admin global offers, status management, dashboard stats, and booking checkout validation.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "YOUR_JWT_ACCESS_TOKEN",
+      "type": "string"
+    },
+    {
+      "key": "promoCodeId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "artistId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Create Promo Code (Artist / Admin)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "if (jsonData && jsonData.data && jsonData.data._id) {",
+              "    pm.collectionVariables.set('promoCodeId', jsonData.data._id);",
+              "    console.log('Saved promoCodeId:', jsonData.data._id);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"promotionName\": \"Spring Glamour Special\",\n  \"promoCode\": \"SPRING-GLAM\",\n  \"discountType\": \"percentage\",\n  \"discountValue\": 20,\n  \"maxDiscountAmount\": 50,\n  \"minBookingValue\": 100,\n  \"usageLimit\": 50,\n  \"startDate\": \"2026-10-09T00:00:00.000Z\",\n  \"endDate\": \"2026-11-30T23:59:59.000Z\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/promo-codes",
+          "host": ["{{baseUrl}}"],
+          "path": ["promo-codes"]
+        },
+        "description": "Creates a new promo code. If called by an Artist, it creates an artist-specific campaign. If called by Admin/Super Admin, it creates a platform-wide global offer (isAdminOffer: true). Status is automatically derived from startDate (scheduled or active)."
+      },
+      "response": []
+    },
+    {
+      "name": "2. Validate Promo Code at Checkout",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"promoCode\": \"SPRING-GLAM\",\n  \"bookingAmount\": 150,\n  \"artistId\": \"{{artistId}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/promo-codes/validate",
+          "host": ["{{baseUrl}}"],
+          "path": ["promo-codes", "validate"]
+        },
+        "description": "Validates promo code during customer checkout. Verifies date boundaries, status, usage limits, minimum booking spend, and applies percentage/fixed discount capped to maxDiscountAmount. Promotes scheduled codes to active if current date is reached."
+      },
+      "response": []
+    },
+    {
+      "name": "3. Get My Promo Codes (Artist Dashboard)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/promo-codes/my?page=1&limit=10&sortOrder=desc&sortBy=createdAt",
+          "host": ["{{baseUrl}}"],
+          "path": ["promo-codes", "my"],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "10"
+            },
+            {
+              "key": "sortOrder",
+              "value": "desc"
+            },
+            {
+              "key": "sortBy",
+              "value": "createdAt"
+            },
+            {
+              "key": "status",
+              "value": "active",
+              "disabled": true
+            },
+            {
+              "key": "searchTerm",
+              "value": "SPRING",
+              "disabled": true
+            }
+          ]
+        },
+        "description": "Returns artist promo codes along with dashboard statistics: totalPromoCodes, activeCount, scheduledCount, pausedCount, expiredCount, and totalUsageCount. Automatically synchronizes statuses based on date before returning."
+      },
+      "response": []
+    },
+    {
+      "name": "4. Get All Promo Codes (Admin Overview)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/promo-codes/all?page=1&limit=10&sortOrder=desc&sortBy=createdAt",
+          "host": ["{{baseUrl}}"],
+          "path": ["promo-codes", "all"],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "10"
+            },
+            {
+              "key": "sortOrder",
+              "value": "desc"
+            },
+            {
+              "key": "sortBy",
+              "value": "createdAt"
+            },
+            {
+              "key": "status",
+              "value": "active",
+              "disabled": true
+            },
+            {
+              "key": "discountType",
+              "value": "percentage",
+              "disabled": true
+            },
+            {
+              "key": "isAdminOffer",
+              "value": "true",
+              "disabled": true
+            },
+            {
+              "key": "searchTerm",
+              "value": "GLAM",
+              "disabled": true
+            }
+          ]
+        },
+        "description": "Admin endpoint to list all platform promo codes with author populated details. Automatically synchronizes all dates and statuses in the database."
+      },
+      "response": []
+    },
+    {
+      "name": "5. Get Promo Code By ID",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/promo-codes/{{promoCodeId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["promo-codes", "{{promoCodeId}}"]
+        },
+        "description": "Retrieves promo code details by ID. Synchronizes status based on dates if necessary."
+      },
+      "response": []
+    },
+    {
+      "name": "6. Update Promo Code Details",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"promotionName\": \"Spring Glamour Extended\",\n  \"discountValue\": 25,\n  \"minBookingValue\": 120,\n  \"usageLimit\": 80,\n  \"endDate\": \"2026-12-15T23:59:59.000Z\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/promo-codes/{{promoCodeId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["promo-codes", "{{promoCodeId}}"]
+        },
+        "description": "Updates promo code configuration. Automatically recalculates status if dates are updated."
+      },
+      "response": []
+    },
+    {
+      "name": "7. Update Promo Code Status (Pause / Activate / Expire)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"pause\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/promo-codes/{{promoCodeId}}/status",
+          "host": ["{{baseUrl}}"],
+          "path": ["promo-codes", "{{promoCodeId}}", "status"]
+        },
+        "description": "Updates status between active, pause, scheduled, or expired. Validates that expired codes cannot be activated without updating endDate, and future codes cannot be activated before startDate."
+      },
+      "response": []
+    },
+    {
+      "name": "8. Delete Promo Code",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/promo-codes/{{promoCodeId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["promo-codes", "{{promoCodeId}}"]
+        },
+        "description": "Deletes promo code by ID. Only the author or platform admin is authorized."
+      },
+      "response": []
+    }
+  ]
+}
