@@ -7,6 +7,7 @@ export interface IProfessionalCancellationFees {
 }
 
 export interface IPlatformSettings {
+  singletonKey?: string
   platformPercentage: number
   gstPercentage: number
   travelingFeePerKm: number
@@ -23,5 +24,5 @@ export interface IPlatformSettings {
 export interface IPlatformSettingsDoc extends Document, IPlatformSettings {}
 
 export interface IPlatformSettingsModel extends Model<IPlatformSettingsDoc> {
-  getSettings(): Promise<IPlatformSettingsDoc | null>
+  getSettings(): Promise<IPlatformSettingsDoc>
 }
