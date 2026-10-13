@@ -1,6 +1,5 @@
 import z from 'zod'
 import {
-  optionalString,
   rangedNumber,
   requiredNumber,
   positiveNumber,
@@ -74,9 +73,6 @@ const createPlatformSettingsSchema = z.object({
 })
 
 const updatePlatformSettingsSchema = z.object({
-  params: z.object({
-    id: optionalString('ID'),
-  }),
   body: z
     .object({
       platformPercentage: rangedNumber('Platform percentage', 0, 100).optional(),
@@ -132,16 +128,9 @@ const updatePlatformSettingsSchema = z.object({
     }),
 })
 
-const getPlatformSettingsSchema = z.object({
-  params: z.object({
-    id: optionalString('ID'),
-  }),
-})
-
 export const platformSettingsValidations = {
   createPlatformSettingsSchema,
   updatePlatformSettingsSchema,
-  getPlatformSettingsSchema,
 }
 
 export type TCreatePlatformSettingsPayloadType = z.infer<
@@ -150,6 +139,4 @@ export type TCreatePlatformSettingsPayloadType = z.infer<
 export type TUpdatePlatformSettingsPayloadType = z.infer<
   typeof updatePlatformSettingsSchema.shape.body
 >
-export type TGetPlatformSettingsParamsType = z.infer<
-  typeof getPlatformSettingsSchema.shape.params
->
+

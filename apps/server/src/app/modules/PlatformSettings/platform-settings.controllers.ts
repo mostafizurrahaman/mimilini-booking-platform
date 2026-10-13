@@ -22,8 +22,7 @@ const updatePlatformSettings = catchAsync(async (req, res) => {
   const user = await getUserFromRequest(req)
   const result = await platformSettingsServices.updatePlatformSettings(
     user,
-    req.body,
-    req.params.id as string | undefined
+    req.body
   )
 
   sendResponse(res, {
@@ -34,10 +33,8 @@ const updatePlatformSettings = catchAsync(async (req, res) => {
   })
 })
 
-const getPlatformSettings = catchAsync(async (req, res) => {
-  const result = await platformSettingsServices.getPlatformSettings(
-    req.params.id as string | undefined
-  )
+const getPlatformSettings = catchAsync(async (_req, res) => {
+  const result = await platformSettingsServices.getPlatformSettings()
 
   sendResponse(res, {
     success: true,

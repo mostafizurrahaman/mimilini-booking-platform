@@ -1,31 +1,34 @@
-import { PlatformSettings, type IUser } from '@repo/db'
+import {
+  PlatformSettings,
+  DEFAULT_PLATFORM_SETTINGS,
+  PLATFORM_SETTINGS_SINGLETON_KEY,
+  type IUser,
+} from '@repo/db'
 import httpStatus from 'http-status'
 import { AppError } from '@repo/shared'
-import { Types } from 'mongoose'
 import type {
   TCreatePlatformSettingsPayloadType,
   TUpdatePlatformSettingsPayloadType,
 } from './platform-settings.validations'
 
 /**
- * 1. Create Platform Settings (Singleton)
- * Edge Case: Only one platform settings document can exist.
+ * 1. Create / Upsert Global Platform Settings
+ * Edge Case: Platform settings is global and only one platform settings document exists.
+ * If one already exists, this updates the singleton document rather than creating a duplicate.
  */
 const createPlatformSettings = async (
   user: IUser,
   payload: TCreatePlatformSettingsPayloadType
 ) => {
-  // Check if platform settings already exist
   const existingSettings = await PlatformSettings.findOne()
+
   if (existingSettings) {
-    throw new AppError(
-      httpStatus.CONFLICT,
-      'Platform settings already exist. Please update the existing settings instead.'
-    )
+    return await updatePlatformSettings(user, payload)
   }
 
   const result = await PlatformSettings.create({
     ...payload,
+    singletonKey: PLATFORM_SETTINGS_SINGLETON_KEY,
     updatedBy: user._id,
   })
 
@@ -36,32 +39,25 @@ const createPlatformSettings = async (
 }
 
 /**
- * 2. Update Platform Settings
+ * 2. Update Global Platform Settings
  * Edge Cases:
- * - Can update by ID or singleton fallback
- * - Validates ObjectId format if ID is passed
+ * - Operates purely on the single global platform settings document (no ID required)
+ * - Automatically initializes with defaults if no settings exist yet
  * - Validates mediumMaxAmount > lowMaxAmount against DB state
  * - Flattens nested low/medium/high subdocuments to avoid erasing sibling fee fields
  */
 const updatePlatformSettings = async (
   user: IUser,
-  payload: TUpdatePlatformSettingsPayloadType,
-  id?: string
+  payload: TUpdatePlatformSettingsPayloadType
 ) => {
-  if (id && !Types.ObjectId.isValid(id)) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid platform settings ID format')
-  }
-
-  // Find existing document
-  const existingSettings = id
-    ? await PlatformSettings.findById(id)
-    : await PlatformSettings.findOne().sort({ createdAt: -1 })
+  let existingSettings = await PlatformSettings.findOne()
 
   if (!existingSettings) {
-    throw new AppError(
-      httpStatus.NOT_FOUND,
-      'Platform settings not found. Please create platform settings first.'
-    )
+    existingSettings = await PlatformSettings.create({
+      ...DEFAULT_PLATFORM_SETTINGS,
+      singletonKey: PLATFORM_SETTINGS_SINGLETON_KEY,
+      updatedBy: user._id,
+    })
   }
 
   // Cross-field validation against existing database values
@@ -78,6 +74,7 @@ const updatePlatformSettings = async (
 
   // Construct update payload with nested dot-notation flattening
   const updateData: Record<string, unknown> = {
+    singletonKey: PLATFORM_SETTINGS_SINGLETON_KEY,
     updatedBy: user._id,
   }
 
@@ -110,25 +107,23 @@ const updatePlatformSettings = async (
 }
 
 /**
- * 3. Get Platform Settings
+ * 3. Get Global Platform Settings
  * Edge Cases:
- * - Can retrieve by ID or fallback to latest singleton document
- * - Validates ObjectId format if ID is passed
+ * - Returns the single global platform settings document
+ * - Initializes with default platform settings if not yet seeded
  * - Populates admin who last updated settings
  */
-const getPlatformSettings = async (id?: string) => {
-  if (id && !Types.ObjectId.isValid(id)) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid platform settings ID format')
-  }
-
-  const result = id
-    ? await PlatformSettings.findById(id).populate('updatedBy', 'name email role')
-    : await PlatformSettings.findOne()
-        .sort({ createdAt: -1 })
-        .populate('updatedBy', 'name email role')
+const getPlatformSettings = async () => {
+  let result = await PlatformSettings.findOne().populate(
+    'updatedBy',
+    'name email role'
+  )
 
   if (!result) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Platform settings not found')
+    result = await PlatformSettings.create({
+      ...DEFAULT_PLATFORM_SETTINGS,
+      singletonKey: PLATFORM_SETTINGS_SINGLETON_KEY,
+    })
   }
 
   return result
