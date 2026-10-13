@@ -1,4 +1,4 @@
-import dotenv, { config } from 'dotenv'
+import dotenv from 'dotenv'
 import path from 'path'
 import { z } from 'zod'
 
@@ -58,6 +58,15 @@ const envSchema = z.object({
   SUPER_ADMIN_PHONE: z.string(),
   OTP_EXPIRES_IN: z.string().transform(Number).default(5),
   OTP_DIGITS: z.string().transform(Number).default(6),
+
+  // Google Sheets (Waitlist)
+  GOOGLE_SERVICE_ACCOUNT_EMAIL: z
+    .string()
+    .default('stunneralert@stunner-alert.iam.gserviceaccount.com'),
+  GOOGLE_PRIVATE_KEY: z.string().optional(),
+  GOOGLE_SHEET_ID: z.string().default('15wdGSXcReglZ912QdfhwBR-n5SSl1cnukPhMyMolLRw'),
+  GOOGLE_SHEET_NAME: z.string().optional(),
+  GOOGLE_SERVICE_ACCOUNT_KEY_PATH: z.string().optional(),
 })
 
 // 3. Validate process.env
@@ -137,6 +146,14 @@ const configs = {
   otpSettings: {
     expiresIn: env.OTP_EXPIRES_IN,
     digits: env.OTP_DIGITS,
+  },
+
+  googleSheets: {
+    serviceAccountEmail: env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    privateKey: env.GOOGLE_PRIVATE_KEY,
+    sheetId: env.GOOGLE_SHEET_ID,
+    sheetName: env.GOOGLE_SHEET_NAME,
+    keyPath: env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH,
   },
 } as const
 

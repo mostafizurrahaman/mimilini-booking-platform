@@ -13,11 +13,16 @@ import { faqRoutes } from '@app/modules/Faq/faq.routes'
 import { platformSettingsRoutes } from '@app/modules/PlatformSettings/platform-settings.routes'
 import { promoCodeRoutes } from '@app/modules/PromoCode/promo-code.routes'
 import { userRoutes } from '@app/modules/User/user.routes'
+import { waitlistRoutes } from '@app/modules/Waitlist/waitlist.routes'
 import express, { Router } from 'express'
 
 const router: Router = express.Router()
 
 const routes = [
+  {
+    path: '/waitlist',
+    route: waitlistRoutes,
+  },
   {
     path: '/auth',
     route: authRoutes,
