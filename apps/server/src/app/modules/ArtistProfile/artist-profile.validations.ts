@@ -9,6 +9,7 @@ import {
   positiveNumber,
   enumString,
   requiredNumber,
+  requiredStrBoolean,
 } from '@repo/shared'
 import { artistProfileSortableFields } from '@repo/db'
 
@@ -25,6 +26,7 @@ const createArtistProfileSchema = z.object({
         error: 'Invalid ABN.',
       }
     ),
+    isGstRegistered: requiredStrBoolean("GST registered").optional().default(false),
     businessAddress: requiredString('Business address'),
     yearOfExperience: positiveNumber('Years of experience'),
     professionalBio: optionalString('Professional bio'),
