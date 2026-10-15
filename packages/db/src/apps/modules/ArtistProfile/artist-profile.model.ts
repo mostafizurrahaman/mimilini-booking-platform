@@ -18,6 +18,11 @@ const artistProfileSchema = new Schema<IArtistProfileDoc>(
       required: true,
       unique: true,
     },
+    isGstRegistered: { 
+      type: Boolean, 
+      required:true,
+      default: false
+    },
     businessAddress: {
       type: String,
       required: true,

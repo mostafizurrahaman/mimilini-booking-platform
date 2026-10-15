@@ -9,9 +9,11 @@ export interface IArtistProfile {
   user: Types.ObjectId
   businessName: string
   abn: string // Australian Business Number
+  isGstRegistered: boolean,
   businessAddress: string
   yearOfExperience: number
   professionalBio: string
+
 
   // Verification section:
   drivingLicenseFrontSide: string
