@@ -42,7 +42,7 @@ export const createArtistProfile = async (
   const {
     businessName,
     abn,
-    isGstRegistered,
+    isGstRegistered, 
     phone,
     businessAddress,
     latitude,
