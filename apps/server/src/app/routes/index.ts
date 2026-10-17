@@ -1,3 +1,4 @@
+import { accountRoutes } from '@app/modules/Account/account.routes'
 import { addressRoutes } from '@app/modules/Address/address.routes'
 import { artistBlockedDateRoutes } from '@app/modules/ArtistBlockedDate/artist-blocked-date.routes'
 import { artistProfileRoutes } from '@app/modules/ArtistProfile/artist-profile.routes'
@@ -83,6 +84,10 @@ const routes = [
   {
     path: '/platform-settings',
     route: platformSettingsRoutes,
+  },
+  {
+    path: '/accounts',
+    route: accountRoutes,
   },
 ]
 

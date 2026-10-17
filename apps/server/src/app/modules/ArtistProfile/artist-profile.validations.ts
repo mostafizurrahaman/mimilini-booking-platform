@@ -17,7 +17,7 @@ const createArtistProfileSchema = z.object({
   body: z.object({
     businessName: requiredString('Business name'),
     phone: requiredString('Phone').regex(
-      /^(?:(?:\+61|0061)\s?4\d{2}\s?\d{3}\s?\d{3}|0[2-8]\s?\d{4}\s?\d{4})$/,
+      /^(?:61|0)[234578]\d{8}$/,
       'Invalid Australian phone number'
     ),
     abn: requiredString('ABN (Australian business number) is required.').regex(
