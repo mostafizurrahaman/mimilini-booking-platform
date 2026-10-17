@@ -1,0 +1,209 @@
+{
+  "info": {
+    "_postman_id": "c7a8b912-3f45-4a67-b89c-9d0e1f2a3b4c",
+    "name": "Mimilini - Payment Method APIs (Customer)",
+    "description": "Complete Postman collection for the PaymentMethod module on Mimilini Booking Platform. Customer role required. Includes SetupIntent, Adding payment method, Marking default, Pagination listing, Get by ID, and Detach/Delete.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "YOUR_CUSTOMER_JWT_ACCESS_TOKEN",
+      "type": "string"
+    },
+    {
+      "key": "paymentMethodDbId",
+      "value": "6710abcd1234ef5678901234",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Create Setup Intent",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/payment-methods/setup-intent",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payment-methods",
+            "setup-intent"
+          ]
+        },
+        "description": "Initializes a Stripe SetupIntent with `off_session` usage for the authenticated customer. Automatically creates and links a Stripe Customer profile if one does not exist yet. Returns `clientSecret` and `customerId` for frontend Stripe Elements integration."
+      },
+      "response": []
+    },
+    {
+      "name": "2. Add Payment Method",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"paymentMethodId\": \"pm_card_visa\",\n  \"isDefault\": true\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/payment-methods/add",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payment-methods",
+            "add"
+          ]
+        },
+        "description": "Attaches a confirmed payment method (card / Apple Pay / Google Pay) from Stripe to the customer's Stripe Customer account and saves its metadata (brand, last4, expiry, type) in the MongoDB `PaymentMethod` collection. If `isDefault` is true, previous default cards are unset."
+      },
+      "response": []
+    },
+    {
+      "name": "3. Mark Payment Method as Default",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/payment-methods/{{paymentMethodDbId}}/mark-as-default",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payment-methods",
+            "{{paymentMethodDbId}}",
+            "mark-as-default"
+          ]
+        },
+        "description": "Marks the target payment method as the default payment source for future booking checkouts, unsetting all other cards for this customer."
+      },
+      "response": []
+    },
+    {
+      "name": "4. Get All Payment Methods (Paginated)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/payment-methods/all?page=1&limit=10&searchTerm=&sortBy=createdAt&sortOrder=desc",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payment-methods",
+            "all"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "10"
+            },
+            {
+              "key": "searchTerm",
+              "value": ""
+            },
+            {
+              "key": "sortBy",
+              "value": "createdAt"
+            },
+            {
+              "key": "sortOrder",
+              "value": "desc"
+            }
+          ]
+        },
+        "description": "Returns a paginated list of all active payment methods saved by the authenticated customer with metadata and default status."
+      },
+      "response": []
+    },
+    {
+      "name": "5. Get Payment Method By ID",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/payment-methods/{{paymentMethodDbId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payment-methods",
+            "{{paymentMethodDbId}}"
+          ]
+        },
+        "description": "Retrieves the full details of a specific payment method owned by the authenticated customer."
+      },
+      "response": []
+    },
+    {
+      "name": "6. Delete Payment Method By ID",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/payment-methods/{{paymentMethodDbId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payment-methods",
+            "{{paymentMethodDbId}}"
+          ]
+        },
+        "description": "Atomically deletes the payment method from the database and detaches it from the Stripe customer. If the deleted card was default, the next most recent card is automatically promoted to default."
+      },
+      "response": []
+    }
+  ]
+}

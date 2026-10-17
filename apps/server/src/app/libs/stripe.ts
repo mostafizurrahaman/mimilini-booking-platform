@@ -111,6 +111,55 @@ export const verifyWebHookSignature = (secretKey: string, req: Request): Stripe.
   return event
 }
 
+// ?? Create stripe customer:
+export const createStripeCustomer = async ({
+  name,
+  email,
+  phone,
+}: {
+  email: string
+  name: string
+  phone: string
+}) => {
+  const customer = await stripe.customers.create({
+    name,
+    email,
+    phone,
+  })
+
+  return customer.id
+}
+
+// ?? Configure  Payment intent:
+export const customerPaymentIntent = async (customerId: string) => {
+  const result = await stripe.setupIntents.create({
+    customer: customerId,
+    automatic_payment_methods: { enabled: true },
+    usage: 'off_session',
+  })
+
+  return result
+}
+
+// ?? Retrieve Payment Method Info:
+export const retrievedPaymentMethodAndAttach = async (
+  paymentMethodId: string,
+  customerId: string
+) => {
+  const paymentMethod = await stripe.paymentMethods.retrieve(paymentMethodId)
+
+  if (!paymentMethod || !paymentMethod.card) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid payment method or not a card.')
+  }
+
+  // Attach to customer:
+  await stripe.paymentMethods.attach(paymentMethod.id, {
+    customer: customerId,
+  })
+
+  return paymentMethod
+}
+
 // ?? Configure Stripe check session :
 
 export const stripeCheckoutSession = async ({

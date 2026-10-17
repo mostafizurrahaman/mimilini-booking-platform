@@ -15,6 +15,7 @@ import { platformSettingsRoutes } from '@app/modules/PlatformSettings/platform-s
 import { promoCodeRoutes } from '@app/modules/PromoCode/promo-code.routes'
 import { userRoutes } from '@app/modules/User/user.routes'
 import { waitlistRoutes } from '@app/modules/Waitlist/waitlist.routes'
+import { paymentMethodRoutes } from '@app/modules/PaymentMethod/payment-method.routes'
 import express, { Router } from 'express'
 
 const router: Router = express.Router()
@@ -88,6 +89,10 @@ const routes = [
   {
     path: '/accounts',
     route: accountRoutes,
+  },
+  {
+    path: '/payment-methods',
+    route: paymentMethodRoutes,
   },
 ]
 
