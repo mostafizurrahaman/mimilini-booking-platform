@@ -10,6 +10,7 @@ import globalErrorHandler from './app/middlewares/global-error-handler'
 import { allRoutes } from '@app/routes'
 import { logger } from '@app/libs/logger'
 import dns from 'node:dns'
+import { stripeController } from '@app/modules/stripe/stripe.controllers'
 
 dns.setServers(['1.1.1.1'])
 
@@ -33,6 +34,25 @@ app.use(
 )
 
 app.use(helmet())
+
+app.use(
+  '/api/v1/stripe/webhook',
+  express.raw({ type: 'application/json' }),
+  stripeController.handleStripeWebhookForLocal
+)
+
+// app.use(
+//   '/api/v1/stripe/platform/webhook',
+//   express.raw({ type: 'application/json' }),
+//   stripeController.handleStripeWebhookForPlatform
+// )
+
+// app.use(
+//   '/api/v1/stripe/connected-account/webhook',
+//   express.raw({ type: 'application/json' }),
+//   stripeController.handleStripeWebhookForConnectedAccount
+// )
+
 app.use(express.json())
 app.use(cookieParser())
 app.use(

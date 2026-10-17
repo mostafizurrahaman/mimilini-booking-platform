@@ -32,9 +32,11 @@ const envSchema = z.object({
   // Stripe
   STRIPE_SECRET_KEY: z.string(),
   STRIPE_PUBLISHABLE_KEY: z.string(),
-  STRIPE_WEBOOK_KEY: z.string(),
+  STRIPE_LOCAL_WEBHOOK_KEY: z.string(),
   STRIPE_SUCCESS_URL: z.string().url(),
   STRIPE_CANCEL_URL: z.string().url(),
+  STRIPE_REFRESH_URL: z.string().url(),
+  STRIPE_RETURN_URL: z.string().url(),
   STRIPE_FIXED_FEE: z.string().transform(Number),
   STRIPE_FEE: z.string().transform(Number),
 
@@ -108,9 +110,11 @@ const configs = {
   stripe: {
     secretKey: env.STRIPE_SECRET_KEY,
     publishableKey: env.STRIPE_PUBLISHABLE_KEY,
-    webhookKey: env.STRIPE_WEBOOK_KEY,
+    webhookKey: env.STRIPE_LOCAL_WEBHOOK_KEY,
     successUrl: env.STRIPE_SUCCESS_URL,
     cancelUrl: env.STRIPE_CANCEL_URL,
+    refresh_url: env.STRIPE_REFRESH_URL,
+    return_url: env.STRIPE_RETURN_URL,
     fixedFee: env.STRIPE_FIXED_FEE,
     percentage: env.STRIPE_FEE,
   },
@@ -156,8 +160,6 @@ const configs = {
     keyPath: env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH,
   },
 } as const
-
-console.log(configs)
 
 export default configs
 
