@@ -29,6 +29,22 @@ router.get(
 
 router.get('/', auth(AuthRoles.ARTIST), availabilityControllers.getAvailabilityByUserId)
 
+router.get(
+  '/my-calendar',
+  auth(AuthRoles.ARTIST),
+  availabilityControllers.getMyCalendar
+)
+
+router.get(
+  '/calendar/:artistId',
+  availabilityControllers.getArtistAvailableDaysInMonth
+)
+
+router.get(
+  '/slots/:artistId',
+  availabilityControllers.getArtistAvailableSlotsForDate
+)
+
 router.delete(
   '/:id',
   validateRequest(availabilityValidations.deleteAvailabilityByIdSchema),

@@ -1,6 +1,6 @@
-import { PaymentMethod, paymentMethodSearchableFields, type IUserDoc } from '@repo/db'
+import { PaymentMethod, paymentMethodSearchableFields, paymentMethodSortableFields, type IUserDoc } from '@repo/db'
 import httpStatus from 'http-status'
-import { AppError } from '@repo/shared'
+import { AppError, formatDate } from '@repo/shared'
 import mongoose, {  type PipelineStage } from 'mongoose'
 
 import type {
@@ -13,7 +13,7 @@ import {
   retrievedPaymentMethodAndAttach,
   stripe,
 } from '@app/libs/stripe'
-import { logger } from '@app/libs'
+import { formatQuery, logger } from '@app/libs'
 
 const setupIntent = async (user: IUserDoc) => {
   let stripeCustomerId = user.stripeCustomerId ?? null
@@ -137,16 +137,17 @@ const markAsDefault = async (user: IUserDoc, id: string) => {
 
 const getAllPaymentMethod = async (user: IUserDoc, query: TGetAllPaymentMethodQueryParamsType) => {
   const {
-    page = 1,
-    limit = 10,
+    page,
+    limit,
     searchTerm,
-    sortOrder = 'desc',
-    sortBy = 'createdAt',
+    sortOrder ,
+    sortBy ,
     fromDate,
+    skip,
     toDate,
-  } = query
+  } = formatQuery(query, paymentMethodSortableFields)
 
-  const skip = (page - 1) * limit
+
   const pipeline: PipelineStage[] = []
 
   pipeline.push({
@@ -173,7 +174,7 @@ const getAllPaymentMethod = async (user: IUserDoc, query: TGetAllPaymentMethodQu
     })
   }
 
-  pipeline.push({ $sort: { [sortBy]: sortOrder === 'asc' ? 1 : -1 } })
+  pipeline.push({ $sort: { [sortBy]: sortOrder} })
 
   pipeline.push({
     $facet: {

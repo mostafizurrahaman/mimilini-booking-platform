@@ -11,7 +11,7 @@
     "format:check": "prettier --check \"**/*.{ts,js,json,md}\"",
     "type-check": "turbo type-check",
     "clean": "turbo clean && rm -rf node_modules",
-    "stripe:listen": "stripe listen  --forward-to localhost:8080/api/v1/stripe/webhook --events account.updated"
+    "stripe:listen": "stripe listen --forward-to localhost:8080/api/v1/stripe/webhook --events account.updated,payment_intent.succeeded,payment_intent.payment_failed,payment_intent.canceled,charge.refunded,checkout.session.completed"
   },
   "dependencies": {
     "cross-env": "^10.1.0"

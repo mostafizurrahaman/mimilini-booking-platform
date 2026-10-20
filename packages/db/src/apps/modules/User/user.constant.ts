@@ -17,11 +17,11 @@ export const userSortableFields = [
   'role',
 ] as const
 
-// Auth Status
 export const AuthStatus = {
   PENDING: 'pending', // signup completed, waiting for next step
   ACTIVE: 'active', // can use the system
   BLOCKED: 'blocked', // admin restricted
+  SUSPENDED: 'suspended', // penalty hard-block (last-minute cancellation)
   DELETED: 'deleted', // soft-deleted (no login)
 } as const
 

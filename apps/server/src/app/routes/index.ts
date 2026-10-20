@@ -16,6 +16,9 @@ import { promoCodeRoutes } from '@app/modules/PromoCode/promo-code.routes'
 import { userRoutes } from '@app/modules/User/user.routes'
 import { waitlistRoutes } from '@app/modules/Waitlist/waitlist.routes'
 import { paymentMethodRoutes } from '@app/modules/PaymentMethod/payment-method.routes'
+import { walletRoutes } from '@app/modules/Wallet/wallet.routes'
+import { bookingRoutes } from '@app/modules/Booking/booking.routes'
+import { penaltyRoutes } from '@app/modules/Penalty/penalty.routes'
 import express, { Router } from 'express'
 
 const router: Router = express.Router()
@@ -33,6 +36,7 @@ const routes = [
     path: '/artist',
     route: artistProfileRoutes,
   },
+  
   {
     path: '/category',
     route: categoryRoutes,
@@ -93,6 +97,18 @@ const routes = [
   {
     path: '/payment-methods',
     route: paymentMethodRoutes,
+  },
+  {
+    path: '/wallets',
+    route: walletRoutes,
+  },
+  {
+    path: '/bookings',
+    route: bookingRoutes,
+  },
+  {
+    path: '/penalties',
+    route: penaltyRoutes,
   },
 ]
 

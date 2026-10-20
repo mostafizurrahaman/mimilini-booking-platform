@@ -6,6 +6,8 @@ import {
 } from '@repo/db'
 import httpStatus from 'http-status'
 import { AppError } from '@repo/shared'
+import { logger } from '@app/libs/logger'
+import { getOrCreateStripeGstTaxRate } from '@app/libs/stripe'
 import type {
   TCreatePlatformSettingsPayloadType,
   TUpdatePlatformSettingsPayloadType,
@@ -93,6 +95,15 @@ const updatePlatformSettings = async (
     }
   }
 
+  if (payload.gstPercentage !== undefined) {
+    try {
+      const stripeTaxRate = await getOrCreateStripeGstTaxRate(payload.gstPercentage)
+      updateData.stripeGstTaxRateId = stripeTaxRate.id
+    } catch (err) {
+      logger.warn('Failed to sync Stripe GST tax rate during platform settings update:', err)
+    }
+  }
+
   const result = await PlatformSettings.findByIdAndUpdate(
     existingSettings._id,
     { $set: updateData },
@@ -124,6 +135,16 @@ const getPlatformSettings = async () => {
       ...DEFAULT_PLATFORM_SETTINGS,
       singletonKey: PLATFORM_SETTINGS_SINGLETON_KEY,
     })
+  }
+
+  if (!result.stripeGstTaxRateId) {
+    try {
+      const stripeTaxRate = await getOrCreateStripeGstTaxRate(result.gstPercentage)
+      result.stripeGstTaxRateId = stripeTaxRate.id
+      await result.save()
+    } catch (err) {
+      logger.warn('Failed to ensure Stripe GST tax rate in getPlatformSettings:', err)
+    }
   }
 
   return result

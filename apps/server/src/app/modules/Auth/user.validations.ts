@@ -77,8 +77,8 @@ const changedPasswordSchema = z.object({
 
 const updateProfileSchema = z.object({
   body: z.object({
-    name: requiredString('name'),
-    phone: requiredString('phone'),
+    name: optionalString('name'),
+    phone: optionalString('phone'),
   }),
 })
 

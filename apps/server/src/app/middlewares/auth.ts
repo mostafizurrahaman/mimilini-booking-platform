@@ -48,7 +48,19 @@ export const auth = (...requiredRoles: TAuthRole[]) => {
       throw new AppError(httpStatus.FORBIDDEN, 'Please verify your account')
     }
 
-    if (user.status !== AuthStatus.ACTIVE) {
+    if (user.status === AuthStatus.SUSPENDED) {
+      const isAllowedRoute =
+        req.baseUrl.includes('/penalty') ||
+        req.originalUrl.includes('/penalty') ||
+        req.originalUrl.includes('/auth/me') ||
+        req.originalUrl.includes('/auth/profile')
+      if (!isAllowedRoute) {
+        throw new AppError(
+          httpStatus.FORBIDDEN,
+          'Your account has been suspended due to a last-minute cancellation. Please settle your pending penalty to restore your account.'
+        )
+      }
+    } else if (user.status !== AuthStatus.ACTIVE) {
       throw new AppError(httpStatus.FORBIDDEN, 'Your account is not active')
     }
 

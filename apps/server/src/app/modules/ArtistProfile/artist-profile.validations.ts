@@ -10,6 +10,8 @@ import {
   enumString,
   requiredNumber,
   requiredStrBoolean,
+  requiredDate,
+  requiredMongooseId,
 } from '@repo/shared'
 import { artistProfileSortableFields } from '@repo/db'
 
@@ -126,10 +128,71 @@ const rejectArtistDocumentSchema = z.object({
   }),
 })
 
+const findAvailableArtistsSchema = z.object({
+  query: z.object({
+    artistId: optionalString('Artist ID'),
+    searchTerm: optionalString('Search Term'),
+    sortBy: optionalString('Sort By'),
+    sortOrder: optionalString('Sort Order'),
+    categoryId: optionalString('Category ID'),
+    latitude: z.string().optional(),
+    longitude: z.string().optional(),
+    radius: z.string().optional(),
+    date: z.string().optional(),
+    time: z.string().optional(),
+    guestCount: z.string().optional(),
+    availableToday: z.string().optional(),
+    page: z.string().optional(),
+    limit: z.string().optional(),
+  }),
+})
+
+const addCertificationSchema = z.object({
+  body: z.object({
+    name: z.string().trim().optional(),
+    issuedAt: z.string().trim().optional(),
+    url: z.string().trim().optional(),
+  }),
+})
+
+const removeCertificationSchema = z.object({
+  body: z
+    .object({
+      url: optionalString('Certificate URL'),
+      certificationId: optionalString('Certificate ID'),
+    })
+    .refine((data) => Boolean(data.url || data.certificationId), {
+      message: 'Either url or certificationId is required to remove a certification',
+    }),
+})
+
+const removePortfolioSchema = z.object({
+  body: z.object({
+    url: requiredString('Portfolio image URL'),
+  }),
+})
+
+const getArtistDetailsSchema = z.object({
+  params: z.object({
+    artistId: requiredString('Artist ID'),
+  }),
+  query: z.object({
+    date: requiredDate("Date"),
+    serviceId: requiredMongooseId('Service ID').optional(),
+    latitude: z.string().optional(),
+    longitude: z.string().optional(),
+  }),
+})
+
 export const artistProfileValidations = {
   createArtistProfileSchema,
   updateArtistProfileSchema,
   getAllArtistProfileSchema,
+  findAvailableArtistsSchema,
+  getArtistDetailsSchema,
+  addCertificationSchema,
+  removeCertificationSchema,
+  removePortfolioSchema,
 
   // ?? Verification Status:
   verifyArtistDocumentSchema,

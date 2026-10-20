@@ -10,6 +10,7 @@ export interface IPlatformSettings {
   singletonKey?: string
   platformPercentage: number
   gstPercentage: number
+  stripeGstTaxRateId?: string | null | undefined
   travelingFeePerKm: number
   parkingFee: number
   peakTimeSurcharge: number

@@ -59,6 +59,11 @@ const platformSettingsSchema = new Schema<IPlatformSettingsDoc, IPlatformSetting
       max: 100,
       default: DEFAULT_PLATFORM_SETTINGS.gstPercentage,
     },
+    stripeGstTaxRateId: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     travelingFeePerKm: {
       type: Number,
       required: true,

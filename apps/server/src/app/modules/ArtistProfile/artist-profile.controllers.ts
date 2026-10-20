@@ -57,6 +57,30 @@ const getAllArtistProfile = catchAsync(async (req, res) => {
   })
 })
 
+const findAvailableArtists = catchAsync(async (req, res) => {
+  const result = await artistProfileServices.findAvailableArtists(req.query)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'Available artists retrieved successfully!',
+    data: result.data,
+    meta: result.meta,
+  })
+})
+
+const getArtistDetails = catchAsync(async (req, res) => {
+  const { artistId } = req.params
+  const result = await artistProfileServices.getArtistDetails(artistId as string, req.query)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'Artist profile details retrieved successfully!',
+    data: result,
+  })
+})
+
 // 3. Verify document:
 const verifyDocument = catchAsync(async (req, res) => {
   const targetUserId = req.params.userId as string
@@ -128,10 +152,51 @@ const addNewPortfolioImage = catchAsync(async (req, res) => {
   })
 })
 
+const removePortfolioImage = catchAsync(async (req, res) => {
+  const user = await getUserFromRequest(req)
+  const { url } = req.body
+  const result = await artistProfileServices.removePortfolioImage(user, url)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'Portfolio image removed successfully.',
+    data: result,
+  })
+})
+
+const addCertification = catchAsync(async (req, res) => {
+  const user = await getUserFromRequest(req)
+  const file = req.file as TMulterFile
+
+  const result = await artistProfileServices.addCertification(user, file, req.body)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'Certificate uploaded successfully.',
+    data: result,
+  })
+})
+
+const removeCertification = catchAsync(async (req, res) => {
+  const user = await getUserFromRequest(req)
+  const result = await artistProfileServices.removeCertification(user, req.body)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'Certificate removed successfully.',
+    data: result,
+  })
+})
+
 export const artistProfileControllers = {
   createArtistProfile,
   updateArtistProfile,
   getAllArtistProfile,
+  findAvailableArtists,
+  getArtistDetails,
 
   // Verify documents:
   verifyDocument,
@@ -141,4 +206,9 @@ export const artistProfileControllers = {
 
   // Portfolio:
   addNewPortfolioImage,
+  removePortfolioImage,
+
+  // Certifications:
+  addCertification,
+  removeCertification,
 }

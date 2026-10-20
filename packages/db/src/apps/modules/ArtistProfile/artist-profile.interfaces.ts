@@ -5,6 +5,13 @@ export interface ILocation {
   coordinates: [number, number] // [longitude, latitude]
 }
 
+export interface IArtistCertification {
+  _id?: Types.ObjectId
+  name: string
+  url: string
+  issuedAt?: Date
+}
+
 export interface IArtistProfile {
   user: Types.ObjectId
   businessName: string
@@ -32,8 +39,15 @@ export interface IArtistProfile {
   // Portfolio:
   portfolioImages: string[]
 
+  // Certifications:
+  certifications?: IArtistCertification[]
+
   language: string
   travelRadius: number
+
+  // Cancellation penalty tracking:
+  cancelBookingCount: number
+  isPenaltyRequired: boolean
 }
 
 export interface IArtistProfileDoc extends Document, IArtistProfile {}

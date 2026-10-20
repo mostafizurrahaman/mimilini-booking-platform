@@ -1,6 +1,15 @@
 import { Schema, model } from 'mongoose'
 import type { IArtistProfileDoc } from './artist-profile.interfaces'
 
+const certificationSchema = new Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    url: { type: String, required: true, trim: true },
+    issuedAt: { type: Date },
+  },
+  { _id: true, versionKey: false }
+)
+
 const artistProfileSchema = new Schema<IArtistProfileDoc>(
   {
     user: {
@@ -83,6 +92,24 @@ const artistProfileSchema = new Schema<IArtistProfileDoc>(
     portfolioImages: {
       type: [String],
     },
+    certifications: {
+      type: [certificationSchema],
+      default: [],
+      validate: [
+        {
+          validator: (val: any[]) => !val || val.length <= 20,
+          message: 'Maximum 20 certificates allowed',
+        },
+        {
+          validator: (val: any[]) => {
+            if (!val || val.length <= 1) return true
+            const names = val.map((c) => c?.name?.trim().toLowerCase()).filter(Boolean)
+            return new Set(names).size === names.length
+          },
+          message: 'Duplicate certificate names are not allowed',
+        },
+      ],
+    },
     language: {
       type: String,
       required: true,
@@ -91,6 +118,15 @@ const artistProfileSchema = new Schema<IArtistProfileDoc>(
       type: Number, // km basis
       required: true,
       min: 0,
+    },
+    cancelBookingCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    isPenaltyRequired: {
+      type: Boolean,
+      default: false,
     },
   },
   {

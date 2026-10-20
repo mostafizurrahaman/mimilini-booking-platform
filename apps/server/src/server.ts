@@ -4,9 +4,10 @@ import configs from './app/configs'
 import app from './app'
 import { logger } from '@app/libs/logger'
 import { seedSuperAdmin } from '@app/libs/seed-super-admin'
+import { startBookingCronJobs } from './app/jobs/booking.jobs'
 
 let server: Server
-//  boostrap function :
+// bootstrap function :
 const boostrap = async () => {
   try {
     await connectDB(configs.databaseUrl)
@@ -17,6 +18,7 @@ const boostrap = async () => {
     // server listen :
     server = app.listen(configs.port, () => {
       logger.info(`🧑‍🚀🚀 Server is running on ${configs.port}`)
+      startBookingCronJobs()
     })
   } catch (err) {
     logger.error(`❌ Database connection failed ❌`, err)
@@ -45,3 +47,4 @@ process.on('uncaughtException', (error) => {
   logger.error('uncaughtException: ERROR', error.message)
   process.exit(1)
 })
+// reload: added findAvailableArtists endpoint
