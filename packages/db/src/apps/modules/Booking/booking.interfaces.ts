@@ -136,6 +136,8 @@ export interface ICompletionDetails {
   proofPhotos?: string[] | null | undefined
   customerSignature?: string | null | undefined
   completedAt?: Date | null | undefined
+  signedAt?: Date | null | undefined
+  payoutTransferredAt?: Date | null | undefined
 }
 
 export interface IRescheduleRequest {

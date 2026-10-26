@@ -33,16 +33,21 @@ import { calculateArtistCancellationPenalty, round2 } from '../Booking/booking.u
 const handleAccountUpdated = async (event: Stripe.Event) => {
   const accountData = event.data.object as Stripe.Account
 
-  // ? Check user id in metadata:
-  const userId = accountData?.metadata?.userId
-  if (!userId) {
-    throw new AppError(httpStatus.NOT_FOUND, 'User is missing in metadata!')
+  let userId = accountData?.metadata?.userId
+  let user = userId ? await User.findById(userId) : null
+
+  if (!user && accountData?.id) {
+    const existingAccount = await Account.findOne({ account: accountData.id })
+    if (existingAccount?.user) {
+      user = await User.findById(existingAccount.user)
+    }
   }
 
-  // ? Retrieve the user with this user id:
-  const user = await User.findById(userId)
   if (!user) {
-    throw new AppError(httpStatus.NOT_FOUND, 'User not found!')
+    logger.info(
+      `[Stripe Webhook] account.updated: No matching user found for account ${accountData?.id}. Skipping gracefully.`
+    )
+    return
   }
 
   // ? Extract account information:
@@ -175,23 +180,97 @@ const handlePaymentIntentSucceeded = async (paymentIntent: Stripe.PaymentIntent)
     // Automatically issue official Recipient Created Tax Invoice (RCTI) for artist
     await bookingServices.issueArtistRctiStripeInvoice(booking)
 
-    const existingTxn = await PaymentTransaction.findOne({
+    const transferGroup =
+      booking.bookingGroupId || metadata.bookingGroupId || `GRP-${booking.bookingNumber}`
+
+    await PaymentTransaction.findOneAndUpdate(
+      {
+        $or: [
+          { stripePaymentIntentId: paymentIntent.id },
+          { transactionId: `TXN-${booking.bookingNumber}-02` },
+          { booking: (booking as any)._id, type: PAYMENT_TRANSACTION_TYPE.BALANCE_80 },
+        ],
+      },
+      {
+        $set: {
+          transactionId: `TXN-${booking.bookingNumber}-02`,
+          booking: (booking as any)._id,
+          bookingGroupId: transferGroup,
+          user: booking.customer,
+          artist: booking.artist,
+          type: PAYMENT_TRANSACTION_TYPE.BALANCE_80,
+          gateway: PAYMENT_GATEWAY.STRIPE_CONNECT,
+          status: PAYMENT_STATUS.SUCCEEDED,
+          currency: 'AUD',
+          amount: booking.balancePayment.amount,
+          stripePaymentIntentId: paymentIntent.id,
+          marketplaceFee: 0,
+          marketplaceFeeGst: 0,
+          stripeFeeBorne: booking.stripeBalanceFee,
+          artistNetShare: booking.artistNetPayout,
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    )
+    logger.info(`[Stripe Webhook] 80% Balance payment confirmed for booking ${bookingNumber}`)
+  }
+}
+
+// Invoice Payment Succeeded Event (When customer pays directly via the raised Stripe Invoice URL)
+const handleInvoicePaymentSucceeded = async (invoice: Stripe.Invoice) => {
+  const bookingNumber = invoice.metadata?.bookingNumber
+  const booking = await Booking.findOne({
+    $or: [
+      { stripeInvoiceId: invoice.id },
+      ...(bookingNumber ? [{ bookingNumber }] : []),
+    ],
+  })
+  if (!booking) {
+    logger.info(`[Stripe Webhook] No booking matched for invoice ${invoice.id}`)
+    return
+  }
+
+  // Idempotent: If balance was already captured via app/card, ignore
+  if (booking.balancePayment?.status === PAYMENT_STAGE_STATUS.CAPTURED) {
+    return
+  }
+
+  const rawPaymentIntent = (invoice as any).payment_intent
+  const paymentIntentId =
+    typeof rawPaymentIntent === 'string'
+      ? rawPaymentIntent
+      : rawPaymentIntent?.id || null
+
+  booking.balancePayment.status = PAYMENT_STAGE_STATUS.CAPTURED
+  booking.balancePayment.paidAt = new Date()
+  if (paymentIntentId) {
+    booking.balancePayment.stripePaymentIntentId = paymentIntentId
+  }
+  if (invoice.hosted_invoice_url) {
+    booking.balancePayment.stripeReceiptUrl = invoice.hosted_invoice_url
+  }
+  booking.status = BOOKING_STATUS.CONFIRMED
+  await booking.save()
+
+  // Issue official RCTI for the artist
+  await bookingServices.issueArtistRctiStripeInvoice(booking)
+
+  const transferGroup =
+    booking.bookingGroupId || invoice.metadata?.bookingGroupId || `GRP-${booking.bookingNumber}`
+
+  await PaymentTransaction.findOneAndUpdate(
+    {
       $or: [
-        { stripePaymentIntentId: paymentIntent.id },
+        ...(paymentIntentId ? [{ stripePaymentIntentId: paymentIntentId }] : []),
+        { transactionId: `TXN-${booking.bookingNumber}-02` },
         { booking: (booking as any)._id, type: PAYMENT_TRANSACTION_TYPE.BALANCE_80 },
       ],
-    })
-
-    if (existingTxn) {
-      existingTxn.status = PAYMENT_STATUS.SUCCEEDED
-      existingTxn.stripePaymentIntentId = paymentIntent.id
-      await existingTxn.save()
-    } else {
-      await PaymentTransaction.create({
+    },
+    {
+      $set: {
         transactionId: `TXN-${booking.bookingNumber}-02`,
         booking: (booking as any)._id,
-        bookingGroupId:
-          booking.bookingGroupId || metadata.bookingGroupId || `GRP-${booking.bookingNumber}`,
+        bookingGroupId: transferGroup,
         user: booking.customer,
         artist: booking.artist,
         type: PAYMENT_TRANSACTION_TYPE.BALANCE_80,
@@ -199,15 +278,19 @@ const handlePaymentIntentSucceeded = async (paymentIntent: Stripe.PaymentIntent)
         status: PAYMENT_STATUS.SUCCEEDED,
         currency: 'AUD',
         amount: booking.balancePayment.amount,
-        stripePaymentIntentId: paymentIntent.id,
+        stripePaymentIntentId: paymentIntentId || invoice.id,
         marketplaceFee: 0,
         marketplaceFeeGst: 0,
         stripeFeeBorne: booking.stripeBalanceFee,
         artistNetShare: booking.artistNetPayout,
-      })
-    }
-    logger.info(`[Stripe Webhook] 80% Balance payment confirmed for booking ${bookingNumber}`)
-  }
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  )
+
+  logger.info(
+    `[Stripe Webhook] Balance paid directly via raised Stripe Invoice for booking ${booking.bookingNumber}`
+  )
 }
 
 // PaymentIntent Failed Event
@@ -289,6 +372,15 @@ const handlePaymentIntentFailed = async (paymentIntent: Stripe.PaymentIntent) =>
 
 // PaymentIntent Canceled Event
 const handlePaymentIntentCanceled = async (paymentIntent: Stripe.PaymentIntent) => {
+  const invoiceId = (paymentIntent as any).invoice
+  // If this PaymentIntent was automatically generated for an invoice that was settled out-of-band, ignore it
+  if (invoiceId) {
+    logger.info(
+      `[Stripe Webhook] Ignoring canceled invoice PaymentIntent ${paymentIntent.id} (invoice: ${invoiceId})`
+    )
+    return
+  }
+
   const metadata = paymentIntent.metadata || {}
   const bookingNumber = metadata.bookingNumber
   if (!bookingNumber) return
@@ -473,21 +565,12 @@ const handleChargeRefunded = async (charge: Stripe.Charge) => {
     }
   }
 
-  // 6. Void customer and artist Stripe invoices if still open
-  if (booking.stripeInvoiceId) {
-    try {
-      await stripe.invoices.voidInvoice(booking.stripeInvoiceId)
-    } catch (e: any) {
-      // safe fallback
-    }
-  }
-  if (booking.artistStripeInvoiceId) {
-    try {
-      await stripe.invoices.voidInvoice(booking.artistStripeInvoiceId)
-    } catch (e: any) {
-      // safe fallback
-    }
-  }
+  // 6. Void or issue credit note for customer and artist Stripe invoices
+  await bookingServices.voidOrCreditNoteInvoice(booking.stripeInvoiceId, booking.bookingNumber)
+  await bookingServices.voidOrCreditNoteInvoice(
+    booking.artistStripeInvoiceId,
+    booking.bookingNumber
+  )
 
   // 7. Update booking status if not already set
   if (!isAlreadyCancelled) {
@@ -609,6 +692,9 @@ const listenStripeEventsForConnectedAccount = async (event: Stripe.Event) => {
       break
     case 'charge.refunded':
       await handleChargeRefunded(event.data.object as Stripe.Charge)
+      break
+    case 'invoice.payment_succeeded':
+      await handleInvoicePaymentSucceeded(event.data.object as Stripe.Invoice)
       break
     case 'checkout.session.completed':
       await handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session)

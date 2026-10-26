@@ -1,6 +1,7 @@
 import {
   Account,
   Address,
+  ArtistBlockedDate,
   ArtistProfile,
   ArtistServices,
   AuthStatus,
@@ -18,19 +19,20 @@ import {
   PlatformSettings,
   PromoCode,
   User,
+  WalletLedger,
   WALLET_SOURCE,
-  type IBookingDoc,
   type IUser,
 } from '@repo/db'
 import { AppError } from '@repo/shared'
 import { stripe, getOrCreateStripeGstTaxRate } from '@app/libs/stripe'
+import configs from '@app/configs'
 import { logger } from '@app/libs/logger'
 import Stripe from 'stripe'
 import mongoose from 'mongoose'
 import httpStatus from 'http-status'
 import moment from 'moment'
 import { walletServices } from '../Wallet/wallet.services'
-import { uploadMultipleFileToS3, type TMulterFileList } from 'packages/media-hub/src'
+import { uploadMultipleFileToS3 } from 'packages/media-hub/src'
 import { AWS_FOLDER_NAMES } from '@app/libs/files_folder'
 import {
   calculateBookingBreakdown,
@@ -229,10 +231,17 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
 
   // 1. Calculate appointment end time (duration multiplied by guest count)
   const duration = (service.durationMinutes || 60) * guestCount
-  const startMoment = moment(`${input.bookingDate} ${input.startTime}`, 'YYYY-MM-DD HH:mm')
+  const startMoment = moment(`${input.bookingDate} ${input.startTime.trim()}`, [
+    'YYYY-MM-DD HH:mm',
+    'YYYY-MM-DD hh:mm A',
+    'YYYY-MM-DD h:mm A',
+    'YYYY-MM-DD hh:mma',
+    'YYYY-MM-DD h:mma',
+  ])
   if (!startMoment.isValid() || startMoment.isBefore(moment())) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Booking date and time must be in the future')
   }
+  const normalizedStartTime = startMoment.format('HH:mm')
   const endMoment = startMoment.clone().add(duration, 'minutes')
   const endTime = endMoment.format('HH:mm')
   const appointmentDate = startMoment.clone().startOf('day').toDate()
@@ -253,10 +262,7 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
         artist: input.artist,
         bookingDate: appointmentDate,
         status: {
-          $nin: [
-            BOOKING_STATUS.CANCELLED,
-            BOOKING_STATUS.DECLINED,
-          ],
+          $nin: [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.DECLINED],
         },
       })
       if (dailyCount >= availability.maxBookingPerDay) {
@@ -275,15 +281,12 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     artist: input.artist,
     bookingDate: appointmentDate,
     status: {
-      $nin: [
-        BOOKING_STATUS.CANCELLED,
-        BOOKING_STATUS.DECLINED,
-      ],
+      $nin: [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.DECLINED],
     },
     $or: [
       {
         startTime: { $lt: endTime },
-        endTime: { $gt: input.startTime },
+        endTime: { $gt: normalizedStartTime },
       },
     ],
   })
@@ -552,7 +555,7 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     address: input.address,
     serviceLocationSnapshot: serviceLocationSnapshot || undefined,
     bookingDate: appointmentDate,
-    startTime: input.startTime,
+    startTime: normalizedStartTime,
     endTime,
     durationMinutes: duration,
     guestCount,
@@ -602,7 +605,10 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
   }
 
   // 13. Create PaymentTransaction audit record if payment occurred
-  if (initialStatus === 'captured' && (breakdown.initialDepositAmount > 0 || breakdown.platformCreditApplied > 0)) {
+  if (
+    initialStatus === 'captured' &&
+    (breakdown.initialDepositAmount > 0 || breakdown.platformCreditApplied > 0)
+  ) {
     const txnPayload: any = {
       transactionId: `TXN-${bookingNumber}-01`,
       booking: (booking as any)._id,
@@ -611,7 +617,9 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
       artist: input.artist,
       type: PAYMENT_TRANSACTION_TYPE.INITIAL_20,
       gateway:
-        breakdown.platformCreditApplied > 0 ? PAYMENT_GATEWAY.MIXED : PAYMENT_GATEWAY.STRIPE_CONNECT,
+        breakdown.platformCreditApplied > 0
+          ? PAYMENT_GATEWAY.MIXED
+          : PAYMENT_GATEWAY.STRIPE_CONNECT,
       status: PAYMENT_STATUS.SUCCEEDED,
       currency: 'AUD',
       amount: breakdown.initialDepositAmount,
@@ -634,8 +642,440 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
   }
 }
 
+const voidOrCreditNoteInvoice = async (
+  invoiceId: string | null | undefined,
+  bookingNumber: string
+) => {
+  if (!invoiceId) return
+  try {
+    await stripe.invoices.voidInvoice(invoiceId)
+  } catch (voidErr: any) {
+    // If invoice was already marked paid or cannot be voided, issue Credit Note for legal cancellation
+    try {
+      await stripe.creditNotes.create({
+        invoice: invoiceId,
+        reason: 'order_cancellation',
+        memo: `Cancelled booking #${bookingNumber}`,
+      })
+    } catch (cnErr: any) {
+      logger.warn(`Failed to void or credit-note invoice ${invoiceId}: ${cnErr?.message}`)
+    }
+  }
+}
+
 /**
  * Cancel Booking adhering to the 24h refund / forfeiture policy
+ */
+/**
+ * Customer specific cancellation service
+ */
+const customerCancelBooking = async (
+  user: IUser,
+  bookingId: string,
+  cancellationReason?: string
+) => {
+  const booking = await Booking.findById(bookingId).populate('artist customer')
+  if (!booking) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
+  }
+
+  const isCustomer = booking.customer._id.toString() === user._id.toString()
+  const isAdmin = user.role === 'admin' || user.role === 'super_admin'
+  if (!isCustomer && !isAdmin) {
+    throw new AppError(httpStatus.FORBIDDEN, 'Only the customer can cancel this booking')
+  }
+
+  if (
+    booking.status === BOOKING_STATUS.CANCELLED ||
+    booking.status === BOOKING_STATUS.COMPLETED ||
+    booking.status === BOOKING_STATUS.DECLINED ||
+    booking.status === BOOKING_STATUS.NO_SHOW
+  ) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Cannot cancel booking that is already '${booking.status}'`
+    )
+  }
+
+  const appointmentDateStr = moment.utc(booking.bookingDate).format('YYYY-MM-DD')
+  const appointmentDateTime = moment(
+    `${appointmentDateStr} ${booking.startTime}`,
+    'YYYY-MM-DD HH:mm'
+  )
+  const hoursUntilAppointment = appointmentDateTime.diff(moment(), 'hours', true)
+
+  // Release promo code if applied
+  if (booking.promoCode) {
+    await PromoCode.findByIdAndUpdate(booking.promoCode, { $inc: { usageCount: -1 } })
+  }
+
+  // Scenario A: Customer cancels > 24 hours prior (Point 1 & 2)
+  if (hoursUntilAppointment > 24) {
+    // Void customer Stripe invoice or issue Credit Note if already paid
+    await voidOrCreditNoteInvoice(booking.stripeInvoiceId, booking.bookingNumber)
+    if (booking.artistStripeInvoiceId) {
+      await voidOrCreditNoteInvoice(booking.artistStripeInvoiceId, booking.bookingNumber)
+    }
+
+    const isInitialPaid = booking.initialPayment.status === PAYMENT_STAGE_STATUS.CAPTURED
+    const depositPaid = isInitialPaid ? (booking.initialPayment.amount || 0) : 0
+    const initialFee = isInitialPaid ? (booking.stripeInitialFee || 0) : 0
+
+    const isBalancePaid =
+      booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED &&
+      (booking.balancePayment.amount || 0) > 0
+    const balancePaid = isBalancePaid ? (booking.balancePayment.amount || 0) : 0
+    const balanceFee = isBalancePaid ? (booking.stripeBalanceFee || 0) : 0
+
+    const totalPaid = round2(depositPaid + balancePaid)
+    const totalFee = round2(initialFee + balanceFee)
+    const refundCreditAmount = round2(Math.max(0, totalPaid - totalFee))
+
+    // Issue Platform Credit to wallet (Valid for 36 months) after reducing fee
+    if (refundCreditAmount > 0) {
+      const alreadyCredited = await WalletLedger.findOne({
+        booking: booking._id,
+        source: WALLET_SOURCE.CANCELLATION_CREDIT,
+      })
+      if (!alreadyCredited) {
+        const description = isBalancePaid
+          ? `Booking #${booking.bookingNumber} cancellation credit (>24h policy, 100% payment $${totalPaid} minus platform commission $${totalFee})`
+          : `Booking #${booking.bookingNumber} cancellation credit (>24h policy, 20% deposit $${depositPaid} minus platform commission $${initialFee})`
+
+        await walletServices.creditUserWallet({
+          userId: booking.customer._id,
+          amount: refundCreditAmount,
+          source: WALLET_SOURCE.CANCELLATION_CREDIT,
+          bookingId: booking._id,
+          bookingGroupId: booking.bookingGroupId,
+          description,
+        })
+      }
+    }
+
+    // Restore original platform credit if applied
+    if (booking.platformCreditApplied > 0) {
+      const alreadyRestored = await WalletLedger.findOne({
+        booking: booking._id,
+        source: WALLET_SOURCE.BOOKING_ROLLBACK,
+      })
+      if (!alreadyRestored) {
+        await walletServices.creditUserWallet({
+          userId: booking.customer._id,
+          amount: booking.platformCreditApplied,
+          source: WALLET_SOURCE.BOOKING_ROLLBACK,
+          bookingId: booking._id,
+          bookingGroupId: booking.bookingGroupId,
+          description: `Booking #${booking.bookingNumber} cancellation (>24h) - platform credit restored`,
+        })
+      }
+    }
+
+    booking.status = BOOKING_STATUS.CANCELLED
+    booking.cancelledBy = user._id
+    booking.cancelledByRole = isAdmin && !isCustomer ? 'admin' : 'customer'
+    booking.cancellationReason = cancellationReason || 'Cancelled by customer >24h'
+    booking.cancelledAt = new Date()
+    booking.platformCreditIssued = refundCreditAmount
+    if (isInitialPaid) {
+      booking.initialPayment.status = PAYMENT_STAGE_STATUS.REFUNDED
+    }
+    if (isBalancePaid) {
+      booking.balancePayment.status = PAYMENT_STAGE_STATUS.REFUNDED
+    }
+    await booking.save()
+
+    const message = isBalancePaid
+      ? `Booking cancelled successfully. Your 100% payment ($${totalPaid}) minus platform commission ($${totalFee}) has been credited to your wallet as $${refundCreditAmount} Platform Credit (valid 36 months).`
+      : `Booking cancelled successfully. Your 20% deposit ($${depositPaid}) minus platform commission ($${initialFee}) has been credited to your wallet as $${refundCreditAmount} Platform Credit (valid 36 months).`
+
+    return {
+      message,
+      booking,
+    }
+  }
+
+  // Scenario B: Customer cancels within 24 hours (< 24h) (Point 3)
+  const isBalancePaid =
+    booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED &&
+    (booking.balancePayment.amount || 0) > 0
+
+  let customerCreditAmount = 0
+  let artistShareAmount = 0
+
+  if (isBalancePaid) {
+    // Platform keeps the original 20% deposit
+    // Customer gets 40% of artist net payout as Platform Credit
+    // Artist gets 40% of artist net payout transferred to their Stripe account
+    const baseNetPayout = booking.artistNetPayout || booking.balancePayment.amount
+    customerCreditAmount = round2(baseNetPayout * 0.4)
+    artistShareAmount = round2(baseNetPayout * 0.4)
+
+    if (customerCreditAmount > 0) {
+      const alreadyCredited = await WalletLedger.findOne({
+        booking: booking._id,
+        source: WALLET_SOURCE.CANCELLATION_CREDIT,
+      })
+      if (!alreadyCredited) {
+        await walletServices.creditUserWallet({
+          userId: booking.customer._id,
+          amount: customerCreditAmount,
+          source: WALLET_SOURCE.CANCELLATION_CREDIT,
+          bookingId: booking._id,
+          bookingGroupId: booking.bookingGroupId,
+          description: `Booking #${booking.bookingNumber} late cancellation credit (40% of artist net share)`,
+        })
+      }
+    }
+
+    let isTransferSuccessful = false
+    const artistAccount = await Account.findOne({ user: booking.artist._id })
+    if (artistAccount?.account && artistShareAmount > 0) {
+      try {
+        await stripe.transfers.create({
+          amount: Math.round(artistShareAmount * 100),
+          currency: 'aud',
+          destination: artistAccount.account,
+          transfer_group: `GRP-${booking.bookingNumber}`,
+          metadata: {
+            bookingId: booking._id.toString(),
+            type: 'LATE_CANCELLATION_ARTIST_SHARE',
+          },
+        })
+        isTransferSuccessful = true
+      } catch (err: any) {
+        logger.warn(`Failed to transfer late cancellation artist share: ${err?.message}`)
+      }
+    }
+
+    const platformShareAmount = round2(
+      booking.balancePayment.amount - artistShareAmount - customerCreditAmount
+    )
+
+    await PaymentTransaction.create({
+      transactionId: `TXN-${booking.bookingNumber}-LATE-CANCEL`,
+      booking: booking._id,
+      bookingGroupId: `GRP-${booking.bookingNumber}`,
+      user: booking.customer._id,
+      artist: booking.artist._id,
+      type: PAYMENT_TRANSACTION_TYPE.CANCELLATION_FEE,
+      gateway: PAYMENT_GATEWAY.STRIPE_CONNECT,
+      status: PAYMENT_STATUS.SUCCEEDED,
+      currency: 'AUD',
+      amount: booking.balancePayment.amount,
+      platformCreditUsed: 0,
+      marketplaceFee: platformShareAmount,
+      marketplaceFeeGst: 0,
+      stripeFeeBorne: booking.stripeBalanceFee || 0,
+      artistNetShare: isTransferSuccessful ? artistShareAmount : 0,
+    })
+
+    booking.balancePayment.status = PAYMENT_STAGE_STATUS.REFUNDED
+    booking.depositForfeited = true
+    booking.cancellationFeeCharged = round2((booking.initialPayment?.amount || 0) + platformShareAmount)
+  } else {
+    booking.depositForfeited = true
+    booking.cancellationFeeCharged = booking.initialPayment?.amount || 0
+  }
+
+  booking.status = BOOKING_STATUS.CANCELLED
+  booking.cancelledBy = user._id
+  booking.cancelledByRole = isAdmin && !isCustomer ? 'admin' : 'customer'
+  booking.cancellationReason = cancellationReason || 'Late cancellation by customer (<24h)'
+  booking.cancelledAt = new Date()
+  booking.platformCreditIssued = customerCreditAmount
+  await booking.save()
+
+  return {
+    message: isBalancePaid
+      ? `Booking cancelled under Late Cancellation policy (<24h). Platform retained the 20% deposit. You received $${customerCreditAmount} Platform Credit (40% of artist net share).`
+      : 'Booking cancelled under Late Cancellation policy (<24h). The 20% deposit is non-refundable and forfeited.',
+    booking,
+  }
+}
+
+/**
+ * Artist specific cancellation service
+ */
+const artistCancelBooking = async (
+  user: IUser,
+  bookingId: string,
+  cancellationReason?: string
+) => {
+  const booking = await Booking.findById(bookingId).populate('artist customer')
+  if (!booking) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
+  }
+
+  const isArtist = booking.artist._id.toString() === user._id.toString()
+  const isAdmin = user.role === 'admin' || user.role === 'super_admin'
+  if (!isArtist && !isAdmin) {
+    throw new AppError(httpStatus.FORBIDDEN, 'Only the assigned artist can cancel this booking')
+  }
+
+  if (
+    booking.status === BOOKING_STATUS.CANCELLED ||
+    booking.status === BOOKING_STATUS.COMPLETED ||
+    booking.status === BOOKING_STATUS.DECLINED ||
+    booking.status === BOOKING_STATUS.NO_SHOW
+  ) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Cannot cancel booking that is already '${booking.status}'`
+    )
+  }
+
+  const appointmentDateStr = moment.utc(booking.bookingDate).format('YYYY-MM-DD')
+  const appointmentDateTime = moment(
+    `${appointmentDateStr} ${booking.startTime}`,
+    'YYYY-MM-DD HH:mm'
+  )
+  const hoursUntilAppointment = appointmentDateTime.diff(moment(), 'hours', true)
+
+  // Release promo code if applied
+  if (booking.promoCode) {
+    await PromoCode.findByIdAndUpdate(booking.promoCode, { $inc: { usageCount: -1 } })
+  }
+
+  // Void Stripe invoices if exist
+  await voidOrCreditNoteInvoice(booking.stripeInvoiceId, booking.bookingNumber)
+  await voidOrCreditNoteInvoice(booking.artistStripeInvoiceId, booking.bookingNumber)
+
+  // Scenario C: Artist cancels - Issue Platform Credit to customer minus transaction fee
+  const depositPaid = booking.initialPayment.amount || 0
+  const isBalancePaid = booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED
+  const balancePaid = isBalancePaid ? (booking.balancePayment.amount || 0) : 0
+  const totalPaid = depositPaid + balancePaid
+
+  // Deduct processing transaction fee incurred on payment
+  const totalTransactionFee = round2(
+    (booking.stripeInitialFee || 0) + (isBalancePaid ? (booking.stripeBalanceFee || 0) : 0)
+  )
+  const refundCreditAmount = round2(Math.max(0, totalPaid - totalTransactionFee))
+
+  if (refundCreditAmount > 0) {
+    const alreadyCredited = await WalletLedger.findOne({
+      booking: booking._id,
+      source: WALLET_SOURCE.CANCELLATION_CREDIT,
+    })
+    if (!alreadyCredited) {
+      await walletServices.creditUserWallet({
+        userId: booking.customer._id,
+        amount: refundCreditAmount,
+        source: WALLET_SOURCE.CANCELLATION_CREDIT,
+        bookingId: booking._id,
+        bookingGroupId: booking.bookingGroupId,
+        description: `Artist cancelled booking #${booking.bookingNumber} - Platform credit issued ($${totalPaid} minus $${totalTransactionFee} transaction fee, valid 36 months)`,
+      })
+    }
+  }
+
+  // Restore platform credit if customer originally used credit
+  if (booking.platformCreditApplied > 0) {
+    const alreadyRestored = await WalletLedger.findOne({
+      booking: booking._id,
+      source: WALLET_SOURCE.BOOKING_ROLLBACK,
+    })
+    if (!alreadyRestored) {
+      await walletServices.creditUserWallet({
+        userId: booking.customer._id,
+        amount: booking.platformCreditApplied,
+        source: WALLET_SOURCE.BOOKING_ROLLBACK,
+        bookingId: booking._id,
+        description: `Artist cancelled booking #${booking.bookingNumber} - credit restored`,
+      })
+    }
+  }
+
+  // Artist Penalty Calculation & Flagging (Point 9, 10, 11)
+  const artistUserId = booking.artist._id
+  const artistProfile = await ArtistProfile.findOne({ user: artistUserId })
+  let penaltyIncurred = 0
+  let isSuspended = false
+
+  if (artistProfile) {
+    artistProfile.cancelBookingCount = (artistProfile.cancelBookingCount || 0) + 1
+
+    const platformSettings = await PlatformSettings.getSettings()
+    const penaltyCalc = calculateArtistCancellationPenalty(
+      booking.totalBookingPrice || booking.grossAmount || 0,
+      hoursUntilAppointment,
+      platformSettings
+    )
+
+    if (penaltyCalc.penaltyAmount > 0) {
+      artistProfile.isPenaltyRequired = true
+      penaltyIncurred = penaltyCalc.penaltyAmount
+
+      await Penalty.create({
+        booking: booking._id,
+        bookingNumber: booking.bookingNumber,
+        customer: booking.customer._id,
+        artist: booking.artist._id,
+        bookingAmount: booking.totalBookingPrice || booking.grossAmount || 0,
+        budgetTier: penaltyCalc.budgetTier,
+        timeframeTier: penaltyCalc.timeframeTier,
+        penaltyAmount: penaltyCalc.penaltyAmount,
+        currency: 'AUD',
+        reason: cancellationReason || 'Artist cancelled appointment',
+        isPenaltyRequired: true,
+        status: PENALTY_STATUS.PENDING,
+        deductedFromWallet: false,
+      })
+
+      // Point 11: If cancelled within 48 hours (< 48h / last moment), hard block suspend the artist account!
+      if (hoursUntilAppointment <= 48) {
+        isSuspended = true
+        await User.findByIdAndUpdate(artistUserId, { status: AuthStatus.SUSPENDED })
+        logger.warn(
+          `[Artist Suspended] Artist ${artistUserId} account SUSPENDED due to last-minute cancellation (<48h) for booking ${booking.bookingNumber}.`
+        )
+      } else {
+        logger.warn(
+          `[Artist Penalty] Artist ${artistUserId} incurred $${penaltyCalc.penaltyAmount} AUD penalty (${penaltyCalc.budgetTier} tier, ${penaltyCalc.timeframeTier}) for cancelling booking ${booking.bookingNumber}. Profile hidden from discovery.`
+        )
+      }
+    }
+
+    await artistProfile.save()
+  }
+
+  booking.status = BOOKING_STATUS.CANCELLED
+  booking.cancelledBy = user._id
+  booking.cancelledByRole = isAdmin && !isArtist ? 'admin' : 'artist'
+  booking.cancellationReason = cancellationReason || 'Artist cancelled appointment'
+  booking.cancelledAt = new Date()
+  booking.initialPayment.status = PAYMENT_STAGE_STATUS.REFUNDED
+  if (booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED) {
+    booking.balancePayment.status = PAYMENT_STAGE_STATUS.REFUNDED
+  }
+  booking.platformCreditIssued = refundCreditAmount
+  await booking.save()
+
+  // Find nearby alternative artists for customer (Point 8)
+  const nearbyAlternativeArtists = await ArtistServices.find({
+    isActive: true,
+    artist: { $ne: booking.artist._id },
+  })
+    .limit(6)
+    .populate('artist', 'name profileImage')
+    .populate('category', 'name')
+    .lean()
+
+  return {
+    message: isSuspended
+      ? `Booking cancelled. Customer received $${refundCreditAmount} Platform Credit ($${totalPaid} minus $${totalTransactionFee} transaction fee). Your account has been SUSPENDED due to last-moment cancellation (<48h). A penalty of $${penaltyIncurred} AUD must be paid to reactivate your account.`
+      : penaltyIncurred > 0
+        ? `Booking cancelled. Customer received $${refundCreditAmount} Platform Credit ($${totalPaid} minus $${totalTransactionFee} transaction fee). A penalty of $${penaltyIncurred} AUD was issued and your profile is hidden from customer search until paid.`
+        : `Booking cancelled. Customer received $${refundCreditAmount} Platform Credit ($${totalPaid} minus $${totalTransactionFee} transaction fee).`,
+    booking,
+    nearbyAlternativeArtists,
+  }
+}
+
+/**
+ * Cancel Booking adhering to the 24h refund / forfeiture policy
+ * Routes to customerCancelBooking or artistCancelBooking based on role, or executes admin cancellation.
  */
 const cancelBooking = async (user: IUser, bookingId: string, cancellationReason?: string) => {
   const booking = await Booking.findById(bookingId).populate('artist customer')
@@ -651,300 +1091,33 @@ const cancelBooking = async (user: IUser, bookingId: string, cancellationReason?
     throw new AppError(httpStatus.FORBIDDEN, 'You are not authorized to cancel this booking')
   }
 
-  const appointmentDateTime = moment(
-    `${moment(booking.bookingDate).format('YYYY-MM-DD')} ${booking.startTime}`,
-    'YYYY-MM-DD HH:mm'
-  )
-  const hoursUntilAppointment = appointmentDateTime.diff(moment(), 'hours', true)
+  if (
+    booking.status === BOOKING_STATUS.CANCELLED ||
+    booking.status === BOOKING_STATUS.COMPLETED ||
+    booking.status === BOOKING_STATUS.DECLINED ||
+    booking.status === BOOKING_STATUS.NO_SHOW
+  ) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Cannot cancel booking that is already '${booking.status}'`
+    )
+  }
 
   if (isCustomer) {
-    // Release promo code if applied
-    if (booking.promoCode) {
-      await PromoCode.findByIdAndUpdate(booking.promoCode, { $inc: { usageCount: -1 } })
-    }
-
-    // Void customer Stripe invoice if exists
-    if (booking.stripeInvoiceId) {
-      try {
-        await stripe.invoices.voidInvoice(booking.stripeInvoiceId)
-      } catch (e: any) {
-        // safe fallback
-      }
-    }
-
-    // Scenario A: Customer cancels > 24 hours prior (Point 1 & 2)
-    if (hoursUntilAppointment > 24) {
-      const depositPaid = booking.initialPayment.amount || 0
-      const stripeFee = booking.stripeInitialFee || 0
-      const refundCreditAmount = round2(Math.max(0, depositPaid - stripeFee))
-
-      // Issue Platform Credit to wallet (Valid for 36 months) after reducing Stripe fee
-      if (refundCreditAmount > 0) {
-        await walletServices.creditUserWallet({
-          userId: user._id,
-          amount: refundCreditAmount,
-          source: WALLET_SOURCE.CANCELLATION_CREDIT,
-          bookingId: booking._id,
-          bookingGroupId: booking.bookingGroupId,
-          description: `Booking #${booking.bookingNumber} cancellation credit (>24h policy, deposit $${depositPaid} minus Stripe fee $${stripeFee})`,
-        })
-      }
-
-      // Restore original platform credit if applied
-      if (booking.platformCreditApplied > 0) {
-        await walletServices.creditUserWallet({
-          userId: user._id,
-          amount: booking.platformCreditApplied,
-          source: WALLET_SOURCE.BOOKING_ROLLBACK,
-          bookingId: booking._id,
-          bookingGroupId: booking.bookingGroupId,
-          description: `Booking #${booking.bookingNumber} cancellation (>24h) - platform credit restored`,
-        })
-      }
-
-      booking.status = BOOKING_STATUS.CANCELLED
-      booking.cancelledBy = user._id
-      booking.cancelledByRole = 'customer'
-      booking.cancellationReason = cancellationReason || 'Cancelled by customer >24h'
-      booking.cancelledAt = new Date()
-      booking.platformCreditIssued = refundCreditAmount
-      booking.initialPayment.status = PAYMENT_STAGE_STATUS.REFUNDED
-      await booking.save()
-
-      return {
-        message: `Booking cancelled successfully. Your 20% deposit ($${depositPaid}) minus Stripe fee ($${stripeFee}) has been credited to your wallet as $${refundCreditAmount} Platform Credit (valid 36 months).`,
-        booking,
-      }
-    }
-
-    // Scenario B: Customer cancels within 24 hours (< 24h) (Point 3)
-    const isBalancePaid =
-      booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED &&
-      booking.balancePayment.amount > 0
-
-    let customerCreditAmount = 0
-    let artistShareAmount = 0
-
-    if (isBalancePaid) {
-      // Platform keeps the original 20% deposit
-      // Customer gets 40% of artist net payout as Platform Credit
-      // Artist gets 40% of artist net payout transferred to their Stripe account
-      const baseNetPayout = booking.artistNetPayout || booking.balancePayment.amount
-      customerCreditAmount = round2(baseNetPayout * 0.4)
-      artistShareAmount = round2(baseNetPayout * 0.4)
-
-      if (customerCreditAmount > 0) {
-        await walletServices.creditUserWallet({
-          userId: user._id,
-          amount: customerCreditAmount,
-          source: WALLET_SOURCE.CANCELLATION_CREDIT,
-          bookingId: booking._id,
-          bookingGroupId: booking.bookingGroupId,
-          description: `Booking #${booking.bookingNumber} late cancellation credit (40% of artist net share)`,
-        })
-      }
-
-      const artistAccount = await Account.findOne({ user: booking.artist._id })
-      if (artistAccount?.account && artistShareAmount > 0) {
-        try {
-          await stripe.transfers.create({
-            amount: Math.round(artistShareAmount * 100),
-            currency: 'aud',
-            destination: artistAccount.account,
-            transfer_group: `GRP-${booking.bookingNumber}`,
-            metadata: {
-              bookingId: booking._id.toString(),
-              type: 'LATE_CANCELLATION_ARTIST_SHARE',
-            },
-          })
-        } catch (err: any) {
-          logger.warn(`Failed to transfer late cancellation artist share: ${err?.message}`)
-        }
-      }
-
-      await PaymentTransaction.create({
-        transactionId: `TXN-${booking.bookingNumber}-LATE-CANCEL`,
-        booking: booking._id,
-        bookingGroupId: `GRP-${booking.bookingNumber}`,
-        user: user._id,
-        artist: booking.artist._id,
-        type: PAYMENT_TRANSACTION_TYPE.CANCELLATION_FEE,
-        gateway: PAYMENT_GATEWAY.STRIPE_CONNECT,
-        status: PAYMENT_STATUS.SUCCEEDED,
-        currency: 'AUD',
-        amount: booking.balancePayment.amount,
-        platformCreditUsed: 0,
-        marketplaceFee: booking.initialPayment.amount,
-        marketplaceFeeGst: 0,
-        stripeFeeBorne: booking.stripeInitialFee,
-        artistNetShare: artistShareAmount,
-      })
-    } else {
-      booking.depositForfeited = true
-      booking.cancellationFeeCharged = booking.initialPayment.amount
-    }
-
-    booking.status = BOOKING_STATUS.CANCELLED
-    booking.cancelledBy = user._id
-    booking.cancelledByRole = 'customer'
-    booking.cancellationReason = cancellationReason || 'Late cancellation by customer (<24h)'
-    booking.cancelledAt = new Date()
-    booking.platformCreditIssued = customerCreditAmount
-    await booking.save()
-
-    return {
-      message: isBalancePaid
-        ? `Booking cancelled under Late Cancellation policy (<24h). Platform retained the 20% deposit. You received $${customerCreditAmount} Platform Credit (40% of artist net share).`
-        : 'Booking cancelled under Late Cancellation policy (<24h). The 20% deposit is non-refundable and forfeited.',
-      booking,
-    }
+    return customerCancelBooking(user, bookingId, cancellationReason)
   }
 
   if (isArtist) {
-    // Release promo code if applied
-    if (booking.promoCode) {
-      await PromoCode.findByIdAndUpdate(booking.promoCode, { $inc: { usageCount: -1 } })
-    }
-
-    // Void Stripe invoices if exist
-    if (booking.stripeInvoiceId) {
-      try {
-        await stripe.invoices.voidInvoice(booking.stripeInvoiceId)
-      } catch (e: any) {
-        // safe fallback
-      }
-    }
-    if (booking.artistStripeInvoiceId) {
-      try {
-        await stripe.invoices.voidInvoice(booking.artistStripeInvoiceId)
-      } catch (e: any) {
-        // safe fallback
-      }
-    }
-
-    // Scenario C: Artist cancels (Point 8 - Issue 100% Platform Credit to customer)
-    const depositPaid = booking.initialPayment.amount || 0
-    const balancePaid =
-      booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED
-        ? booking.balancePayment.amount
-        : 0
-    const totalPaid = depositPaid + balancePaid
-
-    if (totalPaid > 0) {
-      await walletServices.creditUserWallet({
-        userId: booking.customer._id,
-        amount: totalPaid,
-        source: WALLET_SOURCE.CANCELLATION_CREDIT,
-        bookingId: booking._id,
-        bookingGroupId: booking.bookingGroupId,
-        description: `Artist cancelled booking #${booking.bookingNumber} - 100% platform credit issued (valid 36 months)`,
-      })
-    }
-
-    // Restore platform credit if customer originally used credit
-    if (booking.platformCreditApplied > 0) {
-      await walletServices.creditUserWallet({
-        userId: booking.customer._id,
-        amount: booking.platformCreditApplied,
-        source: WALLET_SOURCE.BOOKING_ROLLBACK,
-        bookingId: booking._id,
-        description: `Artist cancelled booking #${booking.bookingNumber} - credit restored`,
-      })
-    }
-
-    // Artist Penalty Calculation & Flagging (Point 9, 10, 11)
-    const artistProfile = await ArtistProfile.findOne({ user: user._id })
-    let penaltyIncurred = 0
-    let isSuspended = false
-
-    if (artistProfile) {
-      artistProfile.cancelBookingCount = (artistProfile.cancelBookingCount || 0) + 1
-
-      const platformSettings = await PlatformSettings.getSettings()
-      const penaltyCalc = calculateArtistCancellationPenalty(
-        booking.totalBookingPrice || booking.grossAmount || 0,
-        hoursUntilAppointment,
-        platformSettings
-      )
-
-      if (penaltyCalc.penaltyAmount > 0) {
-        artistProfile.isPenaltyRequired = true
-        penaltyIncurred = penaltyCalc.penaltyAmount
-
-        await Penalty.create({
-          booking: booking._id,
-          bookingNumber: booking.bookingNumber,
-          customer: booking.customer._id,
-          artist: booking.artist._id,
-          bookingAmount: booking.totalBookingPrice || booking.grossAmount || 0,
-          budgetTier: penaltyCalc.budgetTier,
-          timeframeTier: penaltyCalc.timeframeTier,
-          penaltyAmount: penaltyCalc.penaltyAmount,
-          currency: 'AUD',
-          reason: cancellationReason || 'Artist cancelled appointment',
-          isPenaltyRequired: true,
-          status: PENALTY_STATUS.PENDING,
-          deductedFromWallet: false,
-        })
-
-        // Point 11: If cancelled within 48 hours (< 48h / last moment), hard block suspend the artist account!
-        if (hoursUntilAppointment <= 48) {
-          isSuspended = true
-          await User.findByIdAndUpdate(user._id, { status: AuthStatus.SUSPENDED })
-          logger.warn(
-            `[Artist Suspended] Artist ${user._id} account SUSPENDED due to last-minute cancellation (<48h) for booking ${booking.bookingNumber}.`
-          )
-        } else {
-          logger.warn(
-            `[Artist Penalty] Artist ${user._id} incurred $${penaltyCalc.penaltyAmount} AUD penalty (${penaltyCalc.budgetTier} tier, ${penaltyCalc.timeframeTier}) for cancelling booking ${booking.bookingNumber}. Profile hidden from discovery.`
-          )
-        }
-      }
-
-      await artistProfile.save()
-    }
-
-    booking.status = BOOKING_STATUS.CANCELLED
-    booking.cancelledBy = user._id
-    booking.cancelledByRole = 'artist'
-    booking.cancellationReason = cancellationReason || 'Artist cancelled appointment'
-    booking.cancelledAt = new Date()
-    booking.initialPayment.status = PAYMENT_STAGE_STATUS.REFUNDED
-    if (booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED) {
-      booking.balancePayment.status = PAYMENT_STAGE_STATUS.REFUNDED
-    }
-    booking.platformCreditIssued = totalPaid
-    await booking.save()
-
-    // Find nearby alternative artists for customer (Point 8)
-    const nearbyAlternativeArtists = await ArtistServices.find({
-      isActive: true,
-      artist: { $ne: booking.artist._id },
-    })
-      .limit(6)
-      .populate('artist', 'name profileImage')
-      .populate('category', 'name')
-      .lean()
-
-    return {
-      message: isSuspended
-        ? `Booking cancelled. Customer received $${totalPaid} Platform Credit. Your account has been SUSPENDED due to last-moment cancellation (<48h). A penalty of $${penaltyIncurred} AUD must be paid to reactivate your account.`
-        : penaltyIncurred > 0
-          ? `Booking cancelled. Customer received $${totalPaid} Platform Credit. A penalty of $${penaltyIncurred} AUD was issued and your profile is hidden from customer search until paid.`
-          : `Booking cancelled. Customer received $${totalPaid} Platform Credit.`,
-      booking,
-      nearbyAlternativeArtists,
-    }
+    return artistCancelBooking(user, bookingId, cancellationReason)
   }
 
   // Admin cancellation
   if (booking.promoCode) {
     await PromoCode.findByIdAndUpdate(booking.promoCode, { $inc: { usageCount: -1 } })
   }
-  if (booking.stripeInvoiceId) {
-    try {
-      await stripe.invoices.voidInvoice(booking.stripeInvoiceId)
-    } catch (e: any) {}
+  await voidOrCreditNoteInvoice(booking.stripeInvoiceId, booking.bookingNumber)
+  if (booking.artistStripeInvoiceId) {
+    await voidOrCreditNoteInvoice(booking.artistStripeInvoiceId, booking.bookingNumber)
   }
 
   booking.status = BOOKING_STATUS.CANCELLED
@@ -981,19 +1154,12 @@ const getMyBookings = async (
       case 'upcoming':
         filter.bookingDate = { $gte: todayStart }
         filter.status = {
-          $in: [
-            BOOKING_STATUS.CONFIRMED,
-            BOOKING_STATUS.IN_PROGRESS,
-            BOOKING_STATUS.RESCHEDULED,
-          ],
+          $in: [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.IN_PROGRESS, BOOKING_STATUS.RESCHEDULED],
         }
         break
       case 'pending':
         filter.status = {
-          $in: [
-            BOOKING_STATUS.REQUESTED,
-            BOOKING_STATUS.ACCEPTED,
-          ],
+          $in: [BOOKING_STATUS.REQUESTED, BOOKING_STATUS.ACCEPTED],
         }
         break
       case 'new_requests':
@@ -1004,11 +1170,7 @@ const getMyBookings = async (
         break
       case 'cancelled':
         filter.status = {
-          $in: [
-            BOOKING_STATUS.CANCELLED,
-            BOOKING_STATUS.DECLINED,
-            BOOKING_STATUS.NO_SHOW,
-          ],
+          $in: [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.DECLINED, BOOKING_STATUS.NO_SHOW],
         }
         break
       default:
@@ -1092,10 +1254,7 @@ const payBalance = async (user: IUser, bookingId: string, paymentMethodId?: stri
     throw new AppError(httpStatus.BAD_REQUEST, 'Remaining balance is already paid')
   }
 
-  if (
-    booking.status === BOOKING_STATUS.CANCELLED ||
-    booking.status === BOOKING_STATUS.DECLINED
-  ) {
+  if (booking.status === BOOKING_STATUS.CANCELLED || booking.status === BOOKING_STATUS.DECLINED) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Booking is cancelled and cannot be paid')
   }
 
@@ -1245,6 +1404,19 @@ const issueCustomerStripeInvoice = async (booking: any) => {
     }
   }
 
+  // Prevent concurrency race conditions with Stripe webhooks
+  const freshBooking = await Booking.findById(booking._id || booking.id)
+  if (freshBooking?.stripeInvoiceId) {
+    booking.stripeInvoiceId = freshBooking.stripeInvoiceId
+    booking.stripeInvoiceUrl = freshBooking.stripeInvoiceUrl
+    booking.stripeInvoicePdf = freshBooking.stripeInvoicePdf
+    return {
+      stripeInvoiceId: freshBooking.stripeInvoiceId,
+      stripeInvoiceUrl: freshBooking.stripeInvoiceUrl,
+      stripeInvoicePdf: freshBooking.stripeInvoicePdf,
+    }
+  }
+
   try {
     const customerUser = await User.findById(booking.customer)
     const artistProfile = await ArtistProfile.findOne({ user: booking.artist })
@@ -1252,19 +1424,102 @@ const issueCustomerStripeInvoice = async (booking: any) => {
     const stripeCustomerId = booking.stripeCustomerId || customerUser?.stripeCustomerId
     if (!stripeCustomerId) return null
 
+    // Check Stripe directly if an invoice for this bookingNumber was already created
+    try {
+      const existingInvoices = await stripe.invoices.list({
+        customer: stripeCustomerId,
+        limit: 10,
+      })
+      const matched = existingInvoices.data.find(
+        (inv) => inv.metadata?.bookingNumber === booking.bookingNumber && inv.status !== 'void'
+      )
+      if (matched) {
+        booking.stripeInvoiceId = matched.id
+        booking.stripeInvoiceUrl = matched.hosted_invoice_url || null
+        booking.stripeInvoicePdf = matched.invoice_pdf || null
+        await Booking.findByIdAndUpdate(booking._id, {
+          stripeInvoiceId: matched.id,
+          stripeInvoiceUrl: matched.hosted_invoice_url || null,
+          stripeInvoicePdf: matched.invoice_pdf || null,
+        })
+        return {
+          stripeInvoiceId: matched.id,
+          stripeInvoiceUrl: matched.hosted_invoice_url,
+          stripeInvoicePdf: matched.invoice_pdf,
+        }
+      }
+    } catch {
+      // Safe fallback if invoice list fails
+    }
+
     const bookingGroupId = booking.bookingGroupId || `GRP-${booking.bookingNumber}`
     const artistDisplayName = artistProfile?.businessName || 'Independent Artist'
     const artistAbnText = artistProfile?.abn ? `, ABN: ${artistProfile.abn}` : ''
 
+    const siteTitle = configs.site?.name || 'Stunner alert'
+    const appointmentDateStr = `${moment(booking.bookingDate).format('DD MMM YYYY')}, ${booking.startTime}`
+    const providerInfo = `${artistDisplayName}${artistAbnText}`
+
+    // Create draft first with custom fields, footer, and full breakdown description
+    const stripeInvoice = await stripe.invoices.create({
+      customer: stripeCustomerId,
+      currency: 'aud',
+      auto_advance: false,
+      collection_method: 'send_invoice',
+      days_until_due: 0,
+      pending_invoice_items_behavior: 'exclude',
+      description: `Tax Invoice for Booking #${booking.bookingNumber} | Service: ${service?.name || 'Beauty Service'} (${appointmentDateStr}) | Initial Deposit (${booking.initialPayment?.percentage || 20}%): $${(booking.initialPayment?.amount || 0).toFixed(2)} AUD [PAID] | Balance Due (80%): $${(booking.balancePayment?.amount || 0).toFixed(2)} AUD`,
+      custom_fields: [
+        { name: 'Booking Ref', value: `#${booking.bookingNumber}` },
+        { name: 'Appointment', value: appointmentDateStr.substring(0, 30) },
+        { name: 'Artist ABN', value: (artistProfile?.abn || 'Not Registered').substring(0, 30) },
+        {
+          name: 'Deposit Paid (20%)',
+          value: `$${(booking.initialPayment?.amount || 0).toFixed(2)} AUD [PAID]`.substring(0, 30),
+        },
+      ],
+      footer: `${siteTitle} - Official Tax Invoice. All prices in AUD and include 10% Australian GST (where applicable). Remaining 80% balance is automatically charged 24 hours prior to appointment.`,
+      metadata: {
+        bookingNumber: booking.bookingNumber,
+        bookingGroupId,
+        userId: booking.customer.toString(),
+        artistId: booking.artist.toString(),
+        gstAmount: (booking.gstAmount || 0).toString(),
+        initialDeposit: (booking.initialPayment?.amount || 0).toString(),
+        balanceDue: (booking.balancePayment?.amount || 0).toString(),
+      },
+    })
+    const invoice = stripeInvoice.id
+    // Ensure official Stripe 10% GST Tax Rate is applied to invoice items
+    let gstTaxRateId = booking.stripeGstTaxRateId
+    if (!gstTaxRateId && booking.gstAmount > 0) {
+      try {
+        const platformSettings = await PlatformSettings.getSettings()
+        if (platformSettings.stripeGstTaxRateId) {
+          gstTaxRateId = platformSettings.stripeGstTaxRateId
+        } else {
+          const taxRate = await getOrCreateStripeGstTaxRate(platformSettings.gstPercentage || 10)
+          gstTaxRateId = taxRate.id
+          platformSettings.stripeGstTaxRateId = taxRate.id
+          await platformSettings.save()
+        }
+        booking.stripeGstTaxRateId = gstTaxRateId
+        await Booking.findByIdAndUpdate(booking._id, { stripeGstTaxRateId: gstTaxRateId })
+      } catch (taxErr: any) {
+        logger.warn(`Failed to resolve Stripe GST tax rate: ${taxErr?.message}`)
+      }
+    }
+
+    const gstTax = gstTaxRateId ? { tax_rates: [gstTaxRateId] } : {}
+
     try {
       await stripe.invoiceItems.create({
         customer: stripeCustomerId,
+        invoice,
         amount: Math.round(booking.servicePrice * 100),
         currency: 'aud',
         description: `${service?.name || 'Beauty Service'} (Supplied by Artist: ${artistDisplayName}${artistAbnText})`,
-        ...(booking.gstAmount > 0 && booking.stripeGstTaxRateId
-          ? { tax_rates: [booking.stripeGstTaxRateId] }
-          : {}),
+        ...gstTax,
         metadata: {
           bookingNumber: booking.bookingNumber,
           bookingGroupId,
@@ -1275,9 +1530,11 @@ const issueCustomerStripeInvoice = async (booking: any) => {
       if (booking.travelFee > 0) {
         await stripe.invoiceItems.create({
           customer: stripeCustomerId,
+          invoice,
           amount: Math.round(booking.travelFee * 100),
           currency: 'aud',
           description: 'Mobile Artist Travel Surcharge',
+          ...gstTax,
           metadata: { bookingNumber: booking.bookingNumber, bookingGroupId, type: 'TRAVEL_FEE' },
         })
       }
@@ -1285,9 +1542,11 @@ const issueCustomerStripeInvoice = async (booking: any) => {
       if (booking.parkingFee > 0) {
         await stripe.invoiceItems.create({
           customer: stripeCustomerId,
+          invoice,
           amount: Math.round(booking.parkingFee * 100),
           currency: 'aud',
           description: 'Artist Parking Fee Reimbursement',
+          ...gstTax,
           metadata: { bookingNumber: booking.bookingNumber, bookingGroupId, type: 'PARKING_FEE' },
         })
       }
@@ -1295,53 +1554,70 @@ const issueCustomerStripeInvoice = async (booking: any) => {
       if (booking.discountAmount > 0) {
         await stripe.invoiceItems.create({
           customer: stripeCustomerId,
+          invoice,
           amount: -Math.round(booking.discountAmount * 100),
           currency: 'aud',
           description: `Promo Code Discount: ${booking.promoCodeText || 'PROMO'}`,
-          metadata: { bookingNumber: booking.bookingNumber, bookingGroupId, type: 'PROMO_DISCOUNT' },
+          metadata: {
+            bookingNumber: booking.bookingNumber,
+            bookingGroupId,
+            type: 'PROMO_DISCOUNT',
+          },
         })
       }
 
-      if (booking.platformCreditApplied > 0) {
-        await stripe.invoiceItems.create({
-          customer: stripeCustomerId,
-          amount: -Math.round(booking.platformCreditApplied * 100),
-          currency: 'aud',
-          description: 'Wallet Platform Credit Applied',
-          metadata: { bookingNumber: booking.bookingNumber, bookingGroupId, type: 'PLATFORM_CREDIT' },
-        })
+      // Apply captured initial deposit as customer balance credit so Subtotal ($189.75) and Total ($208.73)
+      // remain 100% accurate, and Amount Due reflects the remaining 80% balance ($166.98)
+      if (
+        booking.initialPayment?.status === 'captured' &&
+        booking.initialPayment.amount > 0 &&
+        booking.balancePayment?.status !== 'captured'
+      ) {
+        try {
+          await stripe.customers.createBalanceTransaction(stripeCustomerId, {
+            amount: -Math.round(booking.initialPayment.amount * 100),
+            currency: 'aud',
+            description: `Initial Deposit (${booking.initialPayment.percentage || 20}%) Paid on Booking #${booking.bookingNumber}`,
+            metadata: { bookingNumber: booking.bookingNumber, bookingGroupId },
+          })
+        } catch (balErr: any) {
+          logger.warn(`Failed to apply deposit credit balance: ${balErr?.message}`)
+        }
+      }
+
+      if (
+        booking.platformCreditApplied > 0 &&
+        booking.balancePayment?.status !== 'captured'
+      ) {
+        try {
+          await stripe.customers.createBalanceTransaction(stripeCustomerId, {
+            amount: -Math.round(booking.platformCreditApplied * 100),
+            currency: 'aud',
+            description: `Platform Wallet Credit Applied to Booking #${booking.bookingNumber}`,
+            metadata: { bookingNumber: booking.bookingNumber, bookingGroupId },
+          })
+        } catch (creditErr: any) {
+          logger.warn(`Failed to apply wallet credit balance: ${creditErr?.message}`)
+        }
       }
     } catch (itemErr: any) {
+      logger.error(
+        `[Stripe Invoice] Line item creation failed, using single-line fallback: ${itemErr?.message}`
+      )
       await stripe.invoiceItems.create({
         customer: stripeCustomerId,
+        invoice,
         amount: Math.round(booking.totalBookingPrice * 100),
         currency: 'aud',
         description: `Booking #${booking.bookingNumber} - ${service?.name || 'Beauty Service'}`,
-        ...(booking.stripeGstTaxRateId ? { tax_rates: [booking.stripeGstTaxRateId] } : {}),
         metadata: { bookingNumber: booking.bookingNumber, bookingGroupId },
       })
     }
 
-    const stripeInvoice = await stripe.invoices.create({
-      customer: stripeCustomerId,
-      auto_advance: false,
-      collection_method: 'send_invoice',
-      days_until_due: 0,
-      description: `Tax Invoice for Booking #${booking.bookingNumber} | Initial Deposit (20%): $${booking.initialPayment.amount} AUD [PAID on Booking], Balance Due (80%): $${booking.balancePayment.amount} AUD [Due 24h prior to appointment]`,
-      metadata: {
-        bookingNumber: booking.bookingNumber,
-        bookingGroupId,
-        userId: booking.customer.toString(),
-        artistId: booking.artist.toString(),
-        gstAmount: (booking.gstAmount || 0).toString(),
-        initialDeposit: booking.initialPayment.amount.toString(),
-        balanceDue: booking.balancePayment.amount.toString(),
-      },
-    })
-
     const finalizedInvoice = await stripe.invoices.finalizeInvoice(stripeInvoice.id)
 
-    if (booking.initialPayment.status === 'captured') {
+    // Only mark invoice paid if the full balance is already captured (e.g. covered by credit)
+    if (booking.balancePayment?.status === 'captured') {
       try {
         await stripe.invoices.pay(finalizedInvoice.id, { paid_out_of_band: true })
       } catch (e: any) {
@@ -1377,6 +1653,19 @@ const issueArtistRctiStripeInvoice = async (booking: any) => {
     }
   }
 
+  // Prevent concurrency race conditions with Stripe webhooks
+  const freshBooking = await Booking.findById(booking._id || booking.id)
+  if (freshBooking?.artistStripeInvoiceId) {
+    booking.artistStripeInvoiceId = freshBooking.artistStripeInvoiceId
+    booking.artistStripeInvoiceUrl = freshBooking.artistStripeInvoiceUrl
+    booking.artistStripeInvoicePdf = freshBooking.artistStripeInvoicePdf
+    return {
+      artistStripeInvoiceId: freshBooking.artistStripeInvoiceId,
+      artistStripeInvoiceUrl: freshBooking.artistStripeInvoiceUrl,
+      artistStripeInvoicePdf: freshBooking.artistStripeInvoicePdf,
+    }
+  }
+
   try {
     const artistUser = await User.findById(booking.artist)
     const artistProfile = await ArtistProfile.findOne({ user: booking.artist })
@@ -1404,11 +1693,73 @@ const issueArtistRctiStripeInvoice = async (booking: any) => {
       await artistUser.save()
     }
 
+    // Check Stripe directly if an RCTI invoice for this bookingNumber was already created
+    try {
+      const existingInvoices = await stripe.invoices.list({
+        customer: artistCustomerId,
+        limit: 10,
+      })
+      const matched = existingInvoices.data.find(
+        (inv) =>
+          inv.metadata?.bookingNumber === booking.bookingNumber &&
+          inv.metadata?.type === 'RCTI' &&
+          inv.status !== 'void'
+      )
+      if (matched) {
+        booking.artistStripeInvoiceId = matched.id
+        booking.artistStripeInvoiceUrl = matched.hosted_invoice_url || null
+        booking.artistStripeInvoicePdf = matched.invoice_pdf || null
+        await Booking.findByIdAndUpdate(booking._id, {
+          artistStripeInvoiceId: matched.id,
+          artistStripeInvoiceUrl: matched.hosted_invoice_url || null,
+          artistStripeInvoicePdf: matched.invoice_pdf || null,
+        })
+        return {
+          artistStripeInvoiceId: matched.id,
+          artistStripeInvoiceUrl: matched.hosted_invoice_url,
+          artistStripeInvoicePdf: matched.invoice_pdf,
+        }
+      }
+    } catch {
+      // Safe fallback if invoice list fails
+    }
+
     const bookingGroupId = booking.bookingGroupId || `GRP-${booking.bookingNumber}`
 
-    // 1. Line item: Platform Facilitation Fee (20%)
+    const grossTotal = ((booking.grossAmount || 0) + (booking.gstAmount || 0)).toFixed(2)
+    const platformFee = (
+      (booking.platformCommissionAmount || 0) + (booking.platformCommissionGst || 0)
+    ).toFixed(2)
+    const netPayout = (booking.artistNetPayout || 0).toFixed(2)
+
+    // 1. Create the RCTI draft invoice first
+    const rctiInvoice = await stripe.invoices.create({
+      customer: artistCustomerId,
+      auto_advance: false,
+      collection_method: 'send_invoice',
+      days_until_due: 0,
+      pending_invoice_items_behavior: 'exclude',
+      description: `Recipient Created Tax Invoice (RCTI) - Platform Fee Deduction for Booking #${booking.bookingNumber}`,
+      custom_fields: [
+        { name: 'Gross Booking Total', value: `$${grossTotal} AUD` },
+        { name: 'Platform Fee (20%+GST)', value: `$${platformFee} AUD` },
+        { name: 'Net Artist Payout', value: `$${netPayout} AUD` },
+      ],
+      footer: `Gross Collection: $${grossTotal} AUD | Platform Deductions: $${platformFee} AUD | Net Payout to Artist: $${netPayout} AUD`,
+      metadata: {
+        bookingNumber: booking.bookingNumber,
+        bookingGroupId,
+        type: 'RCTI',
+        customerGrossCollection: (booking.grossAmount + (booking.gstAmount || 0)).toString(),
+        netArtistPayout: (booking.artistNetPayout || 0).toString(),
+      },
+    })
+    const invoice = rctiInvoice.id
+
+    // 2. Line item: Platform Facilitation Fee (20%) attached directly to this draft
     await stripe.invoiceItems.create({
       customer: artistCustomerId,
+      invoice,
       amount: Math.round((booking.platformCommissionAmount || 0) * 100),
       currency: 'aud',
       description: `Platform Facilitation Fee (${booking.platformCommissionPercentage || 20}%) - Booking #${booking.bookingNumber}`,
@@ -1419,10 +1770,11 @@ const issueArtistRctiStripeInvoice = async (booking: any) => {
       },
     })
 
-    // 2. Line item: GST on Platform Facilitation Fee (10%)
+    // 3. Line item: GST on Platform Facilitation Fee (10%)
     if (booking.platformCommissionGst > 0) {
       await stripe.invoiceItems.create({
         customer: artistCustomerId,
+        invoice,
         amount: Math.round(booking.platformCommissionGst * 100),
         currency: 'aud',
         description: 'GST on Platform Facilitation Fee (10%)',
@@ -1433,22 +1785,6 @@ const issueArtistRctiStripeInvoice = async (booking: any) => {
         },
       })
     }
-
-    // 3. Create the RCTI invoice
-    const rctiInvoice = await stripe.invoices.create({
-      customer: artistCustomerId,
-      auto_advance: false,
-      collection_method: 'send_invoice',
-      days_until_due: 0,
-      description: `Recipient Created Tax Invoice (RCTI) - Platform Fee Deduction for Booking #${booking.bookingNumber}`,
-      metadata: {
-        bookingNumber: booking.bookingNumber,
-        bookingGroupId,
-        type: 'RCTI',
-        customerGrossCollection: (booking.grossAmount + (booking.gstAmount || 0)).toString(),
-        netArtistPayout: (booking.artistNetPayout || 0).toString(),
-      },
-    })
 
     const finalized = await stripe.invoices.finalizeInvoice(rctiInvoice.id)
 
@@ -1931,16 +2267,112 @@ const completeBooking = async (
     totalWorkingTime: finalPayload.totalWorkingTime || `${booking.durationMinutes} mins`,
     specialNotes: finalPayload.specialNotes || null,
     proofPhotos:
-      proofPhotoUrls.length > 0
-        ? proofPhotoUrls
-        : booking.completionDetails?.proofPhotos || [],
-    customerSignature: finalPayload.customerSignature || null,
+      proofPhotoUrls.length > 0 ? proofPhotoUrls : booking.completionDetails?.proofPhotos || [],
+    customerSignature:
+      finalPayload.customerSignature || booking.completionDetails?.customerSignature || null,
     completedAt: new Date(),
+    signedAt: booking.completionDetails?.signedAt || null,
   }
 
   booking.status = BOOKING_STATUS.COMPLETED
   await booking.save()
 
+  return booking
+}
+
+/**
+ * Customer signs for a booking service completion
+ */
+const customerSign = async (
+  user: IUser,
+  bookingId: string,
+  payload: {
+    customerSignature: string
+  }
+) => {
+  const booking = await Booking.findById(bookingId)
+  if (!booking) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
+  }
+
+  const isCustomer = booking.customer.toString() === user._id.toString()
+  const isAdmin = user.role === 'admin' || user.role === 'super_admin'
+  if (!isCustomer && !isAdmin) {
+    throw new AppError(httpStatus.FORBIDDEN, 'Only the customer can sign for this booking')
+  }
+
+  if (
+    booking.status === BOOKING_STATUS.CANCELLED ||
+    booking.status === BOOKING_STATUS.DECLINED
+  ) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Cannot sign a booking that is '${booking.status}'`
+    )
+  }
+
+  if (!booking.completionDetails) {
+    booking.completionDetails = {
+      servicesPerformed: null,
+      productsUsed: null,
+      totalWorkingTime: null,
+      specialNotes: null,
+      proofPhotos: [],
+      customerSignature: null,
+      completedAt: null,
+      signedAt: null,
+    } as any
+  }
+
+  booking.completionDetails!.customerSignature = payload.customerSignature
+  booking.completionDetails!.signedAt = new Date()
+
+  // Release held artist payout to Connected Account upon customer sign
+  const netPayout = booking.artistNetPayout || 0
+  if (!booking.completionDetails!.payoutTransferredAt && netPayout > 0) {
+    const artistAccount = await Account.findOne({ user: booking.artist })
+    if (artistAccount?.account) {
+      try {
+        await stripe.transfers.create({
+          amount: Math.round(netPayout * 100),
+          currency: 'aud',
+          destination: artistAccount.account,
+          transfer_group: `GRP-${booking.bookingNumber}`,
+          metadata: {
+            bookingId: booking._id.toString(),
+            type: 'CUSTOMER_SIGN_ARTIST_PAYOUT',
+          },
+        })
+        booking.completionDetails!.payoutTransferredAt = new Date()
+        logger.info(
+          `[Customer Sign Payout] Released $${netPayout} AUD to artist ${booking.artist} for booking ${booking.bookingNumber}`
+        )
+      } catch (err: any) {
+        logger.error(`[Customer Sign Payout Error] Transfer failed: ${err?.message}`)
+      }
+    }
+
+    if (booking.completionDetails!.payoutTransferredAt) {
+      await PaymentTransaction.create({
+        transactionId: `TXN-${booking.bookingNumber}-SIGN-PAYOUT`,
+        booking: booking._id,
+        bookingGroupId: `GRP-${booking.bookingNumber}`,
+        user: booking.customer,
+        artist: booking.artist,
+        type: PAYMENT_TRANSACTION_TYPE.STRIPE_TRANSFER,
+        gateway: PAYMENT_GATEWAY.STRIPE_CONNECT,
+        status: PAYMENT_STATUS.SUCCEEDED,
+        currency: 'AUD',
+        amount: booking.totalBookingPrice || booking.grossAmount || 0,
+        marketplaceFee: booking.platformCommissionAmount || 0,
+        marketplaceFeeGst: booking.platformCommissionGst || 0,
+        stripeFeeBorne: booking.stripeBalanceFee || 0,
+        artistNetShare: netPayout,
+      })
+    }
+  }
+
+  await booking.save()
   return booking
 }
 
@@ -1986,32 +2418,182 @@ const requestReschedule = async (
     throw new AppError(httpStatus.BAD_REQUEST, 'Rescheduled date cannot be in the past')
   }
 
-  const startMoment = moment(payload.newStartTime, 'HH:mm')
+  const startMoment = moment(payload.newStartTime.trim(), [
+    'HH:mm',
+    'hh:mm A',
+    'h:mm A',
+    'hh:mma',
+    'h:mma',
+  ])
   if (!startMoment.isValid()) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid newStartTime format. Use HH:mm')
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Invalid newStartTime format. Use AM/PM format (e.g. 10:00 AM) or HH:mm'
+    )
   }
+  const normalizedNewStartTime = startMoment.format('HH:mm')
   const newEndTime = startMoment.clone().add(booking.durationMinutes, 'minutes').format('HH:mm')
 
-  // Check conflicting booking on artist schedule
+  // 1. Cannot reschedule to the exact same appointment date and time as currently scheduled
+  const currentScheduledDate = moment(booking.bookingDate).format('YYYY-MM-DD')
+  if (currentScheduledDate === payload.newDate && booking.startTime === normalizedNewStartTime) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'The requested reschedule date and time is identical to the current scheduled appointment.'
+    )
+  }
+
+  // 2. Cannot send duplicate reschedule request if one is already pending for this same date and time
+  if (booking.rescheduleRequest && booking.rescheduleRequest.status === 'pending') {
+    const existingRescheduleDate = moment(booking.rescheduleRequest.newDate).format('YYYY-MM-DD')
+    if (
+      existingRescheduleDate === payload.newDate &&
+      booking.rescheduleRequest.newStartTime === normalizedNewStartTime
+    ) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'A reschedule request for this exact date and time is already pending response.'
+      )
+    }
+  }
+
+  // 3. Artist Blocked Date check
+  const blockedDate = await ArtistBlockedDate.findOne({
+    user: booking.artist,
+    date: payload.newDate,
+  })
+  if (blockedDate) {
+    throw new AppError(
+      httpStatus.CONFLICT,
+      `The artist is unavailable on this date (${blockedDate.reason || 'Blocked date'}).`
+    )
+  }
+
+  // 4. Artist Weekly Working Hours, Breaks, Vacation & Limit checks
+  const availability = await Availability.findOne({ user: booking.artist })
+  if (availability) {
+    // Vacation check
+    if (
+      availability.isVacationEnabled &&
+      availability.vacationStartDate &&
+      availability.vacationEndDate
+    ) {
+      const vStart = moment(availability.vacationStartDate).format('YYYY-MM-DD')
+      const vEnd = moment(availability.vacationEndDate).format('YYYY-MM-DD')
+      if (payload.newDate >= vStart && payload.newDate <= vEnd) {
+        throw new AppError(
+          httpStatus.CONFLICT,
+          availability.vacationMessage || 'The artist is currently on vacation during this date.'
+        )
+      }
+    }
+
+    // Working day check
+    const dayNameMapping: Record<number, string> = {
+      0: 'sunday',
+      1: 'monday',
+      2: 'tuesday',
+      3: 'wednesday',
+      4: 'thursday',
+      5: 'friday',
+      6: 'saturday',
+    }
+    const dayName = dayNameMapping[requestedDateMoment.day()] as keyof typeof availability.weeklySchedule
+    const daySchedule = availability.weeklySchedule?.[dayName]
+
+    if (!daySchedule || !daySchedule.isWorkingDay || !daySchedule.startTime || !daySchedule.endTime) {
+      throw new AppError(
+        httpStatus.CONFLICT,
+        'The artist does not have working hours scheduled on this day of the week.'
+      )
+    }
+
+    // Working hours bounds check
+    if (normalizedNewStartTime < daySchedule.startTime || newEndTime > daySchedule.endTime) {
+      throw new AppError(
+        httpStatus.CONFLICT,
+        `Requested slot is outside the artist's working hours (${daySchedule.startTime} - ${daySchedule.endTime}).`
+      )
+    }
+
+    // Break time overlap check
+    if (daySchedule.breakTimes && daySchedule.breakTimes.length > 0) {
+      for (const b of daySchedule.breakTimes) {
+        if (b.startTime && b.endTime) {
+          if (b.startTime < newEndTime && b.endTime > normalizedNewStartTime) {
+            throw new AppError(
+              httpStatus.CONFLICT,
+              `Requested slot overlaps with the artist's scheduled break (${b.startTime} - ${b.endTime}).`
+            )
+          }
+        }
+      }
+    }
+
+    // Daily maximum booking limit check
+    if (availability.maxBookingPerDay) {
+      const dailyCount = await Booking.countDocuments({
+        _id: { $ne: booking._id },
+        artist: booking.artist,
+        bookingDate: requestedDateMoment.toDate(),
+        status: {
+          $in: [
+            BOOKING_STATUS.REQUESTED,
+            BOOKING_STATUS.ACCEPTED,
+            BOOKING_STATUS.CONFIRMED,
+            BOOKING_STATUS.IN_PROGRESS,
+            BOOKING_STATUS.RESCHEDULED,
+          ],
+        },
+      })
+      if (dailyCount >= availability.maxBookingPerDay) {
+        throw new AppError(
+          httpStatus.CONFLICT,
+          `The artist has already reached the maximum booking limit (${availability.maxBookingPerDay} bookings) for this day.`
+        )
+      }
+    }
+  }
+
+  // 5. Conflicting booking check (any active booking on the artist's schedule)
   const conflict = await Booking.findOne({
     _id: { $ne: booking._id },
     artist: booking.artist,
     bookingDate: requestedDateMoment.toDate(),
     status: {
       $in: [
+        BOOKING_STATUS.REQUESTED,
+        BOOKING_STATUS.ACCEPTED,
         BOOKING_STATUS.CONFIRMED,
         BOOKING_STATUS.IN_PROGRESS,
         BOOKING_STATUS.RESCHEDULED,
       ],
     },
     startTime: { $lt: newEndTime },
-    endTime: { $gt: payload.newStartTime },
+    endTime: { $gt: normalizedNewStartTime },
   })
 
   if (conflict) {
     throw new AppError(
       httpStatus.CONFLICT,
-      'The artist already has a confirmed booking during this requested time slot'
+      'The artist already has another booking during this requested time slot.'
+    )
+  }
+
+  // 6. Conflicting pending reschedule request on another booking
+  const pendingRescheduleConflict = await Booking.findOne({
+    _id: { $ne: booking._id },
+    artist: booking.artist,
+    'rescheduleRequest.status': 'pending',
+    'rescheduleRequest.newDate': requestedDateMoment.toDate(),
+    'rescheduleRequest.newStartTime': { $lt: newEndTime },
+    'rescheduleRequest.newEndTime': { $gt: normalizedNewStartTime },
+  })
+
+  if (pendingRescheduleConflict) {
+    throw new AppError(
+      httpStatus.CONFLICT,
+      'Another booking already has a pending reschedule request during this requested time slot.'
     )
   }
 
@@ -2021,7 +2603,7 @@ const requestReschedule = async (
     requestedBy: user._id as any,
     requestedByRole,
     newDate: requestedDateMoment.toDate(),
-    newStartTime: payload.newStartTime,
+    newStartTime: normalizedNewStartTime,
     newEndTime,
     reason: payload.reason,
     message: payload.message || null,
@@ -2076,6 +2658,31 @@ const respondReschedule = async (
   }
 
   if (payload.action === 'accept') {
+    // Re-verify slot availability to prevent race conditions or intervening bookings
+    const conflict = await Booking.findOne({
+      _id: { $ne: booking._id },
+      artist: booking.artist,
+      bookingDate: booking.rescheduleRequest.newDate,
+      status: {
+        $in: [
+          BOOKING_STATUS.REQUESTED,
+          BOOKING_STATUS.ACCEPTED,
+          BOOKING_STATUS.CONFIRMED,
+          BOOKING_STATUS.IN_PROGRESS,
+          BOOKING_STATUS.RESCHEDULED,
+        ],
+      },
+      startTime: { $lt: booking.rescheduleRequest.newEndTime },
+      endTime: { $gt: booking.rescheduleRequest.newStartTime },
+    })
+
+    if (conflict) {
+      throw new AppError(
+        httpStatus.CONFLICT,
+        'Cannot accept reschedule: The artist already has another booking during this time slot.'
+      )
+    }
+
     booking.bookingDate = booking.rescheduleRequest.newDate
     booking.startTime = booking.rescheduleRequest.newStartTime
     booking.endTime = booking.rescheduleRequest.newEndTime
@@ -2095,8 +2702,7 @@ const respondReschedule = async (
   } else {
     booking.rescheduleRequest.status = 'declined'
     booking.rescheduleRequest.respondedAt = new Date()
-    booking.rescheduleRequest.declineReason =
-      payload.declineReason || 'Reschedule request declined'
+    booking.rescheduleRequest.declineReason = payload.declineReason || 'Reschedule request declined'
   }
 
   await booking.save()
@@ -2142,13 +2748,7 @@ const getArtistInboxSummary = async (user: IUser) => {
             $sum: {
               $cond: [
                 {
-                  $in: [
-                    '$status',
-                    [
-                      BOOKING_STATUS.COMPLETED,
-                      BOOKING_STATUS.CONFIRMED,
-                    ],
-                  ],
+                  $in: ['$status', [BOOKING_STATUS.COMPLETED, BOOKING_STATUS.CONFIRMED]],
                 },
                 '$artistNetPayout',
                 0,
@@ -2166,11 +2766,7 @@ const getArtistInboxSummary = async (user: IUser) => {
       artist: artistId,
       bookingDate: { $gte: todayStart },
       status: {
-        $in: [
-          BOOKING_STATUS.CONFIRMED,
-          BOOKING_STATUS.IN_PROGRESS,
-          BOOKING_STATUS.RESCHEDULED,
-        ],
+        $in: [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.IN_PROGRESS, BOOKING_STATUS.RESCHEDULED],
       },
     }),
   ])
@@ -2214,7 +2810,10 @@ const reportCustomerNoShow = async (
 
   const isArtist = booking.artist._id.toString() === user._id.toString()
   if (!isArtist) {
-    throw new AppError(httpStatus.FORBIDDEN, 'Only the assigned artist can report a customer no-show')
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      'Only the assigned artist can report a customer no-show'
+    )
   }
 
   if (
@@ -2265,7 +2864,9 @@ const reportCustomerNoShow = async (
   booking.noShowDetails = {
     reportedBy: user._id,
     reportedAt: new Date(),
-    reason: payload.reason || (payload.isSafetyConcern ? 'Unsafe premises / safety refusal' : 'Customer failed to attend'),
+    reason:
+      payload.reason ||
+      (payload.isSafetyConcern ? 'Unsafe premises / safety refusal' : 'Customer failed to attend'),
     isSafetyConcern: Boolean(payload.isSafetyConcern),
     isApproved: false,
   }
@@ -2372,6 +2973,8 @@ export const bookingServices = {
   checkoutPreview,
   createBooking,
   cancelBooking,
+  customerCancelBooking,
+  artistCancelBooking,
   getMyBookings,
   getBookingById,
   getBookingInvoice,
@@ -2384,9 +2987,11 @@ export const bookingServices = {
   confirmBookingPayment,
   declineBooking,
   completeBooking,
+  customerSign,
   requestReschedule,
   respondReschedule,
   getArtistInboxSummary,
   reportCustomerNoShow,
   verifyCustomerNoShow,
+  voidOrCreditNoteInvoice,
 }

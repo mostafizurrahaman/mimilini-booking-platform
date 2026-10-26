@@ -15,6 +15,13 @@ router.post(
   bookingControllers.checkoutPreview
 )
 
+// 1000$
+// artist -> Min: 50%
+// we booking 50% -> 10%
+// we notify second -> 10%:
+// Group ->
+// booking pending payment -> pay  - 50%
+// booking option 
 router.post(
   '/',
   auth(AuthRoles.CUSTOMER),
@@ -24,7 +31,7 @@ router.post(
 
 router.get(
   '/artist-inbox-summary',
-  auth(AuthRoles.ARTIST, AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
+  auth(AuthRoles.ARTIST),
   bookingControllers.getArtistInboxSummary
 )
 
@@ -57,6 +64,13 @@ router.post(
 )
 
 router.post(
+  '/:id/sign',
+  auth(AuthRoles.CUSTOMER, AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
+  validateRequest(bookingValidations.customerSignSchema),
+  bookingControllers.customerSign
+)
+
+router.post(
   '/:id/reschedule-request',
   auth(AuthRoles.CUSTOMER, AuthRoles.ARTIST, AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
   validateRequest(bookingValidations.rescheduleRequestSchema),
@@ -75,6 +89,20 @@ router.post(
   auth(AuthRoles.CUSTOMER, AuthRoles.ARTIST, AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
   validateRequest(bookingValidations.cancelBookingSchema),
   bookingControllers.cancelBooking
+)
+
+router.post(
+  '/:id/customer-cancel',
+  auth(AuthRoles.CUSTOMER, AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
+  validateRequest(bookingValidations.cancelBookingSchema),
+  bookingControllers.customerCancelBooking
+)
+
+router.post(
+  '/:id/artist-cancel',
+  auth(AuthRoles.ARTIST, AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
+  validateRequest(bookingValidations.cancelBookingSchema),
+  bookingControllers.artistCancelBooking
 )
 
 router.post(

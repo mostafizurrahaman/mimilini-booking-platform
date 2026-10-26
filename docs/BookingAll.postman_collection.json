@@ -1,0 +1,632 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "Mimilini - All Booking APIs",
+    "description": "Comprehensive Postman collection for all Booking-related APIs on the Mimilini Booking Platform. Covers full end-to-end booking lifecycle: checkout preview, booking creation, status transitions, payments, rescheduling, completion, cancellation, invoicing, and no-show dispute handling.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "customerToken",
+      "value": "YOUR_CUSTOMER_JWT_ACCESS_TOKEN",
+      "type": "string"
+    },
+    {
+      "key": "artistToken",
+      "value": "YOUR_ARTIST_JWT_ACCESS_TOKEN",
+      "type": "string"
+    },
+    {
+      "key": "adminToken",
+      "value": "YOUR_ADMIN_JWT_ACCESS_TOKEN",
+      "type": "string"
+    },
+    {
+      "key": "artistId",
+      "value": "67b000000000000000000001",
+      "type": "string"
+    },
+    {
+      "key": "serviceId",
+      "value": "67b000000000000000000002",
+      "type": "string"
+    },
+    {
+      "key": "addressId",
+      "value": "67b000000000000000000003",
+      "type": "string"
+    },
+    {
+      "key": "paymentMethodId",
+      "value": "pm_card_visa",
+      "type": "string"
+    },
+    {
+      "key": "bookingId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Checkout & Booking Creation",
+      "item": [
+        {
+          "name": "1.1 Checkout Preview",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"artist\": \"{{artistId}}\",\n  \"service\": \"{{serviceId}}\",\n  \"guestCount\": 1,\n  \"visitType\": \"salon_visit\",\n  \"address\": \"{{addressId}}\",\n  \"promoCode\": \"\",\n  \"usePlatformCredit\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bookings/preview",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "preview"]
+            },
+            "description": "Calculates complete financial breakdown before creating the booking: service price, 20% deposit, 80% balance, travel fees, GST breakdown, promo discounts, platform commission, and artist net payout."
+          },
+          "response": []
+        },
+        {
+          "name": "1.2 Create Booking",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data && jsonData.data._id) {",
+                  "    pm.collectionVariables.set('bookingId', jsonData.data._id);",
+                  "    console.log('Saved bookingId:', jsonData.data._id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"artist\": \"{{artistId}}\",\n  \"service\": \"{{serviceId}}\",\n  \"visitType\": \"salon_visit\",\n  \"address\": \"{{addressId}}\",\n  \"bookingDate\": \"2026-11-20\",\n  \"startTime\": \"10:00 AM\",\n  \"guestCount\": 1,\n  \"promoCode\": \"\",\n  \"usePlatformCredit\": false,\n  \"paymentMethodId\": \"{{paymentMethodId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings"]
+            },
+            "description": "Creates a new booking record with requested details and initiates payment processing. Automatically saves the created `bookingId` into collection variables upon successful response."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Queries & Inbox",
+      "item": [
+        {
+          "name": "2.1 Get My Bookings (Filtered / Paginated)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/my-bookings?tab=all&page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "my-bookings"],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "all",
+                  "description": "Options: all, upcoming, pending, new_requests, completed, cancelled"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Returns bookings belonging to the authenticated user (customer or artist) with pagination and tab status filtering."
+          },
+          "response": []
+        },
+        {
+          "name": "2.2 Get Booking By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "{{bookingId}}"]
+            },
+            "description": "Retrieves comprehensive booking details including populated customer, artist, service, timeline events, and payment breakdown."
+          },
+          "response": []
+        },
+        {
+          "name": "2.3 Artist Inbox Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{artistToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/artist-inbox-summary",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "artist-inbox-summary"]
+            },
+            "description": "Returns quick metrics for artist dashboard: unread notifications, pending requested bookings requiring acceptance, upcoming bookings count, and active reschedules."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Booking Lifecycle Transitions",
+      "item": [
+        {
+          "name": "3.1 Accept Booking (Artist)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{artistToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}/accept",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "{{bookingId}}", "accept"]
+            },
+            "description": "Artist accepts a pending `requested` booking. Transitions booking status to `accepted`."
+          },
+          "response": []
+        },
+        {
+          "name": "3.2 Decline Booking (Artist)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{artistToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Unavailable during requested slot due to schedule overlap.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}/decline",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "{{bookingId}}", "decline"]
+            },
+            "description": "Artist declines a requested booking. Transitions booking to `declined`."
+          },
+          "response": []
+        },
+        {
+          "name": "3.3 Confirm Booking Payment (20% Deposit)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentMethodId\": \"{{paymentMethodId}}\",\n  \"usePlatformCredit\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}/confirm-payment",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "{{bookingId}}", "confirm-payment"]
+            },
+            "description": "Processes initial 20% deposit using saved payment method. Generates Stripe tax invoice, creates transaction ledger entries, and moves booking status to `confirmed`."
+          },
+          "response": []
+        },
+        {
+          "name": "3.4 Pay 80% Remaining Balance (Customer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentMethodId\": \"{{paymentMethodId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}/pay-balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "{{bookingId}}", "pay-balance"]
+            },
+            "description": "Allows customer to pay the remaining 80% balance anytime after confirmation, or automatically via Stripe PaymentIntent."
+          },
+          "response": []
+        },
+        {
+          "name": "3.5 Complete Booking (Artist)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{artistToken}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "servicesPerformed",
+                  "value": "Full makeup application and styling",
+                  "type": "text"
+                },
+                {
+                  "key": "productsUsed",
+                  "value": "MAC Foundation, Huda Beauty Eyeshadow Palette",
+                  "type": "text"
+                },
+                {
+                  "key": "totalWorkingTime",
+                  "value": "2 hours 15 minutes",
+                  "type": "text"
+                },
+                {
+                  "key": "specialNotes",
+                  "value": "Customer was completely delighted with the final look.",
+                  "type": "text"
+                },
+                {
+                  "key": "customerSignature",
+                  "value": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                  "type": "text"
+                },
+                {
+                  "key": "proofPhotos",
+                  "type": "file",
+                  "src": [],
+                  "description": "Up to 6 completion proof photos (JPEG/PNG, max 10MB each)"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}/complete",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "{{bookingId}}", "complete"]
+            },
+            "description": "Marks booking as `completed`. Artist uploads work proof photos (up to 6), products used, and service notes."
+          },
+          "response": []
+        },
+        {
+          "name": "3.6 Customer Sign (Customer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerSignature\": \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}/sign",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "{{bookingId}}", "sign"]
+            },
+            "description": "Dedicated API for customer to submit digital signature confirming service completion."
+          },
+          "response": []
+        },
+        {
+          "name": "3.7 Cancel Booking (Customer / Artist)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Family emergency - unable to attend scheduled appointment.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "{{bookingId}}", "cancel"]
+            },
+            "description": "Cancels booking. Enforces cancellation policy (full deposit refund if >24hrs before appointment, forfeiture or artist cancellation penalty if inside policy window)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Rescheduling Workflow",
+      "item": [
+        {
+          "name": "4.1 Request Reschedule",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newDate\": \"2026-11-25\",\n  \"newStartTime\": \"02:00 PM\",\n  \"reason\": \"Schedule conflict with afternoon meeting\",\n  \"message\": \"Could we please move our session to 2 PM on Nov 25?\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}/reschedule-request",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "{{bookingId}}", "reschedule-request"]
+            },
+            "description": "Initiates a reschedule proposal. Can be called by Customer or Artist. Requires newDate, newStartTime (HH:mm or AM/PM), and reason."
+          },
+          "response": []
+        },
+        {
+          "name": "4.2 Respond to Reschedule (Accept / Decline)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{artistToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"accept\",\n  \"declineReason\": \"\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}/reschedule-respond",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "{{bookingId}}", "reschedule-respond"]
+            },
+            "description": "Accepts or declines reschedule proposal. If accepted, booking date and start time update to requested slot."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Invoicing & Receipts",
+      "item": [
+        {
+          "name": "5.1 Get Customer Tax Invoice",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}/invoice",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "{{bookingId}}", "invoice"]
+            },
+            "description": "Returns full ATO-compliant customer tax invoice data including booking details, deposit paid, GST, company ABN, and Stripe invoice identifier."
+          },
+          "response": []
+        },
+        {
+          "name": "5.2 Get Balance Payment Receipt",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}/receipt",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "{{bookingId}}", "receipt"]
+            },
+            "description": "Returns customer payment receipt for the 80% balance payment transaction."
+          },
+          "response": []
+        },
+        {
+          "name": "5.3 Get Artist Tax Invoice (RCTI)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{artistToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}/artist-invoice",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "{{bookingId}}", "artist-invoice"]
+            },
+            "description": "Returns Recipient Created Tax Invoice (RCTI) for the artist payout: gross booking amount, platform commission withheld, GST handling, and net payout."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6. Customer No-Show Handling",
+      "item": [
+        {
+          "name": "6.1 Report Customer No-Show (Artist)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{artistToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Client did not appear at venue after 30 minutes. Multiple phone calls and messages went unanswered.\",\n  \"isSafetyConcern\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}/report-no-show",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "{{bookingId}}", "report-no-show"]
+            },
+            "description": "Artist reports a customer no-show after waiting at least 15-30 minutes. Status transitions to `no_show_pending`."
+          },
+          "response": []
+        },
+        {
+          "name": "6.2 Verify Customer No-Show (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isApproved\": true,\n  \"adminNotes\": \"Verified via location timestamps and customer non-responsiveness. Full deposit retained and artist compensated.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}/verify-no-show",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "{{bookingId}}", "verify-no-show"]
+            },
+            "description": "Admin reviews and verifies the no-show dispute. If approved (`isApproved: true`), marks booking `no_show`, retains customer deposit, and releases artist payout. If rejected (`isApproved: false`), reverts booking to confirmed status."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

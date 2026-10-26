@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import moment from 'moment'
 import {
   requiredString,
   optionalString,
@@ -8,6 +9,20 @@ import {
 } from '@repo/shared'
 import { VISIT_TYPE_VALUES } from '@repo/db'
 
+const timeSchema = (fieldName = 'Start Time') =>
+  requiredString(fieldName)
+    .regex(
+      /^((0?[1-9]|1[0-2]):[0-5][0-9]\s*([AaPp][Mm])|([0-1]?[0-9]|2[0-3]):[0-5][0-9])$/,
+      `${fieldName} must be in AM/PM format (e.g. 10:00 AM) or HH:mm format`
+    )
+    .transform((val) => {
+      const trimmed = val.trim()
+      const m = moment(trimmed, ['h:mm A', 'hh:mm A', 'h:mma', 'hh:mma', 'H:mm', 'HH:mm'], true)
+      if (m.isValid()) return m.format('HH:mm')
+      const mLoose = moment(trimmed, ['h:mmA', 'hh:mmA', 'h:mm A', 'hh:mm A', 'H:mm', 'HH:mm'])
+      return mLoose.isValid() ? mLoose.format('HH:mm') : trimmed
+    })
+
 const createBookingSchema = z.object({
   body: z.object({
     artist: requiredString('Artist ID'),
@@ -15,14 +30,11 @@ const createBookingSchema = z.object({
     visitType: enumString(VISIT_TYPE_VALUES, 'Visit Type'),
     address: optionalString('Address ID'),
     bookingDate: requiredString('Booking Date (YYYY-MM-DD)'),
-    startTime: requiredString('Start Time').regex(
-      /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/,
-      'Start time must be in HH:mm format'
-    ),
+    startTime: timeSchema('Start Time'),
     guestCount: positiveNumber('Guest Count'), // Mandatory
     promoCode: optionalString('Promo Code'),
     usePlatformCredit: z.boolean().default(false),
-    paymentMethodId: optionalString('Payment Method ID'),
+    paymentMethodId: requiredString('Payment Method ID'),
   }),
 })
 
@@ -40,7 +52,7 @@ const checkoutPreviewSchema = z.object({
 
 const confirmBookingPaymentSchema = z.object({
   body: z.object({
-    paymentMethodId: optionalString('Payment Method ID'),
+    paymentMethodId: requiredString('Payment Method ID'),
     usePlatformCredit: z.boolean().optional(),
   }),
 })
@@ -79,10 +91,7 @@ const completeBookingSchema = z.object({
 const rescheduleRequestSchema = z.object({
   body: z.object({
     newDate: requiredString('New Date (YYYY-MM-DD)'),
-    newStartTime: requiredString('New Start Time (HH:mm)').regex(
-      /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/,
-      'Start time must be in HH:mm format'
-    ),
+    newStartTime: timeSchema('New Start Time'),
     reason: requiredString('Reason for rescheduling'),
     message: optionalString('Message'),
   }),
@@ -97,9 +106,10 @@ const rescheduleResponseSchema = z.object({
 
 const getMyBookingsQuerySchema = z.object({
   query: z.object({
-    tab: z
-      .enum(['all', 'upcoming', 'pending', 'new_requests', 'completed', 'cancelled'])
-      .optional(),
+    tab: enumString(
+      ['all', 'upcoming', 'pending', 'new_requests', 'completed', 'cancelled'],
+      'Tab'
+    ),
     page: z.string().optional(),
     limit: z.string().optional(),
   }),
@@ -119,6 +129,12 @@ const verifyCustomerNoShowSchema = z.object({
   }),
 })
 
+const customerSignSchema = z.object({
+  body: z.object({
+    customerSignature: requiredString('Customer Signature'),
+  }),
+})
+
 export const bookingValidations = {
   createBookingSchema,
   checkoutPreviewSchema,
@@ -127,6 +143,7 @@ export const bookingValidations = {
   payBalanceSchema,
   declineBookingSchema,
   completeBookingSchema,
+  customerSignSchema,
   rescheduleRequestSchema,
   rescheduleResponseSchema,
   getMyBookingsQuerySchema,

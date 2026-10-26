@@ -10,7 +10,6 @@ import {
   enumString,
   requiredNumber,
   requiredStrBoolean,
-  requiredDate,
   requiredMongooseId,
 } from '@repo/shared'
 import { artistProfileSortableFields } from '@repo/db'
@@ -177,7 +176,7 @@ const getArtistDetailsSchema = z.object({
     artistId: requiredString('Artist ID'),
   }),
   query: z.object({
-    date: requiredDate("Date"),
+    date: optionalDate('Date'),
     serviceId: requiredMongooseId('Service ID').optional(),
     latitude: z.string().optional(),
     longitude: z.string().optional(),

@@ -37,6 +37,8 @@ const completionDetailsSchema = new Schema(
     proofPhotos: { type: [String], default: [] },
     customerSignature: { type: String, trim: true },
     completedAt: { type: Date },
+    signedAt: { type: Date },
+    payoutTransferredAt: { type: Date },
   },
   { _id: false, versionKey: false }
 )

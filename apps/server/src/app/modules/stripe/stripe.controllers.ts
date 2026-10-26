@@ -75,32 +75,30 @@ import { logger } from '@app/libs'
 //   })
 // })
 
-const handleStripeWebhookForLocal = catchAsync(async (req, res) => { //   Extract event from the header:
+const handleStripeWebhookForLocal = catchAsync(async (req, res) => {
   const event = verifyWebHookSignature(configs.stripe.webhookKey, req)
 
-  logger.info('[Stripe Event]', event)
+  logger.info(`[Stripe Event Received] ${event.type} (${event.id})`)
 
-  // ?? Check the event ID:
-  const isAlreadyProcessed = await ProcessedStripeEvent.findOne({
-    eventId: event?.id,
-  })
-
-  if (isAlreadyProcessed) {
-    return sendResponse(res, {
-      statusCode: httpStatus.OK,
-      success: true,
-      message: 'Webhook already processed (Idempotency skip).',
-      data: null,
+  // Atomic idempotency reservation to eliminate race conditions
+  try {
+    await ProcessedStripeEvent.create({
+      eventId: event.id,
+      createdAt: moment().utc().toDate(),
     })
+  } catch (err: any) {
+    if (err?.code === 11000) {
+      return sendResponse(res, {
+        statusCode: httpStatus.OK,
+        success: true,
+        message: 'Webhook already processed (Idempotency skip).',
+        data: null,
+      })
+    }
+    throw err
   }
 
   await stripeServices.listenStripeEventsForConnectedAccount(event)
-
-  // ?? Update the event:
-  await ProcessedStripeEvent.create({
-    eventId: event.id,
-    createdAt: moment().utc().toDate(),
-  })
 
   sendResponse(res, {
     statusCode: httpStatus.OK,

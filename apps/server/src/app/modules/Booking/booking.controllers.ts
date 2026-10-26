@@ -43,6 +43,38 @@ const cancelBooking = catchAsync(async (req, res) => {
   })
 })
 
+const customerCancelBooking = catchAsync(async (req, res) => {
+  const user = await getUserFromRequest(req)
+  const result = await bookingServices.customerCancelBooking(
+    user,
+    req.params.id as string,
+    req.body.reason
+  )
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: result.message,
+    data: result.booking,
+  })
+})
+
+const artistCancelBooking = catchAsync(async (req, res) => {
+  const user = await getUserFromRequest(req)
+  const result = await bookingServices.artistCancelBooking(
+    user,
+    req.params.id as string,
+    req.body.reason
+  )
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: result.message,
+    data: result.booking,
+  })
+})
+
 const getMyBookings = catchAsync(async (req, res) => {
   const user = await getUserFromRequest(req)
   const result = await bookingServices.getMyBookings(user, req.query)
@@ -194,6 +226,22 @@ const completeBooking = catchAsync(async (req, res) => {
   })
 })
 
+const customerSign = catchAsync(async (req, res) => {
+  const user = await getUserFromRequest(req)
+  const result = await bookingServices.customerSign(
+    user,
+    req.params.id as string,
+    req.body
+  )
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'Customer signature submitted successfully!',
+    data: result,
+  })
+})
+
 const requestReschedule = catchAsync(async (req, res) => {
   const user = await getUserFromRequest(req)
   const result = await bookingServices.requestReschedule(
@@ -277,6 +325,8 @@ export const bookingControllers = {
   checkoutPreview,
   createBooking,
   cancelBooking,
+  customerCancelBooking,
+  artistCancelBooking,
   getMyBookings,
   getBookingById,
   getBookingInvoice,
@@ -287,6 +337,7 @@ export const bookingControllers = {
   confirmBookingPayment,
   declineBooking,
   completeBooking,
+  customerSign,
   requestReschedule,
   respondReschedule,
   getArtistInboxSummary,

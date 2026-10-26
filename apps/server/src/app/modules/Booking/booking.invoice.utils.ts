@@ -1,5 +1,6 @@
 import type { IBookingDoc } from '@repo/db'
 import moment from 'moment'
+import configs from '@app/configs'
 
 export interface IBookingTaxInvoice {
   invoiceTitle: 'TAX INVOICE'
@@ -21,7 +22,7 @@ export interface IBookingTaxInvoice {
 
   // Intermediary / Platform
   platform: {
-    name: 'Mimilini Pty Ltd'
+    name: string
     country: 'Australia'
     commissionPercentage: number
     commissionAmount: number
@@ -141,7 +142,7 @@ export const generateBookingTaxInvoice = (
     },
 
     platform: {
-      name: 'Mimilini Pty Ltd',
+      name: configs.site?.name || 'Stunner alert',
       country: 'Australia',
       commissionPercentage: booking.platformCommissionPercentage || 20,
       commissionAmount: booking.platformCommissionAmount || 0,

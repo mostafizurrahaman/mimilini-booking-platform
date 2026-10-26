@@ -42,7 +42,6 @@ import { deleteSingleFileFromS3, uploadSingleFileToS3, type TMulterFile } from '
 import { AWS_FOLDER_NAMES } from '@app/libs/files_folder'
 import { getNewOtp } from '@app/libs/get-new-otp'
 import { logger } from '@app/libs/logger'
-import moment from 'moment'
 
 // 1. Signup
 const signUp = async (payload: ISignUpSchemaType, profileImage: TMulterFile) => {
@@ -340,7 +339,7 @@ const login = async (payload: ILoginType) => {
 
   // 4. check is otp verified ?
   if (!user.isOtpVerified) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Your account is not verified!')
+    throw new AppError(httpStatus.PRECONDITION_REQUIRED, 'Please verify your account via OTP.')
   }
 
   // 5. compare given password:
@@ -412,7 +411,7 @@ const artistLogin = async (payload: ILoginType) => {
 
   // 3. check is otp verified ?
   if (!user.isOtpVerified) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Your account is not verified!')
+    throw new AppError(httpStatus.PRECONDITION_REQUIRED, 'Please verify your account via OTP.')
   }
 
   // 5. compare given password:
@@ -491,7 +490,7 @@ const adminLogin = async (payload: ILoginType) => {
 
   // 4. check is otp verified ?
   if (!user.isOtpVerified) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Your account is not verified!')
+    throw new AppError(httpStatus.PRECONDITION_REQUIRED, 'Please verify your account via OTP.')
   }
 
   // 5. compare given password:
@@ -554,7 +553,7 @@ const forgotPassword = async (payload: IForgotPasswordType) => {
 
   // 3. check is otp verified ?
   if (!user.isOtpVerified) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Your account is not verified!')
+    throw new AppError(httpStatus.PRECONDITION_REQUIRED, 'Your account is not verified!')
   }
 
   // 4. Generate new otp
