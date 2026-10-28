@@ -1,6 +1,7 @@
 import { catchAsync, sendResponse } from '@repo/shared'
 import httpStatus from 'http-status'
 import { getUserFromRequest } from '@app/libs'
+import { BOOKING_STATUS } from '@repo/db'
 import { bookingServices } from './booking.services'
 
 const checkoutPreview = catchAsync(async (req, res) => {
@@ -19,10 +20,14 @@ const createBooking = catchAsync(async (req, res) => {
   const user = await getUserFromRequest(req)
   const result = await bookingServices.createBooking(user, req.body)
 
+  const isConfirmed = result.booking.status === BOOKING_STATUS.CONFIRMED
+
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.CREATED,
-    message: 'Booking created and initial 20% payment processed successfully!',
+    message: isConfirmed
+      ? 'Booking created and initial 20% payment processed successfully!'
+      : 'Booking request submitted successfully! Awaiting artist approval.',
     data: result,
   })
 })
@@ -321,6 +326,69 @@ const verifyCustomerNoShow = catchAsync(async (req, res) => {
   })
 })
 
+const getAllBookingsAdmin = catchAsync(async (req, res) => {
+  const result = await bookingServices.getAllBookingsAdmin(req.query)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'All bookings retrieved successfully for admin!',
+    data: {
+      bookings: result.bookings,
+      stats: result.stats,
+    },
+    meta: result.meta,
+  })
+})
+
+const getRecentBookingsAdmin = catchAsync(async (req, res) => {
+  const limit = req.query.limit ? Number(req.query.limit) : 6
+  const result = await bookingServices.getRecentBookingsAdmin(limit)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'Recent bookings retrieved successfully for admin dashboard!',
+    data: result,
+  })
+})
+
+const getBookingDetailsAdmin = catchAsync(async (req, res) => {
+  const result = await bookingServices.getBookingDetailsAdmin(req.params.id as string)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'Booking details retrieved successfully for admin!',
+    data: result,
+  })
+})
+
+const getBookingTimelineAdmin = catchAsync(async (req, res) => {
+  const result = await bookingServices.getBookingTimelineAdmin(req.params.id as string)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'Booking timeline retrieved successfully!',
+    data: result,
+  })
+})
+
+const updateAdminBookingNotes = catchAsync(async (req, res) => {
+  const result = await bookingServices.updateAdminBookingNotes(
+    req.params.id as string,
+    req.body.adminNotes
+  )
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: result.message,
+    data: result,
+  })
+})
+
 export const bookingControllers = {
   checkoutPreview,
   createBooking,
@@ -343,4 +411,9 @@ export const bookingControllers = {
   getArtistInboxSummary,
   reportCustomerNoShow,
   verifyCustomerNoShow,
+  getAllBookingsAdmin,
+  getRecentBookingsAdmin,
+  getBookingDetailsAdmin,
+  getBookingTimelineAdmin,
+  updateAdminBookingNotes,
 }

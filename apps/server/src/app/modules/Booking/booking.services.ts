@@ -8,6 +8,8 @@ import {
   Availability,
   Booking,
   BOOKING_STATUS,
+  BookingHistory,
+  BOOKING_TIMELINE_MILESTONE,
   PaymentMethod,
   PaymentTransaction,
   PAYMENT_GATEWAY,
@@ -18,6 +20,7 @@ import {
   PENALTY_STATUS,
   PlatformSettings,
   PromoCode,
+  Review,
   User,
   WalletLedger,
   WALLET_SOURCE,
@@ -96,6 +99,19 @@ const checkoutPreview = async (user: IUser, input: ICheckoutPreviewInput) => {
     throw new AppError(
       httpStatus.FORBIDDEN,
       'This artist is currently unavailable for new bookings.'
+    )
+  }
+
+  const artistUser = await User.findById(input.artist)
+  if (
+    !artistUser ||
+    artistUser.status !== AuthStatus.ACTIVE ||
+    !artistUser.isProfileCompleted ||
+    !artistUser.isStripeConnected
+  ) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'This artist cannot accept bookings as their profile or payment onboarding is incomplete.'
     )
   }
 
@@ -223,6 +239,19 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     throw new AppError(
       httpStatus.FORBIDDEN,
       'This artist is currently unavailable for new bookings.'
+    )
+  }
+
+  const artistUser = await User.findById(input.artist)
+  if (
+    !artistUser ||
+    artistUser.status !== AuthStatus.ACTIVE ||
+    !artistUser.isProfileCompleted ||
+    !artistUser.isStripeConnected
+  ) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'This artist cannot accept bookings as their profile or payment onboarding is incomplete.'
     )
   }
 
@@ -633,6 +662,32 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
       txnPayload.stripePaymentIntentId = stripePaymentIntentId
     }
     await PaymentTransaction.create(txnPayload)
+  }
+
+  // Record BookingHistory
+  await recordBookingHistory({
+    booking: (booking as any)._id,
+    bookingNumber: booking.bookingNumber,
+    status: booking.status,
+    milestone: BOOKING_TIMELINE_MILESTONE.BOOKING_CREATED,
+    title: 'Booking Created',
+    description: 'Booking was submitted by the customer',
+    performedBy: user._id,
+    performedByRole: 'customer',
+  })
+
+  if (initialStatus === 'captured') {
+    await recordBookingHistory({
+      booking: (booking as any)._id,
+      bookingNumber: booking.bookingNumber,
+      status: booking.status,
+      milestone: BOOKING_TIMELINE_MILESTONE.PAYMENT_COMPLETED,
+      title: 'Payment Completed',
+      description: `Initial 20% deposit of $${breakdown.initialDepositAmount} AUD captured successfully`,
+      performedBy: user._id,
+      performedByRole: 'customer',
+      metadata: { stripePaymentIntentId },
+    })
   }
 
   return {
@@ -1924,6 +1979,17 @@ const acceptBooking = async (user: IUser, bookingId: string) => {
   booking.status = BOOKING_STATUS.ACCEPTED
   await booking.save()
 
+  await recordBookingHistory({
+    booking: booking._id,
+    bookingNumber: booking.bookingNumber,
+    status: BOOKING_STATUS.ACCEPTED,
+    milestone: BOOKING_TIMELINE_MILESTONE.ARTIST_ACCEPTED,
+    title: 'Artist Accepted',
+    description: 'Artist accepted the booking request',
+    performedBy: user._id,
+    performedByRole: (user.role as any) || 'artist',
+  })
+
   return booking
 }
 
@@ -2140,6 +2206,17 @@ const confirmBookingPayment = async (
   }
   await PaymentTransaction.create(txnPayload)
 
+  await recordBookingHistory({
+    booking: booking._id,
+    bookingNumber: booking.bookingNumber,
+    status: BOOKING_STATUS.CONFIRMED,
+    milestone: BOOKING_TIMELINE_MILESTONE.PAYMENT_COMPLETED,
+    title: 'Deposit Paid & Confirmed',
+    description: `Customer paid 20% deposit ($${breakdown.initialDepositAmount} AUD)`,
+    performedBy: user._id,
+    performedByRole: 'customer',
+  })
+
   return {
     booking,
     clientSecret,
@@ -2210,6 +2287,19 @@ const declineBooking = async (user: IUser, bookingId: string, reason?: string) =
   }
 
   await booking.save()
+
+  await recordBookingHistory({
+    booking: booking._id,
+    bookingNumber: booking.bookingNumber,
+    status: BOOKING_STATUS.DECLINED,
+    milestone: BOOKING_TIMELINE_MILESTONE.DECLINED,
+    title: 'Booking Declined',
+    description: reason || 'Booking declined by artist',
+    performedBy: user._id,
+    performedByRole: (user.role as any) || 'artist',
+    note: reason,
+  })
+
   return booking
 }
 
@@ -2276,6 +2366,22 @@ const completeBooking = async (
 
   booking.status = BOOKING_STATUS.COMPLETED
   await booking.save()
+
+  await recordBookingHistory({
+    booking: booking._id,
+    bookingNumber: booking.bookingNumber,
+    status: BOOKING_STATUS.COMPLETED,
+    milestone: BOOKING_TIMELINE_MILESTONE.SERVICE_COMPLETED,
+    title: 'Service Completed',
+    description: 'Artist completed service and uploaded proof',
+    performedBy: user._id,
+    performedByRole: (user.role as any) || 'artist',
+    metadata: {
+      servicesPerformed: finalPayload.servicesPerformed,
+      totalWorkingTime: finalPayload.totalWorkingTime,
+      proofPhotosCount: proofPhotoUrls.length,
+    },
+  })
 
   return booking
 }
@@ -2373,6 +2479,18 @@ const customerSign = async (
   }
 
   await booking.save()
+
+  await recordBookingHistory({
+    booking: booking._id,
+    bookingNumber: booking.bookingNumber,
+    status: booking.status,
+    milestone: BOOKING_TIMELINE_MILESTONE.BOOKING_CLOSED,
+    title: 'Booking Closed',
+    description: 'Customer verified and signed off on completed service',
+    performedBy: user._id,
+    performedByRole: 'customer',
+  })
+
   return booking
 }
 
@@ -2969,6 +3087,626 @@ const verifyCustomerNoShow = async (
   }
 }
 
+/**
+ * Record a milestone or status change in the BookingHistory collection
+ */
+const recordBookingHistory = async (payload: {
+  booking: mongoose.Types.ObjectId | string
+  bookingNumber: string
+  status: any
+  milestone: string
+  title: string
+  description?: string | null | undefined
+  performedBy?: mongoose.Types.ObjectId | string | null | undefined
+  performedByRole?: 'customer' | 'artist' | 'admin' | 'system' | undefined
+  note?: string | null | undefined
+  metadata?: Record<string, any> | null | undefined
+}) => {
+  try {
+    return await BookingHistory.create({
+      booking: payload.booking,
+      bookingNumber: payload.bookingNumber,
+      status: payload.status,
+      milestone: payload.milestone,
+      title: payload.title,
+      description: payload.description,
+      performedBy: payload.performedBy || null,
+      performedByRole: payload.performedByRole || 'system',
+      note: payload.note,
+      metadata: payload.metadata,
+    })
+  } catch (err: any) {
+    logger.error(`[BookingHistory] Failed to record booking history: ${err?.message || err}`)
+    return null
+  }
+}
+
+/**
+ * Retrieve booking timeline milestones and history log from BookingHistory table (Figma Admin/6.png)
+ */
+const getBookingTimelineFromHistory = async (booking: any) => {
+  let historyItems = await BookingHistory.find({ booking: booking._id })
+    .sort({ createdAt: 1 })
+    .populate('performedBy', 'name email role profileImage')
+    .lean()
+
+  // Graceful backfill for existing bookings created before BookingHistory table was added
+  if (historyItems.length === 0) {
+    const initialHistories: any[] = []
+
+    initialHistories.push({
+      booking: booking._id,
+      bookingNumber: booking.bookingNumber,
+      status: BOOKING_STATUS.REQUESTED,
+      milestone: BOOKING_TIMELINE_MILESTONE.BOOKING_CREATED,
+      title: 'Booking Created',
+      description: 'Booking was submitted by the customer',
+      performedBy: booking.customer,
+      performedByRole: 'customer',
+      createdAt: booking.createdAt,
+    })
+
+    if (
+      [
+        BOOKING_STATUS.ACCEPTED,
+        BOOKING_STATUS.CONFIRMED,
+        BOOKING_STATUS.IN_PROGRESS,
+        BOOKING_STATUS.COMPLETED,
+        BOOKING_STATUS.RESCHEDULED,
+      ].includes(booking.status)
+    ) {
+      initialHistories.push({
+        booking: booking._id,
+        bookingNumber: booking.bookingNumber,
+        status: BOOKING_STATUS.ACCEPTED,
+        milestone: BOOKING_TIMELINE_MILESTONE.ARTIST_ACCEPTED,
+        title: 'Artist Accepted',
+        description: 'Artist accepted the booking request',
+        performedBy: booking.artist,
+        performedByRole: 'artist',
+        createdAt: booking.initialPayment?.paidAt || booking.updatedAt,
+      })
+    }
+
+    if (
+      booking.initialPayment?.status === PAYMENT_STAGE_STATUS.CAPTURED ||
+      booking.balancePayment?.status === PAYMENT_STAGE_STATUS.CAPTURED
+    ) {
+      initialHistories.push({
+        booking: booking._id,
+        bookingNumber: booking.bookingNumber,
+        status: booking.status,
+        milestone: BOOKING_TIMELINE_MILESTONE.PAYMENT_COMPLETED,
+        title: 'Payment Completed',
+        description:
+          booking.balancePayment?.status === PAYMENT_STAGE_STATUS.CAPTURED
+            ? 'Remaining 80% balance payment captured'
+            : '20% deposit captured, balance payment pending',
+        performedBy: booking.customer,
+        performedByRole: 'customer',
+        createdAt:
+          booking.balancePayment?.paidAt ||
+          booking.initialPayment?.paidAt ||
+          booking.updatedAt,
+      })
+    }
+
+    if ([BOOKING_STATUS.IN_PROGRESS, BOOKING_STATUS.COMPLETED].includes(booking.status)) {
+      initialHistories.push({
+        booking: booking._id,
+        bookingNumber: booking.bookingNumber,
+        status: BOOKING_STATUS.IN_PROGRESS,
+        milestone: BOOKING_TIMELINE_MILESTONE.SERVICE_STARTED,
+        title: 'Service Started',
+        description: 'Service delivery in progress',
+        performedBy: booking.artist,
+        performedByRole: 'artist',
+        createdAt: booking.bookingDate || booking.updatedAt,
+      })
+    }
+
+    if (booking.status === BOOKING_STATUS.COMPLETED) {
+      initialHistories.push({
+        booking: booking._id,
+        bookingNumber: booking.bookingNumber,
+        status: BOOKING_STATUS.COMPLETED,
+        milestone: BOOKING_TIMELINE_MILESTONE.SERVICE_COMPLETED,
+        title: 'Service Completed',
+        description: 'Service delivery completed',
+        performedBy: booking.artist,
+        performedByRole: 'artist',
+        createdAt: booking.completionDetails?.completedAt || booking.updatedAt,
+      })
+
+      if (booking.completionDetails?.signedAt) {
+        initialHistories.push({
+          booking: booking._id,
+          bookingNumber: booking.bookingNumber,
+          status: BOOKING_STATUS.COMPLETED,
+          milestone: BOOKING_TIMELINE_MILESTONE.BOOKING_CLOSED,
+          title: 'Booking Closed',
+          description: 'Customer signed off and booking closed',
+          performedBy: booking.customer,
+          performedByRole: 'customer',
+          createdAt: booking.completionDetails.signedAt,
+        })
+      }
+    }
+
+    if (booking.status === BOOKING_STATUS.CANCELLED || booking.status === BOOKING_STATUS.DECLINED) {
+      initialHistories.push({
+        booking: booking._id,
+        bookingNumber: booking.bookingNumber,
+        status: booking.status,
+        milestone:
+          booking.status === BOOKING_STATUS.DECLINED
+            ? BOOKING_TIMELINE_MILESTONE.DECLINED
+            : BOOKING_TIMELINE_MILESTONE.CANCELLED,
+        title: booking.status === BOOKING_STATUS.DECLINED ? 'Booking Declined' : 'Booking Cancelled',
+        description: booking.cancellationReason || `Cancelled by ${booking.cancelledByRole || 'user'}`,
+        performedBy: booking.cancelledBy || null,
+        performedByRole: booking.cancelledByRole || 'system',
+        createdAt: booking.cancelledAt || booking.updatedAt,
+      })
+    }
+
+    try {
+      historyItems = (await BookingHistory.insertMany(initialHistories)) as any[]
+    } catch {
+      historyItems = initialHistories as any[]
+    }
+  }
+
+  return historyItems
+}
+
+
+/**
+ * Get all bookings with stats for Admin (Figma Admin/5.png)
+ */
+const getAllBookingsAdmin = async (query: {
+  page?: string | number
+  limit?: string | number
+  search?: string
+  status?: string
+  category?: string
+  visitType?: string
+  paymentStatus?: string
+  startDate?: string
+  endDate?: string
+  sortBy?: string
+  sortOrder?: 'asc' | 'desc'
+}) => {
+  const page = Math.max(1, Number(query.page || 1))
+  const limit = Math.max(1, Math.min(100, Number(query.limit || 10)))
+  const skip = (page - 1) * limit
+
+  const filter: any = {}
+
+  // Search by bookingNumber or customer/artist name/email
+  if (query.search?.trim()) {
+    const searchRegex = new RegExp(query.search.trim(), 'i')
+    const matchingUsers = await User.find(
+      { $or: [{ name: searchRegex }, { email: searchRegex }] },
+      '_id'
+    ).lean()
+    const userIds = matchingUsers.map((u) => u._id)
+
+    filter.$or = [
+      { bookingNumber: searchRegex },
+      { customer: { $in: userIds } },
+      { artist: { $in: userIds } },
+    ]
+  }
+
+  // Status Filter
+  if (query.status && query.status.toLowerCase() !== 'all') {
+    const st = query.status.toLowerCase()
+    switch (st) {
+      case 'pending':
+        filter.status = { $in: [BOOKING_STATUS.REQUESTED, BOOKING_STATUS.ACCEPTED] }
+        break
+      case 'confirmed':
+        filter.status = { $in: [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.RESCHEDULED] }
+        break
+      case 'in_progress':
+      case 'in progress':
+        filter.status = BOOKING_STATUS.IN_PROGRESS
+        break
+      case 'completed':
+        filter.status = BOOKING_STATUS.COMPLETED
+        break
+      case 'cancelled':
+      case 'canceled':
+        filter.status = { $in: [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.DECLINED] }
+        break
+      case 'disputed':
+        filter.status = { $in: [BOOKING_STATUS.NO_SHOW, BOOKING_STATUS.NO_SHOW_PENDING] }
+        break
+      default:
+        filter.status = query.status
+        break
+    }
+  }
+
+  // Category Filter
+  if (query.category) {
+    const matchingServices = await ArtistServices.find(
+      { category: query.category },
+      '_id'
+    ).lean()
+    filter.service = { $in: matchingServices.map((s) => s._id) }
+  }
+
+  // Visit Type Filter
+  if (query.visitType) {
+    filter.visitType = query.visitType
+  }
+
+  // Payment Status Filter
+  if (query.paymentStatus) {
+    const ps = query.paymentStatus.toLowerCase()
+    if (ps === 'paid') {
+      filter['balancePayment.status'] = PAYMENT_STAGE_STATUS.CAPTURED
+    } else if (ps === 'pending') {
+      filter['balancePayment.status'] = { $ne: PAYMENT_STAGE_STATUS.CAPTURED }
+      filter.status = { $nin: [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.DECLINED] }
+    } else if (ps === 'refunded') {
+      filter.$or = [
+        { status: BOOKING_STATUS.CANCELLED },
+        { 'balancePayment.status': PAYMENT_STAGE_STATUS.REFUNDED },
+        { 'initialPayment.status': PAYMENT_STAGE_STATUS.REFUNDED },
+      ]
+    }
+  }
+
+  // Date Range Filter
+  if (query.startDate || query.endDate) {
+    filter.bookingDate = {}
+    if (query.startDate) {
+      filter.bookingDate.$gte = moment(query.startDate).startOf('day').toDate()
+    }
+    if (query.endDate) {
+      filter.bookingDate.$lte = moment(query.endDate).endOf('day').toDate()
+    }
+  }
+
+  // Sorting
+  const sortField = query.sortBy || 'createdAt'
+  const sortDirection = query.sortOrder === 'asc' ? 1 : -1
+  const sortOrder: any = { [sortField]: sortDirection }
+
+  // Query Data and Stats in parallel
+  const todayStart = moment().startOf('day').toDate()
+  const todayEnd = moment().endOf('day').toDate()
+
+  const [bookings, total, totalAllTime, todayCount, pendingCount, completedCount, cancelledCount] =
+    await Promise.all([
+      Booking.find(filter)
+        .sort(sortOrder)
+        .skip(skip)
+        .limit(limit)
+        .populate('customer', 'name email phone profileImage')
+        .populate('artist', 'name email phone profileImage')
+        .populate({
+          path: 'service',
+          select: 'name durationMinutes price category',
+          populate: { path: 'category', select: 'name icon' },
+        })
+        .populate('address')
+        .lean(),
+      Booking.countDocuments(filter),
+      Booking.countDocuments(),
+      Booking.countDocuments({ bookingDate: { $gte: todayStart, $lte: todayEnd } }),
+      Booking.countDocuments({
+        status: { $in: [BOOKING_STATUS.REQUESTED, BOOKING_STATUS.ACCEPTED] },
+      }),
+      Booking.countDocuments({ status: BOOKING_STATUS.COMPLETED }),
+      Booking.countDocuments({
+        status: { $in: [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.DECLINED] },
+      }),
+    ])
+
+  const formattedBookings = bookings.map((b: any) => {
+    let paymentStatus = 'Pending'
+    if (b.status === BOOKING_STATUS.CANCELLED || b.status === BOOKING_STATUS.DECLINED) {
+      paymentStatus = b.depositForfeited ? 'Partial Refund' : 'Refunded'
+    } else if (b.balancePayment?.status === PAYMENT_STAGE_STATUS.CAPTURED) {
+      paymentStatus = 'Paid'
+    } else if (b.initialPayment?.status === PAYMENT_STAGE_STATUS.CAPTURED) {
+      paymentStatus = 'Partial (20% Paid)'
+    }
+
+    return {
+      _id: b._id,
+      bookingNumber: b.bookingNumber,
+      bookingGroupId: b.bookingGroupId,
+      customer: b.customer,
+      artist: b.artist,
+      service: b.service,
+      category: b.service?.category?.name || 'General',
+      bookingDate: b.bookingDate,
+      startTime: b.startTime,
+      endTime: b.endTime,
+      durationMinutes: b.durationMinutes,
+      visitType: b.visitType,
+      status: b.status,
+      paymentStatus,
+      amount: b.totalBookingPrice,
+      grossAmount: b.grossAmount,
+      travelFee: b.travelFee,
+      parkingFee: b.parkingFee,
+      gstAmount: b.gstAmount,
+      initialPayment: b.initialPayment,
+      balancePayment: b.balancePayment,
+      createdAt: b.createdAt,
+    }
+  })
+
+  return {
+    bookings: formattedBookings,
+    stats: {
+      totalBookings: totalAllTime,
+      todayBookings: todayCount,
+      pending: pendingCount,
+      completed: completedCount,
+      cancelled: cancelledCount,
+    },
+    meta: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit) || 1,
+    },
+  }
+}
+
+/**
+ * Get recent bookings for Admin Dashboard (Figma Admin/1.png)
+ */
+const getRecentBookingsAdmin = async (queryLimit = 6) => {
+  const limit = Math.max(1, Math.min(50, Number(queryLimit || 6)))
+
+  const bookings = await Booking.find()
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .populate('customer', 'name email profileImage')
+    .populate('artist', 'name email profileImage')
+    .populate({
+      path: 'service',
+      select: 'name durationMinutes price category',
+      populate: { path: 'category', select: 'name' },
+    })
+    .lean()
+
+  const formattedRecent = bookings.map((b: any) => {
+    let paymentStatus = 'Pending'
+    if (b.status === BOOKING_STATUS.CANCELLED || b.status === BOOKING_STATUS.DECLINED) {
+      paymentStatus = 'Refunded'
+    } else if (b.balancePayment?.status === PAYMENT_STAGE_STATUS.CAPTURED) {
+      paymentStatus = 'Paid'
+    }
+
+    return {
+      id: b.bookingNumber,
+      bookingId: b._id,
+      customer: {
+        _id: b.customer?._id,
+        name: b.customer?.name || 'Customer',
+        email: b.customer?.email,
+        profileImage: b.customer?.profileImage,
+      },
+      artist: {
+        _id: b.artist?._id,
+        name: b.artist?.name || 'Artist',
+        email: b.artist?.email,
+        profileImage: b.artist?.profileImage,
+      },
+      service: {
+        _id: b.service?._id,
+        name: b.service?.name || 'Beauty Service',
+        category: b.service?.category?.name,
+      },
+      amount: b.totalBookingPrice,
+      status: b.status,
+      paymentStatus,
+      bookingDate: b.bookingDate,
+      startTime: b.startTime,
+      date: b.bookingDate
+        ? moment(b.bookingDate).format('MMM D, YYYY')
+        : moment(b.createdAt).format('MMM D, YYYY'),
+      createdAt: b.createdAt,
+    }
+  })
+
+  return formattedRecent
+}
+
+/**
+ * Get booking timeline and history log for Admin (Figma Admin/6.png)
+ */
+const getBookingTimelineAdmin = async (bookingId: string) => {
+  const query = mongoose.Types.ObjectId.isValid(bookingId)
+    ? { _id: bookingId }
+    : { bookingNumber: bookingId }
+
+  const booking = await Booking.findOne(query).lean()
+  if (!booking) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
+  }
+
+  const timeline = await getBookingTimelineFromHistory(booking)
+  return {
+    bookingId: booking._id,
+    bookingNumber: booking.bookingNumber,
+    currentStatus: booking.status,
+    timeline,
+  }
+}
+
+/**
+ * Get comprehensive booking details for Admin (Figma Admin/6.png)
+ */
+const getBookingDetailsAdmin = async (bookingId: string) => {
+  const query = mongoose.Types.ObjectId.isValid(bookingId)
+    ? { _id: bookingId }
+    : { bookingNumber: bookingId }
+
+  const booking = await Booking.findOne(query)
+    .populate('customer', 'name email phone profileImage role status')
+    .populate('artist', 'name email phone profileImage role status')
+    .populate({
+      path: 'service',
+      select: 'name durationMinutes price description category',
+      populate: { path: 'category', select: 'name icon' },
+    })
+    .populate('address')
+    .populate('promoCode')
+    .lean()
+
+  if (!booking) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
+  }
+
+  const [artistProfile, reviews] = await Promise.all([
+    ArtistProfile.findOne({ user: (booking.artist as any)?._id }).lean(),
+    Review.find({ artist: (booking.artist as any)?._id }).select('rating').lean(),
+  ])
+
+  const totalReviews = reviews.length
+  const avgRating = totalReviews
+    ? Number((reviews.reduce((acc, r) => acc + (r.rating || 0), 0) / totalReviews).toFixed(1))
+    : 5.0
+
+  const location =
+    booking.serviceLocationSnapshot?.address ||
+    (booking.address as any)?.address ||
+    (booking.address as any)?.formattedAddress ||
+    'Client location'
+
+  const timeline = await getBookingTimelineFromHistory(booking)
+
+  return {
+    booking: {
+      _id: booking._id,
+      bookingNumber: booking.bookingNumber,
+      status: booking.status,
+      visitType: booking.visitType,
+      bookingDate: booking.bookingDate,
+      startTime: booking.startTime,
+      endTime: booking.endTime,
+      durationMinutes: booking.durationMinutes,
+      guestCount: booking.guestCount,
+      createdAt: booking.createdAt,
+      updatedAt: booking.updatedAt,
+    },
+    bookingInformation: {
+      bookingId: booking.bookingNumber,
+      createdDate: booking.createdAt,
+      visitType: booking.visitType === 'home_visit' ? 'Home Visit' : 'Salon Visit',
+      transactionId:
+        booking.balancePayment?.stripePaymentIntentId ||
+        booking.initialPayment?.stripePaymentIntentId ||
+        '—',
+      location,
+      travelFee: booking.travelFee || 0,
+      parkingFee: booking.parkingFee || 0,
+    },
+    customerInformation: {
+      _id: (booking.customer as any)?._id,
+      name: (booking.customer as any)?.name || 'Customer',
+      email: (booking.customer as any)?.email,
+      phone: (booking.customer as any)?.phone || '—',
+      profileImage: (booking.customer as any)?.profileImage,
+      location,
+      badge:
+        (booking.customer as any)?.role === 'customer'
+          ? 'Customer'
+          : (booking.customer as any)?.role || 'Member',
+    },
+    artistInformation: {
+      _id: (booking.artist as any)?._id,
+      name: (booking.artist as any)?.name || 'Artist',
+      email: (booking.artist as any)?.email,
+      phone: (booking.artist as any)?.phone || '—',
+      profileImage: (booking.artist as any)?.profileImage,
+      businessName:
+        artistProfile?.businessName ||
+        (booking.service as any)?.category?.name ||
+        'Beauty Specialist',
+      abn: artistProfile?.abn,
+      isGstRegistered: artistProfile?.isGstRegistered || false,
+      rating: avgRating,
+      reviewsCount: totalReviews,
+    },
+    serviceDetails: {
+      _id: (booking.service as any)?._id,
+      name: (booking.service as any)?.name,
+      category: (booking.service as any)?.category?.name,
+      durationMinutes: (booking.service as any)?.durationMinutes || booking.durationMinutes,
+      price: booking.servicePrice,
+      totalAmount: booking.totalBookingPrice,
+      specialNotes: booking.completionDetails?.specialNotes || booking.clientNotes || '',
+    },
+    paymentDetails: {
+      transactionId:
+        booking.balancePayment?.stripePaymentIntentId ||
+        booking.initialPayment?.stripePaymentIntentId ||
+        '—',
+      paymentMethod: booking.stripePaymentMethodId ? 'Stripe Card (Vaulted)' : 'Stripe',
+      grossAmount: booking.grossAmount,
+      servicePrice: booking.servicePrice,
+      discountAmount: booking.discountAmount,
+      platformCreditApplied: booking.platformCreditApplied,
+      gstAmount: booking.gstAmount,
+      totalBookingPrice: booking.totalBookingPrice,
+      platformCommissionPercentage: booking.platformCommissionPercentage || 20,
+      platformCommissionAmount: booking.platformCommissionAmount,
+      platformCommissionGst: booking.platformCommissionGst,
+      artistPayout: booking.artistNetPayout,
+      initialPayment: booking.initialPayment,
+      balancePayment: booking.balancePayment,
+    },
+    invoices: {
+      customerInvoiceId: booking.stripeInvoiceId,
+      customerInvoiceUrl: booking.stripeInvoiceUrl,
+      customerInvoicePdf: booking.stripeInvoicePdf,
+      artistInvoiceId: booking.artistStripeInvoiceId,
+      artistInvoiceUrl: booking.artistStripeInvoiceUrl,
+      artistInvoicePdf: booking.artistStripeInvoicePdf,
+    },
+    completionDetails: booking.completionDetails,
+    rescheduleRequest: booking.rescheduleRequest,
+    noShowDetails: booking.noShowDetails,
+    internalNotes: booking.adminNotes || '',
+    timeline,
+  }
+}
+
+/**
+ * Update internal admin notes on a booking (Figma Admin/6.png)
+ */
+const updateAdminBookingNotes = async (bookingId: string, adminNotes: string) => {
+  const query = mongoose.Types.ObjectId.isValid(bookingId)
+    ? { _id: bookingId }
+    : { bookingNumber: bookingId }
+
+  const booking = await Booking.findOneAndUpdate(
+    query,
+    { $set: { adminNotes } },
+    { new: true }
+  )
+
+  if (!booking) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
+  }
+
+  return {
+    message: 'Internal admin notes updated successfully!',
+    adminNotes: booking.adminNotes,
+  }
+}
+
 export const bookingServices = {
   checkoutPreview,
   createBooking,
@@ -2994,4 +3732,11 @@ export const bookingServices = {
   reportCustomerNoShow,
   verifyCustomerNoShow,
   voidOrCreditNoteInvoice,
+  getAllBookingsAdmin,
+  getRecentBookingsAdmin,
+  getBookingTimelineAdmin,
+  getBookingDetailsAdmin,
+  updateAdminBookingNotes,
+  recordBookingHistory,
+  getBookingTimelineFromHistory,
 }

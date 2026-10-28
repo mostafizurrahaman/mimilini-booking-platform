@@ -42,6 +42,46 @@ router.get(
   bookingControllers.getMyBookings
 )
 
+// ==================== ADMIN BOOKING ROUTES ====================
+router.get(
+  '/admin/all',
+  auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
+  validateRequest(bookingValidations.getAllBookingsAdminQuerySchema),
+  bookingControllers.getAllBookingsAdmin
+)
+
+router.get(
+  '/admin/recent',
+  auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
+  validateRequest(bookingValidations.getRecentBookingsAdminQuerySchema),
+  bookingControllers.getRecentBookingsAdmin
+)
+
+router.get(
+  '/admin/:id',
+  auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
+  bookingControllers.getBookingDetailsAdmin
+)
+
+router.get(
+  '/admin/:id/timeline',
+  auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
+  bookingControllers.getBookingTimelineAdmin
+)
+
+router.patch(
+  '/admin/:id/notes',
+  auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
+  validateRequest(bookingValidations.updateAdminBookingNotesSchema),
+  bookingControllers.updateAdminBookingNotes
+)
+
+router.get(
+  '/:id/timeline',
+  auth(AuthRoles.CUSTOMER, AuthRoles.ARTIST, AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
+  bookingControllers.getBookingTimelineAdmin
+)
+
 router.patch(
   '/:id/accept',
   auth(AuthRoles.ARTIST, AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),

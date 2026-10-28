@@ -343,6 +343,10 @@ const bookingSchema = new Schema<IBookingDoc>(
       type: String,
       trim: true,
     },
+    adminNotes: {
+      type: String,
+      trim: true,
+    },
   },
   {
     timestamps: true,

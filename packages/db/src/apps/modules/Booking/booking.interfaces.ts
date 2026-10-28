@@ -112,6 +112,7 @@ export interface IBooking {
   // Notes:
   clientNotes?: string | null | undefined
   artistNotes?: string | null | undefined
+  adminNotes?: string | null | undefined
 
   createdAt?: Date | undefined
   updatedAt?: Date | undefined

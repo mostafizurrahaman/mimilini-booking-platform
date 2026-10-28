@@ -989,7 +989,7 @@ const removeCertification = async (
   return artistProfile
 }
 
-const getAllArtistProfile = async (query: TGetAllArtistProfileQueryParamsType) => {
+const getAllArtistProfile = async (query: Partial<TGetAllArtistProfileQueryParamsType>) => {
   const {
     page = 1,
     limit = 10,
@@ -1018,6 +1018,28 @@ const getAllArtistProfile = async (query: TGetAllArtistProfileQueryParamsType) =
         isPenaltyRequired: { $ne: true },
       },
     })
+  }
+
+  // Filter out incomplete and non-stripe-connected artists for customer discovery
+  if (query.includeInActive !== true) {
+    pipeline.push(
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'user',
+          foreignField: '_id',
+          as: 'userDetails',
+        },
+      },
+      { $unwind: '$userDetails' },
+      {
+        $match: {
+          'userDetails.status': AuthStatus.ACTIVE,
+          'userDetails.isProfileCompleted': true,
+          'userDetails.isStripeConnected': true,
+        },
+      }
+    )
   }
 
   if (searchTerm) {
@@ -1149,7 +1171,7 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
     })
   }
 
-  // 2. User status check (only non-blocked artists)
+  // 2. User status check (only active, profile completed, and stripe connected artists)
   pipeline.push(
     {
       $lookup: {
@@ -1162,7 +1184,9 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
     { $unwind: '$userDetails' },
     {
       $match: {
-        'userDetails.status': { $ne: 'blocked' },
+        'userDetails.status': AuthStatus.ACTIVE,
+        'userDetails.isProfileCompleted': true,
+        'userDetails.isStripeConnected': true,
       },
     }
   )
@@ -1684,8 +1708,16 @@ const getArtistDetails = async (artistIdParam: string, query: IGetArtistDetailsQ
 
   // Find corresponding User account
   const userDoc = await User.findById(artistUserId).lean()
-  if (!userDoc || userDoc.status === 'blocked') {
-    throw new AppError(httpStatus.NOT_FOUND, 'Artist account is not active.')
+  if (
+    !userDoc ||
+    userDoc.status !== AuthStatus.ACTIVE ||
+    !userDoc.isProfileCompleted ||
+    !userDoc.isStripeConnected
+  ) {
+    throw new AppError(
+      httpStatus.NOT_FOUND,
+      'Artist profile is currently unavailable or onboarding is incomplete.'
+    )
   }
 
   // 1. Review statistics and recent reviews

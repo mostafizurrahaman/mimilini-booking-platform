@@ -6,6 +6,9 @@ import {
   enumString,
   optionalEnumString,
   positiveNumber,
+  optionalNumber,
+  optionalDateOnlyString,
+  sortingOrderValues,
 } from '@repo/shared'
 import { VISIT_TYPE_VALUES } from '@repo/db'
 
@@ -110,8 +113,8 @@ const getMyBookingsQuerySchema = z.object({
       ['all', 'upcoming', 'pending', 'new_requests', 'completed', 'cancelled'],
       'Tab'
     ),
-    page: z.string().optional(),
-    limit: z.string().optional(),
+    page: optionalNumber('Page'),
+    limit: optionalNumber('Limit'),
   }),
 })
 
@@ -135,6 +138,34 @@ const customerSignSchema = z.object({
   }),
 })
 
+const getAllBookingsAdminQuerySchema = z.object({
+  query: z.object({
+    page: optionalNumber('Page'),
+    limit: optionalNumber('Limit'),
+    search: optionalString('Search'),
+    status: optionalString('Status'),
+    category: optionalString('Category'),
+    visitType: optionalEnumString(VISIT_TYPE_VALUES, 'Visit Type'),
+    paymentStatus: optionalString('Payment Status'),
+    startDate: optionalDateOnlyString('Start Date'),
+    endDate: optionalDateOnlyString('End Date'),
+    sortBy: optionalString('Sort By'),
+    sortOrder: optionalEnumString(sortingOrderValues, 'Sort Order'),
+  }),
+})
+
+const getRecentBookingsAdminQuerySchema = z.object({
+  query: z.object({
+    limit: optionalNumber('Limit'),
+  }),
+})
+
+const updateAdminBookingNotesSchema = z.object({
+  body: z.object({
+    adminNotes: requiredString('Admin Notes'),
+  }),
+})
+
 export const bookingValidations = {
   createBookingSchema,
   checkoutPreviewSchema,
@@ -149,4 +180,7 @@ export const bookingValidations = {
   getMyBookingsQuerySchema,
   reportCustomerNoShowSchema,
   verifyCustomerNoShowSchema,
+  getAllBookingsAdminQuerySchema,
+  getRecentBookingsAdminQuerySchema,
+  updateAdminBookingNotesSchema,
 }
