@@ -5,6 +5,7 @@ import app from './app'
 import { logger } from '@app/libs/logger'
 import { seedSuperAdmin } from '@app/libs/seed-super-admin'
 import { startBookingCronJobs } from './app/jobs/booking.jobs'
+import { initSocketServer } from './app/modules/Chat/chat.socket'
 
 let server: Server
 // bootstrap function :
@@ -18,6 +19,8 @@ const boostrap = async () => {
     // server listen :
     server = app.listen(configs.port, () => {
       logger.info(`🧑‍🚀🚀 Server is running on ${configs.port}`)
+      initSocketServer(server)
+      logger.info(`🔌 Socket.IO server initialized on port ${configs.port}`)
       startBookingCronJobs()
     })
   } catch (err) {

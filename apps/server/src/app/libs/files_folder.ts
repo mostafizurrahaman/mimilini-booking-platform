@@ -7,4 +7,5 @@ export const AWS_FOLDER_NAMES = {
   Banner: 'banners',
   BannerInspiration: 'bannerInspiration',
   ProofPhotos: 'proofPhotos',
+  ChatImages: 'chatImages',
 } as const

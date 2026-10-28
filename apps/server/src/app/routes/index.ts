@@ -19,6 +19,7 @@ import { paymentMethodRoutes } from '@app/modules/PaymentMethod/payment-method.r
 import { walletRoutes } from '@app/modules/Wallet/wallet.routes'
 import { bookingRoutes } from '@app/modules/Booking/booking.routes'
 import { penaltyRoutes } from '@app/modules/Penalty/penalty.routes'
+import { chatRoutes } from '@app/modules/Chat/chat.routes'
 import express, { Router } from 'express'
 
 const router: Router = express.Router()
@@ -36,7 +37,7 @@ const routes = [
     path: '/artist',
     route: artistProfileRoutes,
   },
-  
+
   {
     path: '/category',
     route: categoryRoutes,
@@ -109,6 +110,10 @@ const routes = [
   {
     path: '/penalties',
     route: penaltyRoutes,
+  },
+  {
+    path: '/chats',
+    route: chatRoutes,
   },
 ]
 

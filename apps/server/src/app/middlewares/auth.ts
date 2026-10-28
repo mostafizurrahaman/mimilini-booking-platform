@@ -52,6 +52,10 @@ export const auth = (...requiredRoles: TAuthRole[]) => {
       const isAllowedRoute =
         req.baseUrl.includes('/penalty') ||
         req.originalUrl.includes('/penalty') ||
+        req.baseUrl.includes('/penalties') ||
+        req.originalUrl.includes('/penalties') ||
+        req.baseUrl.includes('/chats') ||
+        req.originalUrl.includes('/chats') ||
         req.originalUrl.includes('/auth/me') ||
         req.originalUrl.includes('/auth/profile')
       if (!isAllowedRoute) {
@@ -110,9 +114,11 @@ const checkArtistPermission = (user: IUser, req: Request) => {
       },
     ]
 
-    const isAllowed = limitedAccessRoutes.some(
-      (item) => item.method === req.method && req.originalUrl.startsWith(item.route)
-    )
+    const isAllowed =
+      req.originalUrl.startsWith('/api/v1/chats') ||
+      limitedAccessRoutes.some(
+        (item) => item.method === req.method && req.originalUrl.startsWith(item.route)
+      )
 
     // Check is profile in completed ?:
     if (!user.isProfileCompleted) {
