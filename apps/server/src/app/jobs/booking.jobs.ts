@@ -159,7 +159,7 @@ export const process24HourBalancePayments = async () => {
         })
 
         logger.error(
-          `[Cron: URGENT 24h Non-Payment Notice] Booking ${booking.bookingNumber} auto-charge failed (${chargeErr?.message}). 2-hour rectification window open until ${booking.balancePayment.rectificationDeadline.toISOString()}. Non-payment will cancel booking and refund deposit minus platform commission.`
+          `[Cron: URGENT 24h Non-Payment Notice] Booking ${booking.bookingNumber} auto-charge failed (${chargeErr?.message}). 2-hour rectification window open until ${booking.balancePayment.rectificationDeadline.toISOString()}. Non-payment will cancel booking and refund deposit minus Stripe processing fee.`
         )
       }
     }
@@ -172,7 +172,7 @@ export const process24HourBalancePayments = async () => {
  * 2-Hour Rectification Expiry Job:
  * If customer does not rectify failed 80% balance payment within 2 hours:
  * - Booking cancelled (status: CANCELLED_DUE_TO_NONPAYMENT)
- * - 20% deposit refunded to customer's platform balance (minus platform commission) as Platform Credit
+ * - 20% deposit refunded to customer's platform balance (minus Stripe processing fee) as Platform Credit
  * - Any original platform credit applied is restored to wallet
  * - Artist slot released
  */
@@ -204,7 +204,7 @@ export const processExpiredRectificationCancellations = async () => {
           source: WALLET_SOURCE.CANCELLATION_CREDIT,
           bookingId: booking._id,
           bookingGroupId: booking.bookingGroupId,
-          description: `Booking #${booking.bookingNumber} non-payment cancellation credit (>24h policy, minus platform commission $${stripeFee})`,
+          description: `Booking #${booking.bookingNumber} non-payment cancellation credit (>24h policy, minus Stripe processing fee $${stripeFee})`,
         })
       }
 
@@ -229,7 +229,7 @@ export const processExpiredRectificationCancellations = async () => {
       await booking.save()
 
       logger.warn(
-        `[Cron: Policy Enforced] Booking #${booking.bookingNumber} cancelled due to non-payment. 20% deposit ($${depositPaid}) minus platform commission ($${stripeFee}) credited to wallet as $${refundCreditAmount}. Slot released.`
+        `[Cron: Policy Enforced] Booking #${booking.bookingNumber} cancelled due to non-payment. 20% deposit ($${depositPaid}) minus Stripe processing fee ($${stripeFee}) credited to wallet as $${refundCreditAmount}. Slot released.`
       )
     }
   } catch (err: any) {

@@ -94,14 +94,21 @@ export const generateBookingTaxInvoice = (
   gstRatePercentage: number = 10
 ): IBookingTaxInvoice => {
   const artist = booking.artist || {}
+  const artistProfile = booking.artistProfile || {}
   const customer = booking.customer || {}
   const service = booking.service || {}
+
+  const guestCount = booking.guestCount || 1
+  const unitPrice =
+    guestCount > 1
+      ? Math.round((booking.servicePrice / guestCount) * 100) / 100
+      : booking.servicePrice
 
   const items: IBookingTaxInvoice['items'] = [
     {
       description: service.name || 'Beauty & Wellness Service',
-      quantity: booking.guestCount || 1,
-      unitPrice: booking.servicePrice,
+      quantity: guestCount,
+      unitPrice,
       amount: booking.servicePrice,
     },
   ]
@@ -134,9 +141,10 @@ export const generateBookingTaxInvoice = (
 
     seller: {
       artistId: artist._id?.toString() || booking.artist?.toString(),
-      businessName: artist.businessName || artist.name || 'Independent Professional',
-      abn: artist.abn || null,
-      isGstRegistered: Boolean(artist.isGstRegistered),
+      businessName:
+        artistProfile.businessName || artist.businessName || artist.name || 'Independent Professional',
+      abn: artistProfile.abn || artist.abn || null,
+      isGstRegistered: Boolean(artistProfile.isGstRegistered ?? artist.isGstRegistered),
       email: artist.email || null,
       phone: artist.phone || null,
     },
@@ -247,6 +255,7 @@ export interface IBalancePaymentReceipt {
  */
 export const generateBalancePaymentReceipt = (booking: any): IBalancePaymentReceipt => {
   const artist = booking.artist || {}
+  const artistProfile = booking.artistProfile || {}
   const customer = booking.customer || {}
   const service = booking.service || {}
 
@@ -277,9 +286,10 @@ export const generateBalancePaymentReceipt = (booking: any): IBalancePaymentRece
     },
     artist: {
       artistId: artist._id?.toString() || booking.artist?.toString(),
-      businessName: artist.businessName || artist.name || 'Independent Professional',
+      businessName:
+        artistProfile.businessName || artist.businessName || artist.name || 'Independent Professional',
       name: artist.name || null,
-      abn: artist.abn || null,
+      abn: artistProfile.abn || artist.abn || null,
     },
     taxInvoice: {
       stripeInvoiceId: booking.stripeInvoiceId || null,
@@ -337,6 +347,7 @@ export interface IArtistRctiInvoice {
  */
 export const generateArtistRctiInvoice = (booking: any): IArtistRctiInvoice => {
   const artist = booking.artist || {}
+  const artistProfile = booking.artistProfile || {}
 
   return {
     invoiceTitle: 'RECIPIENT CREATED TAX INVOICE (RCTI)',
@@ -357,10 +368,11 @@ export const generateArtistRctiInvoice = (booking: any): IArtistRctiInvoice => {
 
     supplierPayee: {
       artistId: artist._id?.toString() || booking.artist?.toString(),
-      businessName: artist.businessName || artist.name || 'Independent Professional',
+      businessName:
+        artistProfile.businessName || artist.businessName || artist.name || 'Independent Professional',
       name: artist.name || null,
-      abn: artist.abn || null,
-      isGstRegistered: Boolean(artist.isGstRegistered),
+      abn: artistProfile.abn || artist.abn || null,
+      isGstRegistered: Boolean(artistProfile.isGstRegistered ?? artist.isGstRegistered),
       email: artist.email || null,
       phone: artist.phone || null,
     },

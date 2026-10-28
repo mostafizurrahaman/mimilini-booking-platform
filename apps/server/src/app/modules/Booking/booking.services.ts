@@ -90,6 +90,20 @@ const checkoutPreview = async (user: IUser, input: ICheckoutPreviewInput) => {
     throw new AppError(httpStatus.NOT_FOUND, 'Service not found or inactive')
   }
 
+  if (service.artist.toString() !== input.artist.toString()) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Selected service does not belong to this artist'
+    )
+  }
+
+  if (user._id.toString() === input.artist.toString()) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'You cannot book your own service'
+    )
+  }
+
   const artistProfile = await ArtistProfile.findOne({ user: input.artist })
   if (!artistProfile) {
     throw new AppError(httpStatus.NOT_FOUND, 'Artist profile not found')
@@ -127,22 +141,41 @@ const checkoutPreview = async (user: IUser, input: ICheckoutPreviewInput) => {
   let travelFee = 0
   let distanceKm = 0
   const visitType = input.visitType || 'home_visit'
+  let addressDoc: any = null
+
+  if (input.address) {
+    if (!mongoose.isValidObjectId(input.address)) {
+      throw new AppError(httpStatus.BAD_REQUEST, 'Invalid address ID format')
+    }
+    const foundAddress = await Address.findById(input.address)
+    if (!foundAddress) {
+      throw new AppError(
+        httpStatus.NOT_FOUND,
+        'Customer address is not listed in the database. Please provide a valid saved address.'
+      )
+    }
+    if (foundAddress.customer.toString() !== user._id.toString()) {
+      throw new AppError(
+        httpStatus.FORBIDDEN,
+        'Selected address is not listed under your account.'
+      )
+    }
+    addressDoc = foundAddress
+  }
 
   if (visitType === 'home_visit') {
-    if (!input.address) {
+    if (!input.address || !addressDoc) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
         'Customer address is required for home visits to calculate travel fee'
       )
     }
 
-    const addressDoc = await Address.findOne({
-      _id: input.address,
-      customer: user._id,
-    })
-
-    if (!addressDoc || !addressDoc.location?.coordinates) {
-      throw new AppError(httpStatus.NOT_FOUND, 'Customer address not found or missing coordinates')
+    if (!addressDoc.location?.coordinates) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'Customer address is missing location coordinates'
+      )
     }
 
     if (!artistProfile.location?.coordinates) {
@@ -228,6 +261,20 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
   const service = await ArtistServices.findById(input.service)
   if (!service || !service.isActive) {
     throw new AppError(httpStatus.NOT_FOUND, 'Selected service is unavailable')
+  }
+
+  if (service.artist.toString() !== input.artist.toString()) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Selected service does not belong to this artist'
+    )
+  }
+
+  if (user._id.toString() === input.artist.toString()) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'You cannot book your own service'
+    )
   }
 
   const artistProfile = await ArtistProfile.findOne({ user: input.artist })
@@ -333,21 +380,46 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
   let addressDoc: any = null
   let serviceLocationSnapshot: any = null
 
+  if (input.address) {
+    if (!mongoose.isValidObjectId(input.address)) {
+      throw new AppError(httpStatus.BAD_REQUEST, 'Invalid address ID format')
+    }
+    const foundAddress = await Address.findById(input.address)
+    if (!foundAddress) {
+      throw new AppError(
+        httpStatus.NOT_FOUND,
+        'Customer address is not listed in the database. Please provide a valid saved address.'
+      )
+    }
+    if (foundAddress.customer.toString() !== user._id.toString()) {
+      throw new AppError(
+        httpStatus.FORBIDDEN,
+        'Selected address is not listed under your account.'
+      )
+    }
+    addressDoc = foundAddress
+    serviceLocationSnapshot = {
+      address: addressDoc.address,
+      suburb: addressDoc.city || '',
+      state: addressDoc.state || '',
+      postalCode: addressDoc.postalCode || '',
+      coordinates: addressDoc.location?.coordinates,
+    }
+  }
+
   if (input.visitType === 'home_visit') {
-    if (!input.address) {
+    if (!input.address || !addressDoc) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
         'Customer address is required for home visits to calculate travel fee'
       )
     }
 
-    addressDoc = await Address.findOne({
-      _id: input.address,
-      customer: user._id,
-    })
-
-    if (!addressDoc || !addressDoc.location?.coordinates) {
-      throw new AppError(httpStatus.NOT_FOUND, 'Customer address not found or missing coordinates')
+    if (!addressDoc.location?.coordinates) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'Customer address is missing location coordinates'
+      )
     }
 
     if (!artistProfile.location?.coordinates) {
@@ -372,25 +444,6 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
 
     const platformSettings = await PlatformSettings.getSettings()
     travelFee = round2(distanceKm * (platformSettings?.travelingFeePerKm || 0))
-
-    serviceLocationSnapshot = {
-      address: addressDoc.address,
-      suburb: addressDoc.city || '',
-      state: addressDoc.state || '',
-      postalCode: addressDoc.postalCode || '',
-      coordinates: addressDoc.location.coordinates,
-    }
-  } else if (input.address) {
-    addressDoc = await Address.findOne({ _id: input.address, customer: user._id })
-    if (addressDoc) {
-      serviceLocationSnapshot = {
-        address: addressDoc.address,
-        suburb: addressDoc.city || '',
-        state: addressDoc.state || '',
-        postalCode: addressDoc.postalCode || '',
-        coordinates: addressDoc.location?.coordinates,
-      }
-    }
   }
 
   // 5. Promo Code check
@@ -451,6 +504,28 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
   let stripeInvoicePdf: string | null = null
   let effectivePaymentMethodId: string | undefined
 
+  // 8. Validate and retrieve customer payment method
+  if (input.paymentMethodId) {
+    const existingCard = await PaymentMethod.findOne(
+      mongoose.isValidObjectId(input.paymentMethodId)
+        ? { _id: input.paymentMethodId }
+        : { stripePaymentMethodId: input.paymentMethodId }
+    )
+    if (!existingCard) {
+      throw new AppError(
+        httpStatus.NOT_FOUND,
+        'Payment method is not listed in the database. Please provide a valid saved payment method.'
+      )
+    }
+    if (existingCard.user.toString() !== user._id.toString()) {
+      throw new AppError(
+        httpStatus.FORBIDDEN,
+        'Selected payment method is not listed under your account.'
+      )
+    }
+    effectivePaymentMethodId = existingCard.stripePaymentMethodId
+  }
+
   if (isQuickBooking) {
     // 7. Verify Stripe customer exists
     if (!user.stripeCustomerId) {
@@ -460,23 +535,6 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
       )
     }
     const stripeCustomerId = user.stripeCustomerId
-
-    // 8. Retrieve payment method from database
-    if (input.paymentMethodId) {
-      const userCard = await PaymentMethod.findOne({
-        ...(mongoose.isValidObjectId(input.paymentMethodId)
-          ? { _id: input.paymentMethodId }
-          : { stripePaymentMethodId: input.paymentMethodId }),
-        user: user._id,
-      })
-      if (!userCard && breakdown.initialDepositAmount > 0) {
-        throw new AppError(
-          httpStatus.NOT_FOUND,
-          'Payment method not found in database. Please provide a valid saved payment method.'
-        )
-      }
-      effectivePaymentMethodId = userCard?.stripePaymentMethodId
-    }
 
     if (breakdown.initialDepositAmount > 0 && !effectivePaymentMethodId) {
       const defaultCard = await PaymentMethod.findOne({ user: user._id, isDefault: true })
@@ -554,15 +612,10 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     }
   } else {
     // Quick booking disabled: Customer places booking request; no charge executed yet.
-    if (input.paymentMethodId) {
-      const userCard = await PaymentMethod.findOne({
-        ...(mongoose.isValidObjectId(input.paymentMethodId)
-          ? { _id: input.paymentMethodId }
-          : { stripePaymentMethodId: input.paymentMethodId }),
-        user: user._id,
-      })
-      if (userCard) {
-        effectivePaymentMethodId = userCard.stripePaymentMethodId
+    if (!effectivePaymentMethodId) {
+      const defaultCard = await PaymentMethod.findOne({ user: user._id, isDefault: true })
+      if (defaultCard) {
+        effectivePaymentMethodId = defaultCard.stripePaymentMethodId
       }
     }
     bookingStatus = BOOKING_STATUS.REQUESTED
@@ -702,18 +755,39 @@ const voidOrCreditNoteInvoice = async (
   bookingNumber: string
 ) => {
   if (!invoiceId) return
+  let customerIdToClear: string | null = null
   try {
-    await stripe.invoices.voidInvoice(invoiceId)
+    const voided = await stripe.invoices.voidInvoice(invoiceId)
+    customerIdToClear =
+      typeof voided.customer === 'string' ? voided.customer : voided.customer?.id || null
   } catch (voidErr: any) {
     // If invoice was already marked paid or cannot be voided, issue Credit Note for legal cancellation
     try {
-      await stripe.creditNotes.create({
+      const cn = await stripe.creditNotes.create({
         invoice: invoiceId,
         reason: 'order_cancellation',
         memo: `Cancelled booking #${bookingNumber}`,
       })
+      customerIdToClear =
+        typeof cn.customer === 'string' ? cn.customer : cn.customer?.id || null
     } catch (cnErr: any) {
       logger.warn(`Failed to void or credit-note invoice ${invoiceId}: ${cnErr?.message}`)
+    }
+  }
+
+  // Ensure voided/credited invoice does not leave orphan credit balance on the Stripe customer
+  if (customerIdToClear) {
+    try {
+      const cust = await stripe.customers.retrieve(customerIdToClear)
+      if (!cust.deleted && typeof cust.balance === 'number' && cust.balance < 0) {
+        await stripe.customers.createBalanceTransaction(customerIdToClear, {
+          amount: -cust.balance,
+          currency: 'aud',
+          description: `Clear residual credit balance from cancelled booking #${bookingNumber}`,
+        })
+      }
+    } catch {
+      // safe fallback
     }
   }
 }
@@ -759,26 +833,27 @@ const customerCancelBooking = async (
   )
   const hoursUntilAppointment = appointmentDateTime.diff(moment(), 'hours', true)
 
-  // Release promo code if applied
-  if (booking.promoCode) {
+  const isInitialPaid = booking.initialPayment.status === PAYMENT_STAGE_STATUS.CAPTURED
+  const isBalancePaid =
+    booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED &&
+    (booking.balancePayment.amount || 0) > 0
+
+  // Release promo code if applied and deposit was captured
+  if (booking.promoCode && isInitialPaid) {
     await PromoCode.findByIdAndUpdate(booking.promoCode, { $inc: { usageCount: -1 } })
+  }
+
+  // Void customer Stripe invoice or issue Credit Note if already finalized/paid
+  await voidOrCreditNoteInvoice(booking.stripeInvoiceId, booking.bookingNumber)
+  if (booking.artistStripeInvoiceId) {
+    await voidOrCreditNoteInvoice(booking.artistStripeInvoiceId, booking.bookingNumber)
   }
 
   // Scenario A: Customer cancels > 24 hours prior (Point 1 & 2)
   if (hoursUntilAppointment > 24) {
-    // Void customer Stripe invoice or issue Credit Note if already paid
-    await voidOrCreditNoteInvoice(booking.stripeInvoiceId, booking.bookingNumber)
-    if (booking.artistStripeInvoiceId) {
-      await voidOrCreditNoteInvoice(booking.artistStripeInvoiceId, booking.bookingNumber)
-    }
-
-    const isInitialPaid = booking.initialPayment.status === PAYMENT_STAGE_STATUS.CAPTURED
     const depositPaid = isInitialPaid ? (booking.initialPayment.amount || 0) : 0
     const initialFee = isInitialPaid ? (booking.stripeInitialFee || 0) : 0
 
-    const isBalancePaid =
-      booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED &&
-      (booking.balancePayment.amount || 0) > 0
     const balancePaid = isBalancePaid ? (booking.balancePayment.amount || 0) : 0
     const balanceFee = isBalancePaid ? (booking.stripeBalanceFee || 0) : 0
 
@@ -786,7 +861,7 @@ const customerCancelBooking = async (
     const totalFee = round2(initialFee + balanceFee)
     const refundCreditAmount = round2(Math.max(0, totalPaid - totalFee))
 
-    // Issue Platform Credit to wallet (Valid for 36 months) after reducing fee
+    // Issue Platform Credit to wallet (Valid for 36 months) after reducing Stripe processing fee
     if (refundCreditAmount > 0) {
       const alreadyCredited = await WalletLedger.findOne({
         booking: booking._id,
@@ -794,8 +869,8 @@ const customerCancelBooking = async (
       })
       if (!alreadyCredited) {
         const description = isBalancePaid
-          ? `Booking #${booking.bookingNumber} cancellation credit (>24h policy, 100% payment $${totalPaid} minus platform commission $${totalFee})`
-          : `Booking #${booking.bookingNumber} cancellation credit (>24h policy, 20% deposit $${depositPaid} minus platform commission $${initialFee})`
+          ? `Booking #${booking.bookingNumber} cancellation credit (>24h policy, 100% payment $${totalPaid} minus Stripe processing fee $${totalFee})`
+          : `Booking #${booking.bookingNumber} cancellation credit (>24h policy, 20% deposit $${depositPaid} minus Stripe processing fee $${initialFee})`
 
         await walletServices.creditUserWallet({
           userId: booking.customer._id,
@@ -840,9 +915,26 @@ const customerCancelBooking = async (
     }
     await booking.save()
 
-    const message = isBalancePaid
-      ? `Booking cancelled successfully. Your 100% payment ($${totalPaid}) minus platform commission ($${totalFee}) has been credited to your wallet as $${refundCreditAmount} Platform Credit (valid 36 months).`
-      : `Booking cancelled successfully. Your 20% deposit ($${depositPaid}) minus platform commission ($${initialFee}) has been credited to your wallet as $${refundCreditAmount} Platform Credit (valid 36 months).`
+    let message = 'Booking cancelled successfully. No payment was charged.'
+    if (isBalancePaid && totalPaid > 0) {
+      message = `Booking cancelled successfully. Your 100% payment ($${totalPaid}) minus Stripe processing fee ($${totalFee}) has been credited to your wallet as $${refundCreditAmount} Platform Credit (valid 36 months).`
+    } else if (isInitialPaid && depositPaid > 0) {
+      message = `Booking cancelled successfully. Your 20% deposit ($${depositPaid}) minus Stripe processing fee ($${initialFee}) has been credited to your wallet as $${refundCreditAmount} Platform Credit (valid 36 months).`
+    } else if (booking.platformCreditApplied > 0) {
+      message = `Booking cancelled successfully. Your applied Platform Credit ($${booking.platformCreditApplied}) has been restored to your wallet.`
+    }
+
+    await recordBookingHistory({
+      booking: booking._id,
+      bookingNumber: booking.bookingNumber,
+      status: BOOKING_STATUS.CANCELLED,
+      milestone: BOOKING_TIMELINE_MILESTONE.CANCELLED,
+      title: 'Booking Cancelled',
+      description: message,
+      performedBy: user._id,
+      performedByRole: booking.cancelledByRole,
+      note: booking.cancellationReason,
+    })
 
     return {
       message,
@@ -851,10 +943,6 @@ const customerCancelBooking = async (
   }
 
   // Scenario B: Customer cancels within 24 hours (< 24h) (Point 3)
-  const isBalancePaid =
-    booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED &&
-    (booking.balancePayment.amount || 0) > 0
-
   let customerCreditAmount = 0
   let artistShareAmount = 0
 
@@ -899,7 +987,14 @@ const customerCancelBooking = async (
         })
         isTransferSuccessful = true
       } catch (err: any) {
-        logger.warn(`Failed to transfer late cancellation artist share: ${err?.message}`)
+        if (err?.message?.includes('service agreement') && configs.nodeEnv !== 'production') {
+          isTransferSuccessful = true
+          logger.warn(
+            `[Late Cancel Payout Sandbox Bypass] Cross-border US->AU transfer skipped in ${configs.nodeEnv} mode (${err.message}). Marked as transferred for testing.`
+          )
+        } else {
+          logger.warn(`Failed to transfer late cancellation artist share: ${err?.message}`)
+        }
       }
     }
 
@@ -928,9 +1023,12 @@ const customerCancelBooking = async (
     booking.balancePayment.status = PAYMENT_STAGE_STATUS.REFUNDED
     booking.depositForfeited = true
     booking.cancellationFeeCharged = round2((booking.initialPayment?.amount || 0) + platformShareAmount)
-  } else {
+  } else if (isInitialPaid) {
     booking.depositForfeited = true
     booking.cancellationFeeCharged = booking.initialPayment?.amount || 0
+  } else {
+    booking.depositForfeited = false
+    booking.cancellationFeeCharged = 0
   }
 
   booking.status = BOOKING_STATUS.CANCELLED
@@ -941,10 +1039,26 @@ const customerCancelBooking = async (
   booking.platformCreditIssued = customerCreditAmount
   await booking.save()
 
+  const lateMessage = isBalancePaid
+    ? `Booking cancelled under Late Cancellation policy (<24h). Platform retained the 20% deposit. You received $${customerCreditAmount} Platform Credit (40% of artist net share).`
+    : isInitialPaid
+      ? 'Booking cancelled under Late Cancellation policy (<24h). The 20% deposit is non-refundable and forfeited.'
+      : 'Booking cancelled successfully. No payment was charged.'
+
+  await recordBookingHistory({
+    booking: booking._id,
+    bookingNumber: booking.bookingNumber,
+    status: BOOKING_STATUS.CANCELLED,
+    milestone: BOOKING_TIMELINE_MILESTONE.CANCELLED,
+    title: 'Booking Cancelled',
+    description: lateMessage,
+    performedBy: user._id,
+    performedByRole: booking.cancelledByRole,
+    note: booking.cancellationReason,
+  })
+
   return {
-    message: isBalancePaid
-      ? `Booking cancelled under Late Cancellation policy (<24h). Platform retained the 20% deposit. You received $${customerCreditAmount} Platform Credit (40% of artist net share).`
-      : 'Booking cancelled under Late Cancellation policy (<24h). The 20% deposit is non-refundable and forfeited.',
+    message: lateMessage,
     booking,
   }
 }
@@ -987,8 +1101,13 @@ const artistCancelBooking = async (
   )
   const hoursUntilAppointment = appointmentDateTime.diff(moment(), 'hours', true)
 
-  // Release promo code if applied
-  if (booking.promoCode) {
+  const isInitialPaid = booking.initialPayment.status === PAYMENT_STAGE_STATUS.CAPTURED
+  const isBalancePaid =
+    booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED &&
+    (booking.balancePayment.amount || 0) > 0
+
+  // Release promo code if applied and deposit was captured
+  if (booking.promoCode && isInitialPaid) {
     await PromoCode.findByIdAndUpdate(booking.promoCode, { $inc: { usageCount: -1 } })
   }
 
@@ -997,14 +1116,14 @@ const artistCancelBooking = async (
   await voidOrCreditNoteInvoice(booking.artistStripeInvoiceId, booking.bookingNumber)
 
   // Scenario C: Artist cancels - Issue Platform Credit to customer minus transaction fee
-  const depositPaid = booking.initialPayment.amount || 0
-  const isBalancePaid = booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED
+  const depositPaid = isInitialPaid ? (booking.initialPayment.amount || 0) : 0
   const balancePaid = isBalancePaid ? (booking.balancePayment.amount || 0) : 0
-  const totalPaid = depositPaid + balancePaid
+  const totalPaid = round2(depositPaid + balancePaid)
 
   // Deduct processing transaction fee incurred on payment
   const totalTransactionFee = round2(
-    (booking.stripeInitialFee || 0) + (isBalancePaid ? (booking.stripeBalanceFee || 0) : 0)
+    (isInitialPaid ? (booking.stripeInitialFee || 0) : 0) +
+      (isBalancePaid ? (booking.stripeBalanceFee || 0) : 0)
   )
   const refundCreditAmount = round2(Math.max(0, totalPaid - totalTransactionFee))
 
@@ -1100,8 +1219,10 @@ const artistCancelBooking = async (
   booking.cancelledByRole = isAdmin && !isArtist ? 'admin' : 'artist'
   booking.cancellationReason = cancellationReason || 'Artist cancelled appointment'
   booking.cancelledAt = new Date()
-  booking.initialPayment.status = PAYMENT_STAGE_STATUS.REFUNDED
-  if (booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED) {
+  if (isInitialPaid) {
+    booking.initialPayment.status = PAYMENT_STAGE_STATUS.REFUNDED
+  }
+  if (isBalancePaid) {
     booking.balancePayment.status = PAYMENT_STAGE_STATUS.REFUNDED
   }
   booking.platformCreditIssued = refundCreditAmount
@@ -1117,12 +1238,31 @@ const artistCancelBooking = async (
     .populate('category', 'name')
     .lean()
 
+  const refundSummary =
+    totalPaid > 0
+      ? `Customer received $${refundCreditAmount} Platform Credit ($${totalPaid} minus $${totalTransactionFee} transaction fee).`
+      : 'No payment had been charged to the customer.'
+
+  const artistCancelMessage = isSuspended
+    ? `Booking cancelled. ${refundSummary} Your account has been SUSPENDED due to last-moment cancellation (<48h). A penalty of $${penaltyIncurred} AUD must be paid to reactivate your account.`
+    : penaltyIncurred > 0
+      ? `Booking cancelled. ${refundSummary} A penalty of $${penaltyIncurred} AUD was issued and your profile is hidden from customer search until paid.`
+      : `Booking cancelled. ${refundSummary}`
+
+  await recordBookingHistory({
+    booking: booking._id,
+    bookingNumber: booking.bookingNumber,
+    status: BOOKING_STATUS.CANCELLED,
+    milestone: BOOKING_TIMELINE_MILESTONE.CANCELLED,
+    title: 'Booking Cancelled by Artist',
+    description: artistCancelMessage,
+    performedBy: user._id,
+    performedByRole: booking.cancelledByRole,
+    note: booking.cancellationReason,
+  })
+
   return {
-    message: isSuspended
-      ? `Booking cancelled. Customer received $${refundCreditAmount} Platform Credit ($${totalPaid} minus $${totalTransactionFee} transaction fee). Your account has been SUSPENDED due to last-moment cancellation (<48h). A penalty of $${penaltyIncurred} AUD must be paid to reactivate your account.`
-      : penaltyIncurred > 0
-        ? `Booking cancelled. Customer received $${refundCreditAmount} Platform Credit ($${totalPaid} minus $${totalTransactionFee} transaction fee). A penalty of $${penaltyIncurred} AUD was issued and your profile is hidden from customer search until paid.`
-        : `Booking cancelled. Customer received $${refundCreditAmount} Platform Credit ($${totalPaid} minus $${totalTransactionFee} transaction fee).`,
+    message: artistCancelMessage,
     booking,
     nearbyAlternativeArtists,
   }
@@ -1167,7 +1307,7 @@ const cancelBooking = async (user: IUser, bookingId: string, cancellationReason?
   }
 
   // Admin cancellation
-  if (booking.promoCode) {
+  if (booking.promoCode && booking.initialPayment?.status === PAYMENT_STAGE_STATUS.CAPTURED) {
     await PromoCode.findByIdAndUpdate(booking.promoCode, { $inc: { usageCount: -1 } })
   }
   await voidOrCreditNoteInvoice(booking.stripeInvoiceId, booking.bookingNumber)
@@ -1181,6 +1321,18 @@ const cancelBooking = async (user: IUser, bookingId: string, cancellationReason?
   booking.cancellationReason = cancellationReason || 'Cancelled by admin'
   booking.cancelledAt = new Date()
   await booking.save()
+
+  await recordBookingHistory({
+    booking: booking._id,
+    bookingNumber: booking.bookingNumber,
+    status: BOOKING_STATUS.CANCELLED,
+    milestone: BOOKING_TIMELINE_MILESTONE.CANCELLED,
+    title: 'Booking Cancelled by Admin',
+    description: booking.cancellationReason,
+    performedBy: user._id,
+    performedByRole: 'admin',
+    note: booking.cancellationReason,
+  })
 
   return { message: 'Booking cancelled by admin.', booking }
 }
@@ -1289,6 +1441,22 @@ const getBookingById = async (user: IUser, bookingId: string) => {
     throw new AppError(httpStatus.FORBIDDEN, 'Access denied to this booking')
   }
 
+  if (
+    booking.initialPayment?.status === PAYMENT_STAGE_STATUS.CAPTURED &&
+    (!booking.stripeInvoiceId || !booking.stripeInvoiceUrl || !booking.stripeInvoicePdf)
+  ) {
+    await issueCustomerStripeInvoice(booking)
+  }
+
+  if (
+    booking.balancePayment?.status === PAYMENT_STAGE_STATUS.CAPTURED &&
+    (!booking.artistStripeInvoiceId ||
+      !booking.artistStripeInvoiceUrl ||
+      !booking.artistStripeInvoicePdf)
+  ) {
+    await issueArtistRctiStripeInvoice(booking)
+  }
+
   return booking
 }
 
@@ -1313,26 +1481,48 @@ const payBalance = async (user: IUser, bookingId: string, paymentMethodId?: stri
     throw new AppError(httpStatus.BAD_REQUEST, 'Booking is cancelled and cannot be paid')
   }
 
-  let effectivePaymentMethodId = booking.stripePaymentMethodId
+  let effectivePaymentMethodId: string | undefined
   if (paymentMethodId) {
-    const userCard = await PaymentMethod.findOne({
-      ...(mongoose.isValidObjectId(paymentMethodId)
+    const existingCard = await PaymentMethod.findOne(
+      mongoose.isValidObjectId(paymentMethodId)
         ? { _id: paymentMethodId }
-        : { stripePaymentMethodId: paymentMethodId }),
-      user: user._id,
-    })
-    if (!userCard) {
+        : { stripePaymentMethodId: paymentMethodId }
+    )
+    if (!existingCard) {
       throw new AppError(
         httpStatus.NOT_FOUND,
-        'Payment method not found in database. Please provide a valid saved payment method.'
+        'Payment method is not listed in the database. Please provide a valid saved payment method.'
       )
     }
-    effectivePaymentMethodId = userCard.stripePaymentMethodId
+    if (existingCard.user.toString() !== user._id.toString()) {
+      throw new AppError(
+        httpStatus.FORBIDDEN,
+        'Selected payment method is not listed under your account.'
+      )
+    }
+    effectivePaymentMethodId = existingCard.stripePaymentMethodId
     booking.stripePaymentMethodId = effectivePaymentMethodId
+  } else if (booking.stripePaymentMethodId) {
+    const bookedCard = await PaymentMethod.findOne({
+      stripePaymentMethodId: booking.stripePaymentMethodId,
+      user: user._id,
+    })
+    if (bookedCard) {
+      effectivePaymentMethodId = bookedCard.stripePaymentMethodId
+    }
   }
 
   if (!effectivePaymentMethodId) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'No payment method provided for balance payment')
+    const defaultCard = await PaymentMethod.findOne({ user: user._id, isDefault: true })
+    if (defaultCard) {
+      effectivePaymentMethodId = defaultCard.stripePaymentMethodId
+      booking.stripePaymentMethodId = effectivePaymentMethodId
+    } else {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'No payment method provided or saved on your account for balance payment'
+      )
+    }
   }
 
   const transferGroup = booking.bookingGroupId || `GRP-${booking.bookingNumber}`
@@ -1425,6 +1615,18 @@ const payBalance = async (user: IUser, bookingId: string, paymentMethodId?: stri
         })
       }
 
+      await recordBookingHistory({
+        booking: (booking as any)._id,
+        bookingNumber: booking.bookingNumber,
+        status: booking.status,
+        milestone: BOOKING_TIMELINE_MILESTONE.PAYMENT_COMPLETED,
+        title: 'Balance Payment Completed',
+        description: `Remaining 80% balance ($${booking.balancePayment.amount} AUD) paid in full`,
+        performedBy: user._id,
+        performedByRole: 'customer',
+        metadata: { stripePaymentIntentId: paymentIntent.id },
+      })
+
       return {
         success: true,
         message: 'Balance payment succeeded and marked paid in full',
@@ -1447,252 +1649,359 @@ const payBalance = async (user: IUser, bookingId: string, paymentMethodId?: stri
   }
 }
 
+const customerInvoiceLocks = new Map<string, Promise<any>>()
+const artistRctiLocks = new Map<string, Promise<any>>()
+
+/**
+ * Sync Stripe customer balance to the exact desired credit (in cents) so that
+ * Subtotal and Total remain 100% accurate and Applied balance equals the exact deposit/credit.
+ */
+const syncCustomerCreditBalance = async (
+  stripeCustomerId: string,
+  desiredCreditCents: number,
+  bookingNumber: string,
+  bookingGroupId: string
+) => {
+  try {
+    const stripeCust = await stripe.customers.retrieve(stripeCustomerId)
+    if (stripeCust.deleted) return
+    const currentBalance = typeof stripeCust.balance === 'number' ? stripeCust.balance : 0
+    const targetBalance = -Math.max(0, Math.round(desiredCreditCents))
+    const delta = targetBalance - currentBalance
+    if (delta !== 0) {
+      await stripe.customers.createBalanceTransaction(stripeCustomerId, {
+        amount: delta,
+        currency: 'aud',
+        description:
+          desiredCreditCents > 0
+            ? `Initial Deposit / Credit Applied to Booking #${bookingNumber}`
+            : `Balance sync for Booking #${bookingNumber}`,
+        metadata: { bookingNumber, bookingGroupId },
+      })
+    }
+  } catch (balErr: any) {
+    logger.warn(`Failed to sync customer credit balance: ${balErr?.message}`)
+  }
+}
+
 /**
  * Issue official Customer Master Tax Invoice in Stripe for the booking
  */
 const issueCustomerStripeInvoice = async (booking: any) => {
-  if (booking.stripeInvoiceId) {
-    return {
-      stripeInvoiceId: booking.stripeInvoiceId,
-      stripeInvoiceUrl: booking.stripeInvoiceUrl,
-      stripeInvoicePdf: booking.stripeInvoicePdf,
-    }
+  const lockKey = String(
+    booking.customer?._id || booking.customer || booking._id || booking.bookingNumber
+  )
+  const existingLock = customerInvoiceLocks.get(lockKey)
+  if (existingLock) {
+    await existingLock.catch(() => null)
   }
 
-  // Prevent concurrency race conditions with Stripe webhooks
-  const freshBooking = await Booking.findById(booking._id || booking.id)
-  if (freshBooking?.stripeInvoiceId) {
-    booking.stripeInvoiceId = freshBooking.stripeInvoiceId
-    booking.stripeInvoiceUrl = freshBooking.stripeInvoiceUrl
-    booking.stripeInvoicePdf = freshBooking.stripeInvoicePdf
-    return {
-      stripeInvoiceId: freshBooking.stripeInvoiceId,
-      stripeInvoiceUrl: freshBooking.stripeInvoiceUrl,
-      stripeInvoicePdf: freshBooking.stripeInvoicePdf,
+  const task = (async () => {
+    if (booking.stripeInvoiceId && booking.stripeInvoiceUrl && booking.stripeInvoicePdf) {
+      return {
+        stripeInvoiceId: booking.stripeInvoiceId,
+        stripeInvoiceUrl: booking.stripeInvoiceUrl,
+        stripeInvoicePdf: booking.stripeInvoicePdf,
+      }
     }
-  }
 
-  try {
-    const customerUser = await User.findById(booking.customer)
-    const artistProfile = await ArtistProfile.findOne({ user: booking.artist })
-    const service = await ArtistServices.findById(booking.service)
-    const stripeCustomerId = booking.stripeCustomerId || customerUser?.stripeCustomerId
-    if (!stripeCustomerId) return null
+    // Prevent concurrency race conditions with Stripe webhooks
+    const freshBooking = await Booking.findById(booking._id || booking.id)
+    if (
+      freshBooking?.stripeInvoiceId &&
+      freshBooking?.stripeInvoiceUrl &&
+      freshBooking?.stripeInvoicePdf
+    ) {
+      booking.stripeInvoiceId = freshBooking.stripeInvoiceId
+      booking.stripeInvoiceUrl = freshBooking.stripeInvoiceUrl
+      booking.stripeInvoicePdf = freshBooking.stripeInvoicePdf
+      return {
+        stripeInvoiceId: freshBooking.stripeInvoiceId,
+        stripeInvoiceUrl: freshBooking.stripeInvoiceUrl,
+        stripeInvoicePdf: freshBooking.stripeInvoicePdf,
+      }
+    }
 
-    // Check Stripe directly if an invoice for this bookingNumber was already created
     try {
-      const existingInvoices = await stripe.invoices.list({
-        customer: stripeCustomerId,
-        limit: 10,
+      const existingInvId = booking.stripeInvoiceId || freshBooking?.stripeInvoiceId
+      if (existingInvId) {
+        try {
+          let inv = await stripe.invoices.retrieve(existingInvId)
+          if (inv.status === 'draft') {
+            await stripe.invoices.update(inv.id, {
+              due_date: Math.floor(Date.now() / 1000) + 86400,
+            })
+            inv = await stripe.invoices.finalizeInvoice(inv.id)
+          }
+          if (inv.hosted_invoice_url || inv.invoice_pdf) {
+            booking.stripeInvoiceId = inv.id
+            booking.stripeInvoiceUrl = inv.hosted_invoice_url || null
+            booking.stripeInvoicePdf = inv.invoice_pdf || null
+            await Booking.findByIdAndUpdate(booking._id, {
+              stripeInvoiceId: inv.id,
+              stripeInvoiceUrl: inv.hosted_invoice_url || null,
+              stripeInvoicePdf: inv.invoice_pdf || null,
+            })
+            return {
+              stripeInvoiceId: inv.id,
+              stripeInvoiceUrl: inv.hosted_invoice_url,
+              stripeInvoicePdf: inv.invoice_pdf,
+            }
+          }
+        } catch {
+          // continue
+        }
+      }
+
+      const customerUser = await User.findById(booking.customer?._id || booking.customer)
+      const artistProfile = await ArtistProfile.findOne({
+        user: booking.artist?._id || booking.artist,
       })
-      const matched = existingInvoices.data.find(
-        (inv) => inv.metadata?.bookingNumber === booking.bookingNumber && inv.status !== 'void'
-      )
-      if (matched) {
-        booking.stripeInvoiceId = matched.id
-        booking.stripeInvoiceUrl = matched.hosted_invoice_url || null
-        booking.stripeInvoicePdf = matched.invoice_pdf || null
-        await Booking.findByIdAndUpdate(booking._id, {
-          stripeInvoiceId: matched.id,
-          stripeInvoiceUrl: matched.hosted_invoice_url || null,
-          stripeInvoicePdf: matched.invoice_pdf || null,
-        })
-        return {
-          stripeInvoiceId: matched.id,
-          stripeInvoiceUrl: matched.hosted_invoice_url,
-          stripeInvoicePdf: matched.invoice_pdf,
-        }
-      }
-    } catch {
-      // Safe fallback if invoice list fails
-    }
+      const service = await ArtistServices.findById(booking.service?._id || booking.service)
+      const stripeCustomerId = booking.stripeCustomerId || customerUser?.stripeCustomerId
+      if (!stripeCustomerId) return null
 
-    const bookingGroupId = booking.bookingGroupId || `GRP-${booking.bookingNumber}`
-    const artistDisplayName = artistProfile?.businessName || 'Independent Artist'
-    const artistAbnText = artistProfile?.abn ? `, ABN: ${artistProfile.abn}` : ''
-
-    const siteTitle = configs.site?.name || 'Stunner alert'
-    const appointmentDateStr = `${moment(booking.bookingDate).format('DD MMM YYYY')}, ${booking.startTime}`
-    const providerInfo = `${artistDisplayName}${artistAbnText}`
-
-    // Create draft first with custom fields, footer, and full breakdown description
-    const stripeInvoice = await stripe.invoices.create({
-      customer: stripeCustomerId,
-      currency: 'aud',
-      auto_advance: false,
-      collection_method: 'send_invoice',
-      days_until_due: 0,
-      pending_invoice_items_behavior: 'exclude',
-      description: `Tax Invoice for Booking #${booking.bookingNumber} | Service: ${service?.name || 'Beauty Service'} (${appointmentDateStr}) | Initial Deposit (${booking.initialPayment?.percentage || 20}%): $${(booking.initialPayment?.amount || 0).toFixed(2)} AUD [PAID] | Balance Due (80%): $${(booking.balancePayment?.amount || 0).toFixed(2)} AUD`,
-      custom_fields: [
-        { name: 'Booking Ref', value: `#${booking.bookingNumber}` },
-        { name: 'Appointment', value: appointmentDateStr.substring(0, 30) },
-        { name: 'Artist ABN', value: (artistProfile?.abn || 'Not Registered').substring(0, 30) },
-        {
-          name: 'Deposit Paid (20%)',
-          value: `$${(booking.initialPayment?.amount || 0).toFixed(2)} AUD [PAID]`.substring(0, 30),
-        },
-      ],
-      footer: `${siteTitle} - Official Tax Invoice. All prices in AUD and include 10% Australian GST (where applicable). Remaining 80% balance is automatically charged 24 hours prior to appointment.`,
-      metadata: {
-        bookingNumber: booking.bookingNumber,
-        bookingGroupId,
-        userId: booking.customer.toString(),
-        artistId: booking.artist.toString(),
-        gstAmount: (booking.gstAmount || 0).toString(),
-        initialDeposit: (booking.initialPayment?.amount || 0).toString(),
-        balanceDue: (booking.balancePayment?.amount || 0).toString(),
-      },
-    })
-    const invoice = stripeInvoice.id
-    // Ensure official Stripe 10% GST Tax Rate is applied to invoice items
-    let gstTaxRateId = booking.stripeGstTaxRateId
-    if (!gstTaxRateId && booking.gstAmount > 0) {
+      // Check Stripe directly if an invoice for this bookingNumber was already created
       try {
-        const platformSettings = await PlatformSettings.getSettings()
-        if (platformSettings.stripeGstTaxRateId) {
-          gstTaxRateId = platformSettings.stripeGstTaxRateId
-        } else {
-          const taxRate = await getOrCreateStripeGstTaxRate(platformSettings.gstPercentage || 10)
-          gstTaxRateId = taxRate.id
-          platformSettings.stripeGstTaxRateId = taxRate.id
-          await platformSettings.save()
+        const existingInvoices = await stripe.invoices.list({
+          customer: stripeCustomerId,
+          limit: 10,
+        })
+        let matched = existingInvoices.data.find(
+          (inv) => inv.metadata?.bookingNumber === booking.bookingNumber && inv.status !== 'void'
+        )
+        if (matched) {
+          if (matched.status === 'draft') {
+            try {
+              await stripe.invoices.update(matched.id, {
+                due_date: Math.floor(Date.now() / 1000) + 86400,
+              })
+              matched = await stripe.invoices.finalizeInvoice(matched.id)
+            } catch {
+              matched = await stripe.invoices.retrieve(matched.id)
+            }
+          }
+          booking.stripeInvoiceId = matched.id
+          booking.stripeInvoiceUrl = matched.hosted_invoice_url || null
+          booking.stripeInvoicePdf = matched.invoice_pdf || null
+          await Booking.findByIdAndUpdate(booking._id, {
+            stripeInvoiceId: matched.id,
+            stripeInvoiceUrl: matched.hosted_invoice_url || null,
+            stripeInvoicePdf: matched.invoice_pdf || null,
+          })
+          return {
+            stripeInvoiceId: matched.id,
+            stripeInvoiceUrl: matched.hosted_invoice_url,
+            stripeInvoicePdf: matched.invoice_pdf,
+          }
         }
-        booking.stripeGstTaxRateId = gstTaxRateId
-        await Booking.findByIdAndUpdate(booking._id, { stripeGstTaxRateId: gstTaxRateId })
-      } catch (taxErr: any) {
-        logger.warn(`Failed to resolve Stripe GST tax rate: ${taxErr?.message}`)
+      } catch {
+        // Safe fallback if invoice list fails
       }
-    }
 
-    const gstTax = gstTaxRateId ? { tax_rates: [gstTaxRateId] } : {}
+      const bookingGroupId = booking.bookingGroupId || `GRP-${booking.bookingNumber}`
+      const artistDisplayName = artistProfile?.businessName || 'Independent Artist'
+      const artistAbnText = artistProfile?.abn ? `, ABN: ${artistProfile.abn}` : ''
 
-    try {
-      await stripe.invoiceItems.create({
+      const siteTitle = configs.site?.name || 'Stunner alert'
+      const appointmentDateStr = `${moment(booking.bookingDate).format('DD MMM YYYY')}, ${booking.startTime}`
+
+      let dueDateUnix: number | undefined
+      if (booking.balancePayment?.dueDate) {
+        const targetUnix = Math.floor(new Date(booking.balancePayment.dueDate).getTime() / 1000)
+        const nowPlusOneHour = Math.floor(Date.now() / 1000) + 3600
+        dueDateUnix = Math.max(targetUnix, nowPlusOneHour)
+      }
+
+      let desiredCreditCents = 0
+      if (booking.balancePayment?.status !== 'captured') {
+        if (booking.initialPayment?.status === 'captured' && booking.initialPayment.amount > 0) {
+          desiredCreditCents += Math.round(booking.initialPayment.amount * 100)
+        }
+        if (booking.platformCreditApplied > 0) {
+          desiredCreditCents += Math.round(booking.platformCreditApplied * 100)
+        }
+      }
+
+      // Sync customer credit balance before draft creation so Stripe never double-deducts
+      await syncCustomerCreditBalance(
+        stripeCustomerId,
+        desiredCreditCents,
+        booking.bookingNumber,
+        bookingGroupId
+      )
+
+      // Create draft first with custom fields, footer, and full breakdown description
+      const stripeInvoice = await stripe.invoices.create({
         customer: stripeCustomerId,
-        invoice,
-        amount: Math.round(booking.servicePrice * 100),
         currency: 'aud',
-        description: `${service?.name || 'Beauty Service'} (Supplied by Artist: ${artistDisplayName}${artistAbnText})`,
-        ...gstTax,
+        auto_advance: false,
+        collection_method: 'send_invoice',
+        ...(dueDateUnix ? { due_date: dueDateUnix } : { days_until_due: 1 }),
+        pending_invoice_items_behavior: 'exclude',
+        description: `Tax Invoice for Booking #${booking.bookingNumber} | Service: ${service?.name || 'Beauty Service'} (${appointmentDateStr}) | Initial Deposit (${booking.initialPayment?.percentage || 20}%): $${(booking.initialPayment?.amount || 0).toFixed(2)} AUD [PAID] | Balance Due (80%): $${(booking.balancePayment?.amount || 0).toFixed(2)} AUD`,
+        custom_fields: [
+          { name: 'Booking Ref', value: `#${booking.bookingNumber}` },
+          { name: 'Appointment', value: appointmentDateStr.substring(0, 30) },
+          { name: 'Artist ABN', value: (artistProfile?.abn || 'Not Registered').substring(0, 30) },
+          {
+            name: 'Deposit Paid (20%)',
+            value: `$${(booking.initialPayment?.amount || 0).toFixed(2)} AUD [PAID]`.substring(
+              0,
+              30
+            ),
+          },
+        ],
+        footer: `${siteTitle} - Official Tax Invoice. All prices in AUD and include 10% Australian GST (where applicable). Remaining 80% balance is automatically charged 24 hours prior to appointment.`,
         metadata: {
           bookingNumber: booking.bookingNumber,
           bookingGroupId,
-          type: 'SERVICE_CHARGE',
+          userId: (booking.customer?._id || booking.customer).toString(),
+          artistId: (booking.artist?._id || booking.artist).toString(),
+          gstAmount: (booking.gstAmount || 0).toString(),
+          initialDeposit: (booking.initialPayment?.amount || 0).toString(),
+          balanceDue: (booking.balancePayment?.amount || 0).toString(),
         },
       })
-
-      if (booking.travelFee > 0) {
-        await stripe.invoiceItems.create({
-          customer: stripeCustomerId,
-          invoice,
-          amount: Math.round(booking.travelFee * 100),
-          currency: 'aud',
-          description: 'Mobile Artist Travel Surcharge',
-          ...gstTax,
-          metadata: { bookingNumber: booking.bookingNumber, bookingGroupId, type: 'TRAVEL_FEE' },
-        })
+      const invoice = stripeInvoice.id
+      // Ensure official Stripe 10% GST Tax Rate is applied to invoice items
+      let gstTaxRateId = booking.stripeGstTaxRateId
+      if (!gstTaxRateId && booking.gstAmount > 0) {
+        try {
+          const platformSettings = await PlatformSettings.getSettings()
+          if (platformSettings.stripeGstTaxRateId) {
+            gstTaxRateId = platformSettings.stripeGstTaxRateId
+          } else {
+            const taxRate = await getOrCreateStripeGstTaxRate(platformSettings.gstPercentage || 10)
+            gstTaxRateId = taxRate.id
+            platformSettings.stripeGstTaxRateId = taxRate.id
+            await platformSettings.save()
+          }
+          booking.stripeGstTaxRateId = gstTaxRateId
+          await Booking.findByIdAndUpdate(booking._id, { stripeGstTaxRateId: gstTaxRateId })
+        } catch (taxErr: any) {
+          logger.warn(`Failed to resolve Stripe GST tax rate: ${taxErr?.message}`)
+        }
       }
 
-      if (booking.parkingFee > 0) {
-        await stripe.invoiceItems.create({
-          customer: stripeCustomerId,
-          invoice,
-          amount: Math.round(booking.parkingFee * 100),
-          currency: 'aud',
-          description: 'Artist Parking Fee Reimbursement',
-          ...gstTax,
-          metadata: { bookingNumber: booking.bookingNumber, bookingGroupId, type: 'PARKING_FEE' },
-        })
-      }
+      const gstTax =
+        gstTaxRateId && (booking.gstAmount || 0) > 0 ? { tax_rates: [gstTaxRateId] } : {}
 
-      if (booking.discountAmount > 0) {
+      try {
         await stripe.invoiceItems.create({
           customer: stripeCustomerId,
           invoice,
-          amount: -Math.round(booking.discountAmount * 100),
+          amount: Math.round(booking.servicePrice * 100),
           currency: 'aud',
-          description: `Promo Code Discount: ${booking.promoCodeText || 'PROMO'}`,
+          description: `${service?.name || 'Beauty Service'} (Supplied by Artist: ${artistDisplayName}${artistAbnText})`,
+          ...gstTax,
           metadata: {
             bookingNumber: booking.bookingNumber,
             bookingGroupId,
-            type: 'PROMO_DISCOUNT',
+            type: 'SERVICE_CHARGE',
           },
+        })
+
+        if (booking.travelFee > 0) {
+          await stripe.invoiceItems.create({
+            customer: stripeCustomerId,
+            invoice,
+            amount: Math.round(booking.travelFee * 100),
+            currency: 'aud',
+            description: 'Mobile Artist Travel Surcharge',
+            ...gstTax,
+            metadata: { bookingNumber: booking.bookingNumber, bookingGroupId, type: 'TRAVEL_FEE' },
+          })
+        }
+
+        if (booking.parkingFee > 0) {
+          await stripe.invoiceItems.create({
+            customer: stripeCustomerId,
+            invoice,
+            amount: Math.round(booking.parkingFee * 100),
+            currency: 'aud',
+            description: 'Artist Parking Fee Reimbursement',
+            ...gstTax,
+            metadata: { bookingNumber: booking.bookingNumber, bookingGroupId, type: 'PARKING_FEE' },
+          })
+        }
+
+        if (booking.discountAmount > 0) {
+          await stripe.invoiceItems.create({
+            customer: stripeCustomerId,
+            invoice,
+            amount: -Math.round(booking.discountAmount * 100),
+            currency: 'aud',
+            description: `Promo Code Discount: ${booking.promoCodeText || 'PROMO'}`,
+            metadata: {
+              bookingNumber: booking.bookingNumber,
+              bookingGroupId,
+              type: 'PROMO_DISCOUNT',
+            },
+          })
+        }
+      } catch (itemErr: any) {
+        logger.error(
+          `[Stripe Invoice] Line item creation failed, using single-line fallback: ${itemErr?.message}`
+        )
+        await stripe.invoiceItems.create({
+          customer: stripeCustomerId,
+          invoice,
+          amount: Math.round(booking.totalBookingPrice * 100),
+          currency: 'aud',
+          description: `Booking #${booking.bookingNumber} - ${service?.name || 'Beauty Service'}`,
+          metadata: { bookingNumber: booking.bookingNumber, bookingGroupId },
         })
       }
 
-      // Apply captured initial deposit as customer balance credit so Subtotal ($189.75) and Total ($208.73)
-      // remain 100% accurate, and Amount Due reflects the remaining 80% balance ($166.98)
-      if (
-        booking.initialPayment?.status === 'captured' &&
-        booking.initialPayment.amount > 0 &&
-        booking.balancePayment?.status !== 'captured'
-      ) {
-        try {
-          await stripe.customers.createBalanceTransaction(stripeCustomerId, {
-            amount: -Math.round(booking.initialPayment.amount * 100),
-            currency: 'aud',
-            description: `Initial Deposit (${booking.initialPayment.percentage || 20}%) Paid on Booking #${booking.bookingNumber}`,
-            metadata: { bookingNumber: booking.bookingNumber, bookingGroupId },
-          })
-        } catch (balErr: any) {
-          logger.warn(`Failed to apply deposit credit balance: ${balErr?.message}`)
-        }
-      }
-
-      if (
-        booking.platformCreditApplied > 0 &&
-        booking.balancePayment?.status !== 'captured'
-      ) {
-        try {
-          await stripe.customers.createBalanceTransaction(stripeCustomerId, {
-            amount: -Math.round(booking.platformCreditApplied * 100),
-            currency: 'aud',
-            description: `Platform Wallet Credit Applied to Booking #${booking.bookingNumber}`,
-            metadata: { bookingNumber: booking.bookingNumber, bookingGroupId },
-          })
-        } catch (creditErr: any) {
-          logger.warn(`Failed to apply wallet credit balance: ${creditErr?.message}`)
-        }
-      }
-    } catch (itemErr: any) {
-      logger.error(
-        `[Stripe Invoice] Line item creation failed, using single-line fallback: ${itemErr?.message}`
+      // Verify customer credit balance right before finalization so Applied balance is exact
+      await syncCustomerCreditBalance(
+        stripeCustomerId,
+        desiredCreditCents,
+        booking.bookingNumber,
+        bookingGroupId
       )
-      await stripe.invoiceItems.create({
-        customer: stripeCustomerId,
-        invoice,
-        amount: Math.round(booking.totalBookingPrice * 100),
-        currency: 'aud',
-        description: `Booking #${booking.bookingNumber} - ${service?.name || 'Beauty Service'}`,
-        metadata: { bookingNumber: booking.bookingNumber, bookingGroupId },
-      })
-    }
 
-    const finalizedInvoice = await stripe.invoices.finalizeInvoice(stripeInvoice.id)
+      let finalizedInvoice = await stripe.invoices.finalizeInvoice(stripeInvoice.id)
 
-    // Only mark invoice paid if the full balance is already captured (e.g. covered by credit)
-    if (booking.balancePayment?.status === 'captured') {
-      try {
-        await stripe.invoices.pay(finalizedInvoice.id, { paid_out_of_band: true })
-      } catch (e: any) {
-        // safe fallback
+      // Only mark invoice paid if the full balance is already captured (e.g. covered by credit)
+      if (booking.balancePayment?.status === 'captured') {
+        try {
+          finalizedInvoice = await stripe.invoices.pay(finalizedInvoice.id, {
+            paid_out_of_band: true,
+          })
+        } catch (e: any) {
+          // safe fallback
+        }
       }
-    }
 
-    booking.stripeInvoiceId = finalizedInvoice.id
-    booking.stripeInvoiceUrl = finalizedInvoice.hosted_invoice_url || null
-    booking.stripeInvoicePdf = finalizedInvoice.invoice_pdf || null
-    await booking.save()
+      booking.stripeInvoiceId = finalizedInvoice.id
+      booking.stripeInvoiceUrl = finalizedInvoice.hosted_invoice_url || null
+      booking.stripeInvoicePdf = finalizedInvoice.invoice_pdf || null
+      await Booking.findByIdAndUpdate(booking._id, {
+        stripeInvoiceId: finalizedInvoice.id,
+        stripeInvoiceUrl: finalizedInvoice.hosted_invoice_url || null,
+        stripeInvoicePdf: finalizedInvoice.invoice_pdf || null,
+      })
 
-    return {
-      stripeInvoiceId: finalizedInvoice.id,
-      stripeInvoiceUrl: finalizedInvoice.hosted_invoice_url,
-      stripeInvoicePdf: finalizedInvoice.invoice_pdf,
+      return {
+        stripeInvoiceId: finalizedInvoice.id,
+        stripeInvoiceUrl: finalizedInvoice.hosted_invoice_url,
+        stripeInvoicePdf: finalizedInvoice.invoice_pdf,
+      }
+    } catch (err: any) {
+      logger.error(`[Stripe Invoice] Failed to issue Customer Stripe invoice: ${err?.message}`)
+      return null
     }
-  } catch (err: any) {
-    logger.error(`[Stripe Invoice] Failed to issue Customer Stripe invoice: ${err?.message}`)
-    return null
+  })()
+
+  customerInvoiceLocks.set(lockKey, task)
+  try {
+    return await task
+  } finally {
+    if (customerInvoiceLocks.get(lockKey) === task) {
+      customerInvoiceLocks.delete(lockKey)
+    }
   }
 }
 
@@ -1700,169 +2009,253 @@ const issueCustomerStripeInvoice = async (booking: any) => {
  * Issue official Recipient Created Tax Invoice (RCTI) in Stripe for the Artist
  */
 const issueArtistRctiStripeInvoice = async (booking: any) => {
-  if (booking.artistStripeInvoiceId) {
-    return {
-      artistStripeInvoiceId: booking.artistStripeInvoiceId,
-      artistStripeInvoiceUrl: booking.artistStripeInvoiceUrl,
-      artistStripeInvoicePdf: booking.artistStripeInvoicePdf,
-    }
+  const lockKey = String(booking._id || booking.id || booking.bookingNumber)
+  const existingLock = artistRctiLocks.get(lockKey)
+  if (existingLock) {
+    await existingLock.catch(() => null)
   }
 
-  // Prevent concurrency race conditions with Stripe webhooks
-  const freshBooking = await Booking.findById(booking._id || booking.id)
-  if (freshBooking?.artistStripeInvoiceId) {
-    booking.artistStripeInvoiceId = freshBooking.artistStripeInvoiceId
-    booking.artistStripeInvoiceUrl = freshBooking.artistStripeInvoiceUrl
-    booking.artistStripeInvoicePdf = freshBooking.artistStripeInvoicePdf
-    return {
-      artistStripeInvoiceId: freshBooking.artistStripeInvoiceId,
-      artistStripeInvoiceUrl: freshBooking.artistStripeInvoiceUrl,
-      artistStripeInvoicePdf: freshBooking.artistStripeInvoicePdf,
-    }
-  }
-
-  try {
-    const artistUser = await User.findById(booking.artist)
-    const artistProfile = await ArtistProfile.findOne({ user: booking.artist })
-    if (!artistUser) return null
-
-    let artistCustomerId = artistUser.stripeCustomerId
-    if (!artistCustomerId) {
-      const customerParams: Stripe.CustomerCreateParams = {
-        name: artistProfile?.businessName || artistUser.name,
-        email: artistUser.email,
-        metadata: {
-          userId: artistUser._id.toString(),
-          role: 'artist',
-          businessName: artistProfile?.businessName || '',
-          abn: artistProfile?.abn || '',
-        },
+  const task = (async () => {
+    if (
+      booking.artistStripeInvoiceId &&
+      booking.artistStripeInvoiceUrl &&
+      booking.artistStripeInvoicePdf
+    ) {
+      return {
+        artistStripeInvoiceId: booking.artistStripeInvoiceId,
+        artistStripeInvoiceUrl: booking.artistStripeInvoiceUrl,
+        artistStripeInvoicePdf: booking.artistStripeInvoicePdf,
       }
-      if (artistUser.phone) {
-        customerParams.phone = artistUser.phone
-      }
-
-      const customer = await stripe.customers.create(customerParams)
-      artistCustomerId = customer.id
-      artistUser.stripeCustomerId = artistCustomerId
-      await artistUser.save()
     }
 
-    // Check Stripe directly if an RCTI invoice for this bookingNumber was already created
+    // Prevent concurrency race conditions with Stripe webhooks
+    const freshBooking = await Booking.findById(booking._id || booking.id)
+    if (
+      freshBooking?.artistStripeInvoiceId &&
+      freshBooking?.artistStripeInvoiceUrl &&
+      freshBooking?.artistStripeInvoicePdf
+    ) {
+      booking.artistStripeInvoiceId = freshBooking.artistStripeInvoiceId
+      booking.artistStripeInvoiceUrl = freshBooking.artistStripeInvoiceUrl
+      booking.artistStripeInvoicePdf = freshBooking.artistStripeInvoicePdf
+      return {
+        artistStripeInvoiceId: freshBooking.artistStripeInvoiceId,
+        artistStripeInvoiceUrl: freshBooking.artistStripeInvoiceUrl,
+        artistStripeInvoicePdf: freshBooking.artistStripeInvoicePdf,
+      }
+    }
+
     try {
-      const existingInvoices = await stripe.invoices.list({
-        customer: artistCustomerId,
-        limit: 10,
-      })
-      const matched = existingInvoices.data.find(
-        (inv) =>
-          inv.metadata?.bookingNumber === booking.bookingNumber &&
-          inv.metadata?.type === 'RCTI' &&
-          inv.status !== 'void'
-      )
-      if (matched) {
-        booking.artistStripeInvoiceId = matched.id
-        booking.artistStripeInvoiceUrl = matched.hosted_invoice_url || null
-        booking.artistStripeInvoicePdf = matched.invoice_pdf || null
-        await Booking.findByIdAndUpdate(booking._id, {
-          artistStripeInvoiceId: matched.id,
-          artistStripeInvoiceUrl: matched.hosted_invoice_url || null,
-          artistStripeInvoicePdf: matched.invoice_pdf || null,
-        })
-        return {
-          artistStripeInvoiceId: matched.id,
-          artistStripeInvoiceUrl: matched.hosted_invoice_url,
-          artistStripeInvoicePdf: matched.invoice_pdf,
+      const existingRctiId = booking.artistStripeInvoiceId || freshBooking?.artistStripeInvoiceId
+      if (existingRctiId) {
+        try {
+          let inv = await stripe.invoices.retrieve(existingRctiId)
+          if (inv.status === 'draft') {
+            await stripe.invoices.update(inv.id, {
+              due_date: Math.floor(Date.now() / 1000) + 86400,
+            })
+            inv = await stripe.invoices.finalizeInvoice(inv.id)
+            try {
+              inv = await stripe.invoices.pay(inv.id, { paid_out_of_band: true })
+            } catch {
+              // safe fallback
+            }
+          }
+          if (inv.hosted_invoice_url || inv.invoice_pdf) {
+            booking.artistStripeInvoiceId = inv.id
+            booking.artistStripeInvoiceUrl = inv.hosted_invoice_url || null
+            booking.artistStripeInvoicePdf = inv.invoice_pdf || null
+            await Booking.findByIdAndUpdate(booking._id, {
+              artistStripeInvoiceId: inv.id,
+              artistStripeInvoiceUrl: inv.hosted_invoice_url || null,
+              artistStripeInvoicePdf: inv.invoice_pdf || null,
+            })
+            return {
+              artistStripeInvoiceId: inv.id,
+              artistStripeInvoiceUrl: inv.hosted_invoice_url,
+              artistStripeInvoicePdf: inv.invoice_pdf,
+            }
+          }
+        } catch {
+          // continue
         }
       }
-    } catch {
-      // Safe fallback if invoice list fails
-    }
 
-    const bookingGroupId = booking.bookingGroupId || `GRP-${booking.bookingNumber}`
+      const artistId = booking.artist?._id || booking.artist
+      const artistUser = await User.findById(artistId)
+      const artistProfile = await ArtistProfile.findOne({ user: artistId })
+      if (!artistUser) return null
 
-    const grossTotal = ((booking.grossAmount || 0) + (booking.gstAmount || 0)).toFixed(2)
-    const platformFee = (
-      (booking.platformCommissionAmount || 0) + (booking.platformCommissionGst || 0)
-    ).toFixed(2)
-    const netPayout = (booking.artistNetPayout || 0).toFixed(2)
+      let artistCustomerId = artistUser.stripeCustomerId
+      if (!artistCustomerId) {
+        const customerParams: Stripe.CustomerCreateParams = {
+          name: artistProfile?.businessName || artistUser.name,
+          email: artistUser.email,
+          metadata: {
+            userId: artistUser._id.toString(),
+            role: 'artist',
+            businessName: artistProfile?.businessName || '',
+            abn: artistProfile?.abn || '',
+          },
+        }
+        if (artistUser.phone) {
+          customerParams.phone = artistUser.phone
+        }
 
-    // 1. Create the RCTI draft invoice first
-    const rctiInvoice = await stripe.invoices.create({
-      customer: artistCustomerId,
-      auto_advance: false,
-      collection_method: 'send_invoice',
-      days_until_due: 0,
-      pending_invoice_items_behavior: 'exclude',
-      description: `Recipient Created Tax Invoice (RCTI) - Platform Fee Deduction for Booking #${booking.bookingNumber}`,
-      custom_fields: [
-        { name: 'Gross Booking Total', value: `$${grossTotal} AUD` },
-        { name: 'Platform Fee (20%+GST)', value: `$${platformFee} AUD` },
-        { name: 'Net Artist Payout', value: `$${netPayout} AUD` },
-      ],
-      footer: `Gross Collection: $${grossTotal} AUD | Platform Deductions: $${platformFee} AUD | Net Payout to Artist: $${netPayout} AUD`,
-      metadata: {
-        bookingNumber: booking.bookingNumber,
-        bookingGroupId,
-        type: 'RCTI',
-        customerGrossCollection: (booking.grossAmount + (booking.gstAmount || 0)).toString(),
-        netArtistPayout: (booking.artistNetPayout || 0).toString(),
-      },
-    })
-    const invoice = rctiInvoice.id
+        const customer = await stripe.customers.create(customerParams)
+        artistCustomerId = customer.id
+        artistUser.stripeCustomerId = artistCustomerId
+        await artistUser.save()
+      }
 
-    // 2. Line item: Platform Facilitation Fee (20%) attached directly to this draft
-    await stripe.invoiceItems.create({
-      customer: artistCustomerId,
-      invoice,
-      amount: Math.round((booking.platformCommissionAmount || 0) * 100),
-      currency: 'aud',
-      description: `Platform Facilitation Fee (${booking.platformCommissionPercentage || 20}%) - Booking #${booking.bookingNumber}`,
-      metadata: {
-        bookingNumber: booking.bookingNumber,
-        bookingGroupId,
-        type: 'RCTI_PLATFORM_FEE',
-      },
-    })
+      // Check Stripe directly if an RCTI invoice for this bookingNumber was already created
+      try {
+        const existingInvoices = await stripe.invoices.list({
+          customer: artistCustomerId,
+          limit: 10,
+        })
+        let matched = existingInvoices.data.find(
+          (inv) =>
+            inv.metadata?.bookingNumber === booking.bookingNumber &&
+            inv.metadata?.type === 'RCTI' &&
+            inv.status !== 'void'
+        )
+        if (matched) {
+          if (matched.status === 'draft') {
+            try {
+              await stripe.invoices.update(matched.id, {
+                due_date: Math.floor(Date.now() / 1000) + 86400,
+              })
+              matched = await stripe.invoices.finalizeInvoice(matched.id)
+              try {
+                matched = await stripe.invoices.pay(matched.id, { paid_out_of_band: true })
+              } catch {
+                // safe fallback
+              }
+            } catch {
+              matched = await stripe.invoices.retrieve(matched.id)
+            }
+          }
+          booking.artistStripeInvoiceId = matched.id
+          booking.artistStripeInvoiceUrl = matched.hosted_invoice_url || null
+          booking.artistStripeInvoicePdf = matched.invoice_pdf || null
+          await Booking.findByIdAndUpdate(booking._id, {
+            artistStripeInvoiceId: matched.id,
+            artistStripeInvoiceUrl: matched.hosted_invoice_url || null,
+            artistStripeInvoicePdf: matched.invoice_pdf || null,
+          })
+          return {
+            artistStripeInvoiceId: matched.id,
+            artistStripeInvoiceUrl: matched.hosted_invoice_url,
+            artistStripeInvoicePdf: matched.invoice_pdf,
+          }
+        }
+      } catch {
+        // Safe fallback if invoice list fails
+      }
 
-    // 3. Line item: GST on Platform Facilitation Fee (10%)
-    if (booking.platformCommissionGst > 0) {
-      await stripe.invoiceItems.create({
+      const bookingGroupId = booking.bookingGroupId || `GRP-${booking.bookingNumber}`
+
+      const grossTotal = ((booking.grossAmount || 0) + (booking.gstAmount || 0)).toFixed(2)
+      const platformFee = (
+        (booking.platformCommissionAmount || 0) + (booking.platformCommissionGst || 0)
+      ).toFixed(2)
+      const netPayout = (booking.artistNetPayout || 0).toFixed(2)
+
+      // 1. Create the RCTI draft invoice first (days_until_due: 1 so finalizeInvoice never fails due to past due_date)
+      const rctiInvoice = await stripe.invoices.create({
         customer: artistCustomerId,
-        invoice,
-        amount: Math.round(booking.platformCommissionGst * 100),
-        currency: 'aud',
-        description: 'GST on Platform Facilitation Fee (10%)',
+        auto_advance: false,
+        collection_method: 'send_invoice',
+        days_until_due: 1,
+        pending_invoice_items_behavior: 'exclude',
+        description: `Recipient Created Tax Invoice (RCTI) - Platform Fee Deduction for Booking #${booking.bookingNumber}`,
+        custom_fields: [
+          { name: 'Gross Booking Total', value: `$${grossTotal} AUD` },
+          { name: 'Platform Fee (20%+GST)', value: `$${platformFee} AUD` },
+          { name: 'Net Artist Payout', value: `$${netPayout} AUD` },
+        ],
+        footer: `Gross Collection: $${grossTotal} AUD | Platform Deductions: $${platformFee} AUD | Net Payout to Artist: $${netPayout} AUD`,
         metadata: {
           bookingNumber: booking.bookingNumber,
           bookingGroupId,
-          type: 'RCTI_PLATFORM_FEE_GST',
+          type: 'RCTI',
+          customerGrossCollection: (booking.grossAmount + (booking.gstAmount || 0)).toString(),
+          netArtistPayout: (booking.artistNetPayout || 0).toString(),
         },
       })
+      const invoice = rctiInvoice.id
+
+      // 2. Line item: Platform Facilitation Fee (20%) attached directly to this draft
+      await stripe.invoiceItems.create({
+        customer: artistCustomerId,
+        invoice,
+        amount: Math.round((booking.platformCommissionAmount || 0) * 100),
+        currency: 'aud',
+        description: `Platform Facilitation Fee (${booking.platformCommissionPercentage || 20}%) - Booking #${booking.bookingNumber}`,
+        metadata: {
+          bookingNumber: booking.bookingNumber,
+          bookingGroupId,
+          type: 'RCTI_PLATFORM_FEE',
+        },
+      })
+
+      // 3. Line item: GST on Platform Facilitation Fee (10%)
+      if (booking.platformCommissionGst > 0) {
+        await stripe.invoiceItems.create({
+          customer: artistCustomerId,
+          invoice,
+          amount: Math.round(booking.platformCommissionGst * 100),
+          currency: 'aud',
+          description: 'GST on Platform Facilitation Fee (10%)',
+          metadata: {
+            bookingNumber: booking.bookingNumber,
+            bookingGroupId,
+            type: 'RCTI_PLATFORM_FEE_GST',
+          },
+        })
+      }
+
+      let finalized = await stripe.invoices.finalizeInvoice(rctiInvoice.id)
+
+      // Mark paid out of band (deducted directly from gross customer collection during payout)
+      try {
+        finalized = await stripe.invoices.pay(finalized.id, { paid_out_of_band: true })
+      } catch (e: any) {
+        // safe fallback
+      }
+
+      if (!finalized.hosted_invoice_url || !finalized.invoice_pdf) {
+        finalized = await stripe.invoices.retrieve(finalized.id)
+      }
+
+      booking.artistStripeInvoiceId = finalized.id
+      booking.artistStripeInvoiceUrl = finalized.hosted_invoice_url || null
+      booking.artistStripeInvoicePdf = finalized.invoice_pdf || null
+      await Booking.findByIdAndUpdate(booking._id, {
+        artistStripeInvoiceId: finalized.id,
+        artistStripeInvoiceUrl: finalized.hosted_invoice_url || null,
+        artistStripeInvoicePdf: finalized.invoice_pdf || null,
+      })
+
+      return {
+        artistStripeInvoiceId: finalized.id,
+        artistStripeInvoiceUrl: finalized.hosted_invoice_url,
+        artistStripeInvoicePdf: finalized.invoice_pdf,
+      }
+    } catch (err: any) {
+      logger.error(`[Stripe Invoice] Failed to issue Artist RCTI invoice: ${err?.message}`)
+      return null
     }
+  })()
 
-    const finalized = await stripe.invoices.finalizeInvoice(rctiInvoice.id)
-
-    // Mark paid out of band (deducted directly from gross customer collection during payout)
-    try {
-      await stripe.invoices.pay(finalized.id, { paid_out_of_band: true })
-    } catch (e: any) {
-      // safe fallback
+  artistRctiLocks.set(lockKey, task)
+  try {
+    return await task
+  } finally {
+    if (artistRctiLocks.get(lockKey) === task) {
+      artistRctiLocks.delete(lockKey)
     }
-
-    booking.artistStripeInvoiceId = finalized.id
-    booking.artistStripeInvoiceUrl = finalized.hosted_invoice_url || null
-    booking.artistStripeInvoicePdf = finalized.invoice_pdf || null
-    await booking.save()
-
-    return {
-      artistStripeInvoiceId: finalized.id,
-      artistStripeInvoiceUrl: finalized.hosted_invoice_url,
-      artistStripeInvoicePdf: finalized.invoice_pdf,
-    }
-  } catch (err: any) {
-    logger.error(`[Stripe Invoice] Failed to issue Artist RCTI invoice: ${err?.message}`)
-    return null
   }
 }
 
@@ -1872,7 +2265,7 @@ const issueArtistRctiStripeInvoice = async (booking: any) => {
 const getBookingReceipt = async (user: IUser, bookingId: string) => {
   const booking = await Booking.findById(bookingId)
     .populate('service')
-    .populate('artist', 'name email profilePicture phone businessName abn')
+    .populate('artist', 'name email profilePicture phone')
     .populate('customer', 'name email profilePicture phone')
 
   if (!booking) {
@@ -1893,6 +2286,11 @@ const getBookingReceipt = async (user: IUser, bookingId: string) => {
     )
   }
 
+  const artistProfile = await ArtistProfile.findOne({
+    user: booking.artist._id || booking.artist,
+  }).lean()
+  ;(booking as any).artistProfile = artistProfile
+
   return generateBalancePaymentReceipt(booking)
 }
 
@@ -1902,7 +2300,7 @@ const getBookingReceipt = async (user: IUser, bookingId: string) => {
 const getArtistInvoice = async (user: IUser, bookingId: string) => {
   const booking = await Booking.findById(bookingId)
     .populate('service')
-    .populate('artist', 'name email profilePicture phone businessName isGstRegistered abn')
+    .populate('artist', 'name email profilePicture phone')
     .populate('customer', 'name email profilePicture phone')
 
   if (!booking) {
@@ -1916,13 +2314,20 @@ const getArtistInvoice = async (user: IUser, bookingId: string) => {
     throw new AppError(httpStatus.FORBIDDEN, 'Access denied to this artist invoice')
   }
 
-  // Ensure Artist RCTI Stripe Invoice is issued if missing
+  // Ensure Artist RCTI Stripe Invoice is issued and finalized if missing URL/PDF
   if (
-    !booking.artistStripeInvoiceId &&
-    booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED
+    booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED &&
+    (!booking.artistStripeInvoiceId ||
+      !booking.artistStripeInvoiceUrl ||
+      !booking.artistStripeInvoicePdf)
   ) {
     await issueArtistRctiStripeInvoice(booking)
   }
+
+  const artistProfile = await ArtistProfile.findOne({
+    user: booking.artist._id || booking.artist,
+  }).lean()
+  ;(booking as any).artistProfile = artistProfile
 
   return generateArtistRctiInvoice(booking)
 }
@@ -1933,7 +2338,7 @@ const getArtistInvoice = async (user: IUser, bookingId: string) => {
 const getBookingInvoice = async (user: IUser, bookingId: string) => {
   const booking = await Booking.findById(bookingId)
     .populate('service')
-    .populate('artist', 'name email profilePicture phone businessName isGstRegistered abn')
+    .populate('artist', 'name email profilePicture phone')
     .populate('customer', 'name email profilePicture phone')
     .populate('address')
     .populate('promoCode', 'promotionName promoCode discountType discountValue')
@@ -1949,6 +2354,18 @@ const getBookingInvoice = async (user: IUser, bookingId: string) => {
   if (!isCustomer && !isArtist && !isAdmin) {
     throw new AppError(httpStatus.FORBIDDEN, 'Access denied to this booking invoice')
   }
+
+  if (
+    booking.initialPayment?.status === PAYMENT_STAGE_STATUS.CAPTURED &&
+    (!booking.stripeInvoiceId || !booking.stripeInvoiceUrl || !booking.stripeInvoicePdf)
+  ) {
+    await issueCustomerStripeInvoice(booking)
+  }
+
+  const artistProfile = await ArtistProfile.findOne({
+    user: booking.artist._id || booking.artist,
+  }).lean()
+  ;(booking as any).artistProfile = artistProfile
 
   const platformSettings = await PlatformSettings.getSettings()
   return generateBookingTaxInvoice(booking, platformSettings?.gstPercentage ?? 10)
@@ -2059,16 +2476,34 @@ const confirmBookingPayment = async (
   const stripeCustomerId = user.stripeCustomerId
 
   // 2. Resolve Payment Method
-  const paymentMethodKey = input.paymentMethodId || booking.stripePaymentMethodId
   let effectivePaymentMethodId: string | undefined
-  if (paymentMethodKey) {
-    const userCard = await PaymentMethod.findOne({
-      ...(mongoose.isValidObjectId(paymentMethodKey)
-        ? { _id: paymentMethodKey }
-        : { stripePaymentMethodId: paymentMethodKey }),
+  if (input.paymentMethodId) {
+    const existingCard = await PaymentMethod.findOne(
+      mongoose.isValidObjectId(input.paymentMethodId)
+        ? { _id: input.paymentMethodId }
+        : { stripePaymentMethodId: input.paymentMethodId }
+    )
+    if (!existingCard) {
+      throw new AppError(
+        httpStatus.NOT_FOUND,
+        'Payment method is not listed in the database. Please provide a valid saved payment method.'
+      )
+    }
+    if (existingCard.user.toString() !== user._id.toString()) {
+      throw new AppError(
+        httpStatus.FORBIDDEN,
+        'Selected payment method is not listed under your account.'
+      )
+    }
+    effectivePaymentMethodId = existingCard.stripePaymentMethodId
+  } else if (booking.stripePaymentMethodId) {
+    const bookedCard = await PaymentMethod.findOne({
+      stripePaymentMethodId: booking.stripePaymentMethodId,
       user: user._id,
     })
-    effectivePaymentMethodId = userCard?.stripePaymentMethodId
+    if (bookedCard) {
+      effectivePaymentMethodId = bookedCard.stripePaymentMethodId
+    }
   }
 
   if (breakdown.initialDepositAmount > 0 && !effectivePaymentMethodId) {
@@ -2256,11 +2691,10 @@ const declineBooking = async (user: IUser, bookingId: string, reason?: string) =
   booking.cancelledBy = user._id as any
   booking.cancelledByRole = 'artist'
 
+  const wasInitialCaptured = booking.initialPayment.status === PAYMENT_STAGE_STATUS.CAPTURED
+
   // Full refund of customer initial deposit if captured
-  if (
-    booking.initialPayment.status === PAYMENT_STAGE_STATUS.CAPTURED &&
-    booking.initialPayment.stripePaymentIntentId
-  ) {
+  if (wasInitialCaptured && booking.initialPayment.stripePaymentIntentId) {
     try {
       await stripe.refunds.create({
         payment_intent: booking.initialPayment.stripePaymentIntentId,
@@ -2274,13 +2708,18 @@ const declineBooking = async (user: IUser, bookingId: string, reason?: string) =
 
   // Restore customer platform credits if used
   if (booking.platformCreditApplied > 0) {
-    await User.findByIdAndUpdate(booking.customer, {
-      $inc: { platformCredits: booking.platformCreditApplied },
+    await walletServices.creditUserWallet({
+      userId: booking.customer as any,
+      amount: booking.platformCreditApplied,
+      source: WALLET_SOURCE.BOOKING_ROLLBACK,
+      bookingId: booking._id,
+      bookingGroupId: booking.bookingGroupId,
+      description: `Booking #${booking.bookingNumber} declined by artist - platform credit restored`,
     })
   }
 
-  // Restore promo code usage count
-  if (booking.promoCode) {
+  // Restore promo code usage count only if it was incremented on deposit capture
+  if (booking.promoCode && wasInitialCaptured) {
     await PromoCode.findByIdAndUpdate(booking.promoCode, {
       $inc: { usageCount: -1 },
     })
@@ -2430,6 +2869,7 @@ const customerSign = async (
     } as any
   }
 
+  const wasAlreadySigned = Boolean(booking.completionDetails?.signedAt)
   booking.completionDetails!.customerSignature = payload.customerSignature
   booking.completionDetails!.signedAt = new Date()
 
@@ -2454,42 +2894,58 @@ const customerSign = async (
           `[Customer Sign Payout] Released $${netPayout} AUD to artist ${booking.artist} for booking ${booking.bookingNumber}`
         )
       } catch (err: any) {
-        logger.error(`[Customer Sign Payout Error] Transfer failed: ${err?.message}`)
+        if (err?.message?.includes('service agreement') && configs.nodeEnv !== 'production') {
+          booking.completionDetails!.payoutTransferredAt = new Date()
+          logger.warn(
+            `[Customer Sign Payout Sandbox Bypass] Cross-border US->AU transfer skipped in ${configs.nodeEnv} mode (Platform is US, Artist is AU 'full' agreement). Recorded payout of $${netPayout} AUD for testing.`
+          )
+        } else {
+          logger.error(`[Customer Sign Payout Error] Transfer failed: ${err?.message}`)
+        }
       }
     }
 
     if (booking.completionDetails!.payoutTransferredAt) {
-      await PaymentTransaction.create({
-        transactionId: `TXN-${booking.bookingNumber}-SIGN-PAYOUT`,
-        booking: booking._id,
-        bookingGroupId: `GRP-${booking.bookingNumber}`,
-        user: booking.customer,
-        artist: booking.artist,
-        type: PAYMENT_TRANSACTION_TYPE.STRIPE_TRANSFER,
-        gateway: PAYMENT_GATEWAY.STRIPE_CONNECT,
-        status: PAYMENT_STATUS.SUCCEEDED,
-        currency: 'AUD',
-        amount: booking.totalBookingPrice || booking.grossAmount || 0,
-        marketplaceFee: booking.platformCommissionAmount || 0,
-        marketplaceFeeGst: booking.platformCommissionGst || 0,
-        stripeFeeBorne: booking.stripeBalanceFee || 0,
-        artistNetShare: netPayout,
-      })
+      const txnId = `TXN-${booking.bookingNumber}-SIGN-PAYOUT`
+      await PaymentTransaction.findOneAndUpdate(
+        { transactionId: txnId },
+        {
+          $setOnInsert: {
+            transactionId: txnId,
+            booking: booking._id,
+            bookingGroupId: `GRP-${booking.bookingNumber}`,
+            user: booking.customer,
+            artist: booking.artist,
+            type: PAYMENT_TRANSACTION_TYPE.STRIPE_TRANSFER,
+            gateway: PAYMENT_GATEWAY.STRIPE_CONNECT,
+            status: PAYMENT_STATUS.SUCCEEDED,
+            currency: 'AUD',
+            amount: booking.totalBookingPrice || booking.grossAmount || 0,
+            marketplaceFee: booking.platformCommissionAmount || 0,
+            marketplaceFeeGst: booking.platformCommissionGst || 0,
+            stripeFeeBorne: booking.stripeBalanceFee || 0,
+            artistNetShare: netPayout,
+          },
+        },
+        { upsert: true, new: true }
+      )
     }
   }
 
   await booking.save()
 
-  await recordBookingHistory({
-    booking: booking._id,
-    bookingNumber: booking.bookingNumber,
-    status: booking.status,
-    milestone: BOOKING_TIMELINE_MILESTONE.BOOKING_CLOSED,
-    title: 'Booking Closed',
-    description: 'Customer verified and signed off on completed service',
-    performedBy: user._id,
-    performedByRole: 'customer',
-  })
+  if (!wasAlreadySigned) {
+    await recordBookingHistory({
+      booking: booking._id,
+      bookingNumber: booking.bookingNumber,
+      status: booking.status,
+      milestone: BOOKING_TIMELINE_MILESTONE.BOOKING_CLOSED,
+      title: 'Booking Closed',
+      description: 'Customer verified and signed off on completed service',
+      performedBy: user._id,
+      performedByRole: 'customer',
+    })
+  }
 
   return booking
 }
@@ -3053,7 +3509,13 @@ const verifyCustomerNoShow = async (
           `[No-Show Verified] Released $${netPayout} AUD protected payout to artist ${booking.artist._id} for booking ${booking.bookingNumber}`
         )
       } catch (err: any) {
-        logger.error(`[No-Show Payout Error] Failed to transfer payout to artist: ${err?.message}`)
+        if (err?.message?.includes('service agreement') && configs.nodeEnv !== 'production') {
+          logger.warn(
+            `[No-Show Payout Sandbox Bypass] Cross-border US->AU transfer skipped in ${configs.nodeEnv} mode (${err.message}). Recorded payout of $${netPayout} AUD for testing.`
+          )
+        } else {
+          logger.error(`[No-Show Payout Error] Failed to transfer payout to artist: ${err?.message}`)
+        }
       }
     }
 
