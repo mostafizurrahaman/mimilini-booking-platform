@@ -1,4 +1,5 @@
 import {
+  Account,
   Booking,
   BOOKING_STATUS,
   PaymentTransaction,
@@ -237,6 +238,148 @@ export const processExpiredRectificationCancellations = async () => {
   }
 }
 
+const activePayoutRetryLocks = new Set<string>()
+
+/**
+ * Pending Artist Payout Retry Job:
+ * Automatically retries Stripe transfers that were queued as PENDING due to
+ * Stripe settlement delay (insufficient available balance at the moment of sign/cancel/no-show).
+ */
+export const processPendingArtistPayouts = async () => {
+  try {
+    // 1. Ensure any signed completed booking without payoutTransferredAt has a PENDING payout transaction queued
+    const unsignedPayoutBookings = await Booking.find({
+      status: BOOKING_STATUS.COMPLETED,
+      'completionDetails.signedAt': { $ne: null },
+      'completionDetails.payoutTransferredAt': null,
+      artistNetPayout: { $gt: 0 },
+    })
+
+    for (const bk of unsignedPayoutBookings) {
+      const signTxnId = `TXN-${bk.bookingNumber}-SIGN-PAYOUT`
+      await PaymentTransaction.findOneAndUpdate(
+        { transactionId: signTxnId },
+        {
+          $setOnInsert: {
+            transactionId: signTxnId,
+            booking: bk._id,
+            bookingGroupId: bk.bookingGroupId || `GRP-${bk.bookingNumber}`,
+            user: bk.customer,
+            artist: bk.artist,
+            type: PAYMENT_TRANSACTION_TYPE.STRIPE_TRANSFER,
+            gateway: PAYMENT_GATEWAY.STRIPE_CONNECT,
+            status: PAYMENT_STATUS.PENDING,
+            currency: 'AUD',
+            amount: bk.totalBookingPrice || bk.grossAmount || 0,
+            marketplaceFee: bk.platformCommissionAmount || 0,
+            marketplaceFeeGst: bk.platformCommissionGst || 0,
+            stripeFeeBorne: bk.stripeBalanceFee || 0,
+            artistNetShare: bk.artistNetPayout,
+            failureReason: 'Artist payout transfer pending available balance',
+          },
+        },
+        { upsert: true, new: true }
+      )
+    }
+
+    // 2. Process all PENDING artist payout transactions once Stripe available balance is sufficient
+    const pendingTxns = await PaymentTransaction.find({
+      gateway: PAYMENT_GATEWAY.STRIPE_CONNECT,
+      status: PAYMENT_STATUS.PENDING,
+      stripeTransferId: null,
+      artistNetShare: { $gt: 0 },
+      transactionId: { $regex: /-(SIGN-PAYOUT|LATE-CANCEL|NO-SHOW-PAYOUT)$/ },
+    })
+
+    if (pendingTxns.length === 0) return
+
+    const balance = await stripe.balance.retrieve()
+    let availableAudCents =
+      balance.available.find((b) => b.currency.toLowerCase() === 'aud')?.amount ?? 0
+
+    for (const txn of pendingTxns) {
+      if (activePayoutRetryLocks.has(txn.transactionId)) continue
+      const amountCents = Math.round(txn.artistNetShare * 100)
+      if (availableAudCents < amountCents) {
+        continue
+      }
+
+      if (!txn.artist) continue
+      const artistAccount = await Account.findOne({ user: txn.artist })
+      if (!artistAccount?.account) continue
+
+      activePayoutRetryLocks.add(txn.transactionId)
+      try {
+        // Re-verify in DB right before transfer to prevent any race condition
+        const freshTxn = await PaymentTransaction.findOne({
+          _id: txn._id,
+          status: PAYMENT_STATUS.PENDING,
+          stripeTransferId: null,
+        })
+        if (!freshTxn) continue
+
+        const transfer = await stripe.transfers.create({
+          amount: amountCents,
+          currency: 'aud',
+          destination: artistAccount.account,
+          ...(freshTxn.bookingGroupId ? { transfer_group: freshTxn.bookingGroupId } : {}),
+          metadata: {
+            bookingId: freshTxn.booking?.toString() || '',
+            transactionId: freshTxn.transactionId,
+            type: 'RETRY_ARTIST_PAYOUT',
+          },
+        })
+
+        availableAudCents -= amountCents
+        freshTxn.status = PAYMENT_STATUS.SUCCEEDED
+        freshTxn.stripeTransferId = transfer.id
+        ;(freshTxn as any).failureReason = null
+        await freshTxn.save()
+
+        if (freshTxn.booking && freshTxn.transactionId.endsWith('-SIGN-PAYOUT')) {
+          await Booking.findByIdAndUpdate(freshTxn.booking, {
+            $set: { 'completionDetails.payoutTransferredAt': new Date() },
+          })
+        }
+
+        logger.info(
+          `[Cron: Pending Artist Payouts] Succeeded transfer ${transfer.id} ($${freshTxn.artistNetShare} AUD) for ${freshTxn.transactionId}`
+        )
+      } catch (err: any) {
+        txn.failureReason = err?.message || 'Transfer still pending available balance'
+        await txn.save()
+      } finally {
+        activePayoutRetryLocks.delete(txn.transactionId)
+      }
+    }
+  } catch (err: any) {
+    logger.error('[Cron: Pending Artist Payouts] Encountered an error:', err)
+  }
+}
+
+/**
+ * Schedule a job to run every day at 09:00 AM server time
+ */
+const scheduleDailyAt9AM = (task: () => Promise<void>) => {
+  const scheduleNextRun = () => {
+    const now = moment()
+    let next9AM = moment().set({ hour: 9, minute: 0, second: 0, millisecond: 0 })
+    if (now.isSameOrAfter(next9AM)) {
+      next9AM = next9AM.add(1, 'day')
+    }
+    const msUntilNext9AM = next9AM.diff(now)
+
+    const timer = setTimeout(async () => {
+      await task()
+      scheduleNextRun()
+    }, msUntilNext9AM)
+
+    if (timer.unref) timer.unref()
+  }
+
+  scheduleNextRun()
+}
+
 /**
  * Initialize background automation timers
  */
@@ -253,6 +396,9 @@ export const startBookingCronJobs = () => {
     processExpiredRectificationCancellations,
     2 * 60 * 1000
   )
+
+  // Run pending artist payout retry every day at 09:00 AM
+  scheduleDailyAt9AM(processPendingArtistPayouts)
 
   // Unref intervals so they don't block clean process shutdown if needed
   if (balanceInterval.unref) balanceInterval.unref()

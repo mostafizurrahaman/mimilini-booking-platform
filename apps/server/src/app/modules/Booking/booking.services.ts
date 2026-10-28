@@ -948,11 +948,11 @@ const customerCancelBooking = async (
 
   if (isBalancePaid) {
     // Platform keeps the original 20% deposit
-    // Customer gets 40% of artist net payout as Platform Credit
-    // Artist gets 40% of artist net payout transferred to their Stripe account
-    const baseNetPayout = booking.artistNetPayout || booking.balancePayment.amount
-    customerCreditAmount = round2(baseNetPayout * 0.4)
-    artistShareAmount = round2(baseNetPayout * 0.4)
+    // Customer gets 50% of artist net payout (40% of total booking) as Platform Credit
+    // Artist gets 50% of artist net payout (40% of total booking) transferred to their Stripe account
+    const baseNetPayout = booking.artistNetPayout
+    customerCreditAmount = round2(baseNetPayout * 0.5)
+    artistShareAmount = round2(baseNetPayout - customerCreditAmount)
 
     if (customerCreditAmount > 0) {
       const alreadyCredited = await WalletLedger.findOne({
@@ -966,16 +966,18 @@ const customerCancelBooking = async (
           source: WALLET_SOURCE.CANCELLATION_CREDIT,
           bookingId: booking._id,
           bookingGroupId: booking.bookingGroupId,
-          description: `Booking #${booking.bookingNumber} late cancellation credit (40% of artist net share)`,
+          description: `Booking #${booking.bookingNumber} late cancellation credit (50% of artist net payout)`,
         })
       }
     }
 
     let isTransferSuccessful = false
+    let stripeTransferId: string | undefined
+    let transferFailureReason: string | undefined
     const artistAccount = await Account.findOne({ user: booking.artist._id })
     if (artistAccount?.account && artistShareAmount > 0) {
       try {
-        await stripe.transfers.create({
+        const transfer = await stripe.transfers.create({
           amount: Math.round(artistShareAmount * 100),
           currency: 'aud',
           destination: artistAccount.account,
@@ -986,6 +988,7 @@ const customerCancelBooking = async (
           },
         })
         isTransferSuccessful = true
+        stripeTransferId = transfer.id
       } catch (err: any) {
         if (err?.message?.includes('service agreement') && configs.nodeEnv !== 'production') {
           isTransferSuccessful = true
@@ -993,36 +996,50 @@ const customerCancelBooking = async (
             `[Late Cancel Payout Sandbox Bypass] Cross-border US->AU transfer skipped in ${configs.nodeEnv} mode (${err.message}). Marked as transferred for testing.`
           )
         } else {
-          logger.warn(`Failed to transfer late cancellation artist share: ${err?.message}`)
+          transferFailureReason = err?.message || 'Artist payout transfer pending available balance'
+          logger.warn(
+            `[Late Cancel Payout Queued] Transfer pending for booking ${booking.bookingNumber}: ${transferFailureReason}`
+          )
         }
       }
+    } else if (artistShareAmount > 0) {
+      transferFailureReason = 'Artist Stripe Connected Account not found'
     }
 
-    const platformShareAmount = round2(
-      booking.balancePayment.amount - artistShareAmount - customerCreditAmount
+    const lateCancelTxnId = `TXN-${booking.bookingNumber}-LATE-CANCEL`
+    await PaymentTransaction.findOneAndUpdate(
+      { transactionId: lateCancelTxnId },
+      {
+        $set: {
+          status: isTransferSuccessful ? PAYMENT_STATUS.SUCCEEDED : PAYMENT_STATUS.PENDING,
+          ...(stripeTransferId ? { stripeTransferId } : {}),
+          failureReason: isTransferSuccessful ? null : transferFailureReason,
+          artistNetShare: artistShareAmount,
+        },
+        $setOnInsert: {
+          transactionId: lateCancelTxnId,
+          booking: booking._id,
+          bookingGroupId: `GRP-${booking.bookingNumber}`,
+          user: booking.customer._id,
+          artist: booking.artist._id,
+          type: PAYMENT_TRANSACTION_TYPE.CANCELLATION_FEE,
+          gateway: PAYMENT_GATEWAY.STRIPE_CONNECT,
+          currency: 'AUD',
+          amount: booking.balancePayment.amount,
+          platformCreditUsed: 0,
+          marketplaceFee: booking.platformCommissionAmount || 0,
+          marketplaceFeeGst: booking.platformCommissionGst || 0,
+          stripeFeeBorne: booking.stripeBalanceFee || 0,
+        },
+      },
+      { upsert: true, new: true }
     )
-
-    await PaymentTransaction.create({
-      transactionId: `TXN-${booking.bookingNumber}-LATE-CANCEL`,
-      booking: booking._id,
-      bookingGroupId: `GRP-${booking.bookingNumber}`,
-      user: booking.customer._id,
-      artist: booking.artist._id,
-      type: PAYMENT_TRANSACTION_TYPE.CANCELLATION_FEE,
-      gateway: PAYMENT_GATEWAY.STRIPE_CONNECT,
-      status: PAYMENT_STATUS.SUCCEEDED,
-      currency: 'AUD',
-      amount: booking.balancePayment.amount,
-      platformCreditUsed: 0,
-      marketplaceFee: platformShareAmount,
-      marketplaceFeeGst: 0,
-      stripeFeeBorne: booking.stripeBalanceFee || 0,
-      artistNetShare: isTransferSuccessful ? artistShareAmount : 0,
-    })
 
     booking.balancePayment.status = PAYMENT_STAGE_STATUS.REFUNDED
     booking.depositForfeited = true
-    booking.cancellationFeeCharged = round2((booking.initialPayment?.amount || 0) + platformShareAmount)
+    booking.cancellationFeeCharged = round2(
+      (booking.initialPayment?.amount || 0) + artistShareAmount
+    )
   } else if (isInitialPaid) {
     booking.depositForfeited = true
     booking.cancellationFeeCharged = booking.initialPayment?.amount || 0
@@ -1040,7 +1057,7 @@ const customerCancelBooking = async (
   await booking.save()
 
   const lateMessage = isBalancePaid
-    ? `Booking cancelled under Late Cancellation policy (<24h). Platform retained the 20% deposit. You received $${customerCreditAmount} Platform Credit (40% of artist net share).`
+    ? `Booking cancelled under Late Cancellation policy (<24h). Platform retained the 20% deposit. You received $${customerCreditAmount} Platform Credit (50% of artist net payout).`
     : isInitialPaid
       ? 'Booking cancelled under Late Cancellation policy (<24h). The 20% deposit is non-refundable and forfeited.'
       : 'Booking cancelled successfully. No payment was charged.'
@@ -2875,11 +2892,20 @@ const customerSign = async (
 
   // Release held artist payout to Connected Account upon customer sign
   const netPayout = booking.artistNetPayout || 0
+  const txnId = `TXN-${booking.bookingNumber}-SIGN-PAYOUT`
+  const existingPayoutTxn = await PaymentTransaction.findOne({ transactionId: txnId })
+  if (existingPayoutTxn?.status === PAYMENT_STATUS.SUCCEEDED || existingPayoutTxn?.stripeTransferId) {
+    booking.completionDetails!.payoutTransferredAt =
+      booking.completionDetails!.payoutTransferredAt || new Date()
+  }
+
   if (!booking.completionDetails!.payoutTransferredAt && netPayout > 0) {
+    let stripeTransferId: string | undefined
+    let transferFailureReason: string | undefined
     const artistAccount = await Account.findOne({ user: booking.artist })
     if (artistAccount?.account) {
       try {
-        await stripe.transfers.create({
+        const transfer = await stripe.transfers.create({
           amount: Math.round(netPayout * 100),
           currency: 'aud',
           destination: artistAccount.account,
@@ -2889,6 +2915,7 @@ const customerSign = async (
             type: 'CUSTOMER_SIGN_ARTIST_PAYOUT',
           },
         })
+        stripeTransferId = transfer.id
         booking.completionDetails!.payoutTransferredAt = new Date()
         logger.info(
           `[Customer Sign Payout] Released $${netPayout} AUD to artist ${booking.artist} for booking ${booking.bookingNumber}`
@@ -2900,36 +2927,43 @@ const customerSign = async (
             `[Customer Sign Payout Sandbox Bypass] Cross-border US->AU transfer skipped in ${configs.nodeEnv} mode (Platform is US, Artist is AU 'full' agreement). Recorded payout of $${netPayout} AUD for testing.`
           )
         } else {
-          logger.error(`[Customer Sign Payout Error] Transfer failed: ${err?.message}`)
+          transferFailureReason = err?.message || 'Artist payout transfer pending available balance'
+          logger.warn(
+            `[Customer Sign Payout Queued] Transfer pending for booking ${booking.bookingNumber}: ${transferFailureReason}`
+          )
         }
       }
+    } else {
+      transferFailureReason = 'Artist Stripe Connected Account not found'
     }
 
-    if (booking.completionDetails!.payoutTransferredAt) {
-      const txnId = `TXN-${booking.bookingNumber}-SIGN-PAYOUT`
-      await PaymentTransaction.findOneAndUpdate(
-        { transactionId: txnId },
-        {
-          $setOnInsert: {
-            transactionId: txnId,
-            booking: booking._id,
-            bookingGroupId: `GRP-${booking.bookingNumber}`,
-            user: booking.customer,
-            artist: booking.artist,
-            type: PAYMENT_TRANSACTION_TYPE.STRIPE_TRANSFER,
-            gateway: PAYMENT_GATEWAY.STRIPE_CONNECT,
-            status: PAYMENT_STATUS.SUCCEEDED,
-            currency: 'AUD',
-            amount: booking.totalBookingPrice || booking.grossAmount || 0,
-            marketplaceFee: booking.platformCommissionAmount || 0,
-            marketplaceFeeGst: booking.platformCommissionGst || 0,
-            stripeFeeBorne: booking.stripeBalanceFee || 0,
-            artistNetShare: netPayout,
-          },
+    const isTransferred = Boolean(booking.completionDetails!.payoutTransferredAt)
+    await PaymentTransaction.findOneAndUpdate(
+      { transactionId: txnId },
+      {
+        $set: {
+          status: isTransferred ? PAYMENT_STATUS.SUCCEEDED : PAYMENT_STATUS.PENDING,
+          ...(stripeTransferId ? { stripeTransferId } : {}),
+          failureReason: isTransferred ? null : transferFailureReason,
+          artistNetShare: netPayout,
         },
-        { upsert: true, new: true }
-      )
-    }
+        $setOnInsert: {
+          transactionId: txnId,
+          booking: booking._id,
+          bookingGroupId: `GRP-${booking.bookingNumber}`,
+          user: booking.customer,
+          artist: booking.artist,
+          type: PAYMENT_TRANSACTION_TYPE.STRIPE_TRANSFER,
+          gateway: PAYMENT_GATEWAY.STRIPE_CONNECT,
+          currency: 'AUD',
+          amount: booking.totalBookingPrice || booking.grossAmount || 0,
+          marketplaceFee: booking.platformCommissionAmount || 0,
+          marketplaceFeeGst: booking.platformCommissionGst || 0,
+          stripeFeeBorne: booking.stripeBalanceFee || 0,
+        },
+      },
+      { upsert: true, new: true }
+    )
   }
 
   await booking.save()
@@ -3492,10 +3526,13 @@ const verifyCustomerNoShow = async (
     // Release 100% protected net payout to artist Stripe Connected Account!
     const artistAccount = await Account.findOne({ user: booking.artist._id })
     const netPayout = booking.artistNetPayout || 0
+    let isTransferSuccessful = false
+    let stripeTransferId: string | undefined
+    let transferFailureReason: string | undefined
 
     if (artistAccount?.account && netPayout > 0) {
       try {
-        await stripe.transfers.create({
+        const transfer = await stripe.transfers.create({
           amount: Math.round(netPayout * 100),
           currency: 'aud',
           destination: artistAccount.account,
@@ -3505,36 +3542,55 @@ const verifyCustomerNoShow = async (
             type: 'NO_SHOW_ARTIST_PROTECTED_PAYOUT',
           },
         })
+        isTransferSuccessful = true
+        stripeTransferId = transfer.id
         logger.info(
           `[No-Show Verified] Released $${netPayout} AUD protected payout to artist ${booking.artist._id} for booking ${booking.bookingNumber}`
         )
       } catch (err: any) {
         if (err?.message?.includes('service agreement') && configs.nodeEnv !== 'production') {
+          isTransferSuccessful = true
           logger.warn(
             `[No-Show Payout Sandbox Bypass] Cross-border US->AU transfer skipped in ${configs.nodeEnv} mode (${err.message}). Recorded payout of $${netPayout} AUD for testing.`
           )
         } else {
-          logger.error(`[No-Show Payout Error] Failed to transfer payout to artist: ${err?.message}`)
+          transferFailureReason = err?.message || 'Artist payout transfer pending available balance'
+          logger.warn(
+            `[No-Show Payout Queued] Transfer pending for booking ${booking.bookingNumber}: ${transferFailureReason}`
+          )
         }
       }
+    } else if (netPayout > 0) {
+      transferFailureReason = 'Artist Stripe Connected Account not found'
     }
 
-    await PaymentTransaction.create({
-      transactionId: `TXN-${booking.bookingNumber}-NO-SHOW-PAYOUT`,
-      booking: booking._id,
-      bookingGroupId: `GRP-${booking.bookingNumber}`,
-      user: booking.customer._id,
-      artist: booking.artist._id,
-      type: PAYMENT_TRANSACTION_TYPE.FULL_100,
-      gateway: PAYMENT_GATEWAY.STRIPE_CONNECT,
-      status: PAYMENT_STATUS.SUCCEEDED,
-      currency: 'AUD',
-      amount: booking.totalBookingPrice || booking.grossAmount || 0,
-      marketplaceFee: booking.platformCommissionAmount || 0,
-      marketplaceFeeGst: booking.platformCommissionGst || 0,
-      stripeFeeBorne: booking.stripeBalanceFee || 0,
-      artistNetShare: netPayout,
-    })
+    const noShowTxnId = `TXN-${booking.bookingNumber}-NO-SHOW-PAYOUT`
+    await PaymentTransaction.findOneAndUpdate(
+      { transactionId: noShowTxnId },
+      {
+        $set: {
+          status: isTransferSuccessful ? PAYMENT_STATUS.SUCCEEDED : PAYMENT_STATUS.PENDING,
+          ...(stripeTransferId ? { stripeTransferId } : {}),
+          failureReason: isTransferSuccessful ? null : transferFailureReason,
+          artistNetShare: netPayout,
+        },
+        $setOnInsert: {
+          transactionId: noShowTxnId,
+          booking: booking._id,
+          bookingGroupId: `GRP-${booking.bookingNumber}`,
+          user: booking.customer._id,
+          artist: booking.artist._id,
+          type: PAYMENT_TRANSACTION_TYPE.FULL_100,
+          gateway: PAYMENT_GATEWAY.STRIPE_CONNECT,
+          currency: 'AUD',
+          amount: booking.totalBookingPrice || booking.grossAmount || 0,
+          marketplaceFee: booking.platformCommissionAmount || 0,
+          marketplaceFeeGst: booking.platformCommissionGst || 0,
+          stripeFeeBorne: booking.stripeBalanceFee || 0,
+        },
+      },
+      { upsert: true, new: true }
+    )
   } else {
     booking.status = BOOKING_STATUS.CONFIRMED
   }
