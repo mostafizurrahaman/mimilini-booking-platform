@@ -1,5 +1,6 @@
 import {
   ArtistProfile,
+  FavoriteArtist,
   ArtistServices,
   artistProfileSearchableFields,
   AuthStatus,
@@ -1687,7 +1688,7 @@ export interface IGetArtistDetailsQuery {
   longitude?: string | number
 }
 
-const getArtistDetails = async (artistIdParam: string, query: IGetArtistDetailsQuery = {}) => {
+const getArtistDetails = async (artistIdParam: string, query: IGetArtistDetailsQuery = {}, currentUserId?: string | mongoose.Types.ObjectId) => {
   if (!mongoose.isValidObjectId(artistIdParam)) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Invalid artist ID.')
   }
@@ -1984,6 +1985,14 @@ const getArtistDetails = async (artistIdParam: string, query: IGetArtistDetailsQ
       recent: formattedRecentReviews,
     },
 
+    // Favorite status
+    isFavorite: currentUserId && mongoose.isValidObjectId(currentUserId)
+      ? !!(await FavoriteArtist.exists({
+          user: new mongoose.Types.ObjectId(String(currentUserId)),
+          artist: artistUserId,
+        }))
+      : false,
+
     // Availability Preview (Screen 15.png)
     availability: {
       selectedDate: selectedDateStr,
@@ -1995,7 +2004,129 @@ const getArtistDetails = async (artistIdParam: string, query: IGetArtistDetailsQ
   }
 }
 
+
+/**
+ * Toggle Save / Favorite an Artist (Customer Wishlist)
+ */
+const toggleFavoriteArtist = async (
+  userId: string | mongoose.Types.ObjectId,
+  artistIdParam: string
+) => {
+  if (!mongoose.isValidObjectId(artistIdParam)) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid artist ID.')
+  }
+  const targetId = new mongoose.Types.ObjectId(artistIdParam)
+
+  const artistProfile = await ArtistProfile.findOne({
+    $or: [{ _id: targetId }, { user: targetId }],
+  })
+  if (!artistProfile) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Artist not found.')
+  }
+  const artistUserId = artistProfile.user
+
+  const customerId = new mongoose.Types.ObjectId(String(userId))
+  if (String(customerId) === String(artistUserId)) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'You cannot favorite yourself.')
+  }
+
+  const existing = await FavoriteArtist.findOne({ user: customerId, artist: artistUserId })
+
+  if (existing) {
+    await FavoriteArtist.deleteOne({ _id: existing._id })
+    return { isFavorite: false, message: 'Artist removed from favorites' }
+  } else {
+    await FavoriteArtist.create({ user: customerId, artist: artistUserId })
+    return { isFavorite: true, message: 'Artist saved to favorites' }
+  }
+}
+
+/**
+ * Get logged-in customer's saved / favorite artists list
+ */
+const getMyFavoriteArtists = async (
+  userId: string | mongoose.Types.ObjectId,
+  query: { page?: number | string; limit?: number | string } = {}
+) => {
+  const page = Math.max(1, Number(query.page) || 1)
+  const limit = Math.max(1, Math.min(100, Number(query.limit) || 20))
+  const skip = (page - 1) * limit
+
+  const customerId = new mongoose.Types.ObjectId(String(userId))
+
+  const [favorites, total] = await Promise.all([
+    FavoriteArtist.find({ user: customerId })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    FavoriteArtist.countDocuments({ user: customerId }),
+  ])
+
+  const artistUserIds = favorites.map((f) => f.artist)
+
+  const [profiles, services, reviewStats] = await Promise.all([
+    ArtistProfile.find({
+      user: { $in: artistUserIds },
+      isPenaltyRequired: { $ne: true },
+    })
+      .populate('user', 'name email profileImage phone')
+      .lean(),
+    ArtistServices.find({
+      artist: { $in: artistUserIds },
+      isActive: true,
+    })
+      .populate('category', 'name icon')
+      .lean(),
+    Review.aggregate<{ _id: mongoose.Types.ObjectId; avgRating: number; totalReviews: number }>([
+      { $match: { artist: { $in: artistUserIds }, isActive: true } },
+      { $group: { _id: '$artist', avgRating: { $avg: '$rating' }, totalReviews: { $sum: 1 } } },
+    ]),
+  ])
+
+  const reviewMap = new Map(reviewStats.map((r) => [String(r._id), r]))
+
+  const data = profiles.map((p) => {
+    const artistUserIdStr = String(p.user?._id || p.user)
+    const artistServices = services.filter((s) => String(s.artist) === artistUserIdStr)
+    const minPrice =
+      artistServices.length > 0
+        ? Math.min(...artistServices.map((s) => s.price || 0))
+        : 0
+    const primaryCategory = (artistServices[0] as any)?.category?.name || 'Beauty & Wellness'
+    const stat = reviewMap.get(artistUserIdStr)
+
+    return {
+      artistId: p.user?._id || p.user,
+      profileId: p._id,
+      name: (p.user as any)?.name || p.businessName,
+      profileImage: (p.user as any)?.profileImage || null,
+      businessName: p.businessName,
+      bio: p.professionalBio || '',
+      rating: stat ? Number(stat.avgRating.toFixed(1)) : 0,
+      totalReviews: stat ? stat.totalReviews : 0,
+      startingPrice: minPrice,
+      primaryCategory,
+      travelRadius: p.travelRadius,
+      isFavorite: true,
+      servicesCount: artistServices.length,
+    }
+  })
+
+  return {
+    meta: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+    data,
+  }
+}
+
 export const artistProfileServices = {
+  toggleFavoriteArtist,
+  getMyFavoriteArtists,
   createArtistProfile,
   updateArtistProfile,
   getAllArtistProfile,

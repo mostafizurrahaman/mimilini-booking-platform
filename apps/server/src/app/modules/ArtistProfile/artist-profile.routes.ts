@@ -152,6 +152,20 @@ router.get(
   artistProfileControllers.getAllArtistProfile
 )
 
+// Favorite Artists (Customer Wishlist):
+router.get(
+  '/favorites/my',
+  auth(AuthRoles.CUSTOMER),
+  artistProfileControllers.getMyFavoriteArtists
+)
+
+router.post(
+  '/favorites/:artistId',
+  auth(AuthRoles.CUSTOMER),
+  validateRequest(artistProfileValidations.toggleFavoriteArtistSchema),
+  artistProfileControllers.toggleFavoriteArtist
+)
+
 // ?? Get Single Artist Profile View (Screen 15.png):
 router.get(
   '/:artistId',

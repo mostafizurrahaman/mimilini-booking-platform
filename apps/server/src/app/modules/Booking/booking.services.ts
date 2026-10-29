@@ -1409,9 +1409,31 @@ const getMyBookings = async (
     filter.customer = user._id
   }
 
-  if (query.tab) {
+  if (query.status && query.status.toLowerCase() !== 'all') {
+    const st = query.status.toLowerCase()
+    if (st === 'accepted') {
+      filter.status = BOOKING_STATUS.ACCEPTED
+    } else if (st === 'pending') {
+      filter.status = { $in: [BOOKING_STATUS.REQUESTED, BOOKING_STATUS.ACCEPTED] }
+    } else if (st === 'requested' || st === 'new_requests') {
+      filter.status = BOOKING_STATUS.REQUESTED
+    } else if (st === 'confirmed') {
+      filter.status = { $in: [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.RESCHEDULED] }
+    } else if (st === 'in_progress' || st === 'in progress') {
+      filter.status = BOOKING_STATUS.IN_PROGRESS
+    } else if (st === 'completed') {
+      filter.status = BOOKING_STATUS.COMPLETED
+    } else if (st === 'cancelled' || st === 'canceled') {
+      filter.status = { $in: [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.DECLINED, BOOKING_STATUS.NO_SHOW] }
+    } else {
+      filter.status = query.status
+    }
+  } else if (query.tab) {
     const todayStart = moment().startOf('day').toDate()
     switch (query.tab) {
+      case 'accepted':
+        filter.status = BOOKING_STATUS.ACCEPTED
+        break
       case 'upcoming':
         filter.bookingDate = { $gte: todayStart }
         filter.status = {
@@ -1435,19 +1457,20 @@ const getMyBookings = async (
         }
         break
       default:
-        if (query.status) {
-          filter.status = query.status
-        }
         break
     }
-  } else if (query.status) {
-    filter.status = query.status
   }
 
-  const sortOrder: any =
-    query.tab === 'upcoming' || query.tab === 'new_requests'
-      ? { bookingDate: 1, startTime: 1 }
-      : { bookingDate: -1, startTime: -1 }
+  const isAscendingSort =
+    query.tab === 'upcoming' ||
+    query.tab === 'new_requests' ||
+    query.tab === 'accepted' ||
+    query.status?.toLowerCase() === 'accepted' ||
+    query.status?.toLowerCase() === 'requested'
+
+  const sortOrder: any = isAscendingSort
+    ? { bookingDate: 1, startTime: 1 }
+    : { bookingDate: -1, startTime: -1 }
 
   const [bookings, total] = await Promise.all([
     Booking.find(filter)
@@ -3493,7 +3516,7 @@ const getArtistInboxSummary = async (user: IUser) => {
   const todayStart = moment().startOf('day').toDate()
   const todayEnd = moment().endOf('day').toDate()
 
-  const [todayStats, pendingCount, upcomingCount] = await Promise.all([
+  const [todayStats, pendingCount, acceptedCount, upcomingCount] = await Promise.all([
     Booking.aggregate([
       {
         $match: {
@@ -3537,6 +3560,10 @@ const getArtistInboxSummary = async (user: IUser) => {
     Booking.countDocuments({
       artist: artistId,
       status: BOOKING_STATUS.REQUESTED,
+    }),
+    Booking.countDocuments({
+      artist: artistId,
+      status: BOOKING_STATUS.ACCEPTED,
     }),
     Booking.countDocuments({
       artist: artistId,
@@ -3989,6 +4016,9 @@ const getAllBookingsAdmin = async (query: {
   if (query.status && query.status.toLowerCase() !== 'all') {
     const st = query.status.toLowerCase()
     switch (st) {
+      case 'accepted':
+        filter.status = BOOKING_STATUS.ACCEPTED
+        break
       case 'pending':
         filter.status = { $in: [BOOKING_STATUS.REQUESTED, BOOKING_STATUS.ACCEPTED] }
         break

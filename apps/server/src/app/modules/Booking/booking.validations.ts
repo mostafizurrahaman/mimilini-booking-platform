@@ -110,9 +110,10 @@ const rescheduleResponseSchema = z.object({
 const getMyBookingsQuerySchema = z.object({
   query: z.object({
     tab: enumString(
-      ['all', 'upcoming', 'pending', 'new_requests', 'completed', 'cancelled'],
+      ['all', 'upcoming', 'pending', 'new_requests', 'completed', 'cancelled', 'accepted'],
       'Tab'
-    ),
+    ).optional(),
+    status: optionalString('Status'),
     page: optionalNumber('Page'),
     limit: optionalNumber('Limit'),
   }),
