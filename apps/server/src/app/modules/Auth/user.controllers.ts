@@ -236,7 +236,31 @@ const refreshToken = catchAsync(async (req, res) => {
   })
 })
 
+
+// 14. Logout :
+const logout = catchAsync(async (req, res) => {
+  const fcmToken = req.body?.fcmToken
+  const userId = req.user?._id
+
+  await AuthServices.logout(userId ? String(userId) : undefined, fcmToken)
+
+  res.clearCookie('refreshToken', {
+    httpOnly: true,
+    secure: configs.nodeEnv === 'production',
+    sameSite: 'lax',
+    path: '/',
+  })
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'Logged out successfully',
+    data: null,
+  })
+})
+
 export const AuthController = {
+  logout,
   signUp,
   resendSignupOTP,
   verifySignupOTP,

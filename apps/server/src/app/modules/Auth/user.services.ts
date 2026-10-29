@@ -1,3 +1,4 @@
+import { notificationServices } from '../Notification/notification.services'
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   AuthPermission,
@@ -373,6 +374,15 @@ const login = async (payload: ILoginType) => {
     configs.jwt.refreshToken.expiresIn
   )
 
+  
+  if (payload.fcmToken) {
+    await notificationServices.registerFcmToken(user._id, {
+      fcmToken: payload.fcmToken,
+      deviceType: payload.deviceType as any,
+      deviceName: payload.deviceName ?? null,
+    })
+  }
+
   return {
     refreshToken,
     accessToken,
@@ -450,6 +460,15 @@ const artistLogin = async (payload: ILoginType) => {
     ? `You are logged in successfully. Please complete your profile.`
     : 'You are logged in successfully.'
 
+  
+  if (payload.fcmToken) {
+    await notificationServices.registerFcmToken(user._id, {
+      fcmToken: payload.fcmToken,
+      deviceType: payload.deviceType as any,
+      deviceName: payload.deviceName ?? null,
+    })
+  }
+
   return {
     message,
     refreshToken,
@@ -523,6 +542,15 @@ const adminLogin = async (payload: ILoginType) => {
     configs.jwt.refreshToken.secret,
     configs.jwt.refreshToken.expiresIn
   )
+
+  
+  if (payload.fcmToken) {
+    await notificationServices.registerFcmToken(user._id, {
+      fcmToken: payload.fcmToken,
+      deviceType: payload.deviceType as any,
+      deviceName: payload.deviceName ?? null,
+    })
+  }
 
   return {
     refreshToken,
@@ -1183,7 +1211,17 @@ const refreshToken = async (token: string) => {
   }
 }
 
+
+// Logout :
+const logout = async (userId?: string, fcmToken?: string) => {
+  if (fcmToken) {
+    await notificationServices.removeFcmToken(userId || '', fcmToken)
+  }
+  return { success: true }
+}
+
 export const AuthServices = {
+  logout,
   signUp,
   resendSignupOTP,
   verifySignupOTP,

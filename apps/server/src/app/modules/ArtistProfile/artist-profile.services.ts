@@ -1386,7 +1386,7 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
       rating: {
         $ifNull: [
           { $round: [{ $arrayElemAt: ['$reviewStats.avgRating', 0] }, 1] },
-          5.0,
+          0,
         ],
       },
       reviewCount: {
@@ -1746,7 +1746,7 @@ const getArtistDetails = async (artistIdParam: string, query: IGetArtistDetailsQ
 
   const avgRating = reviewStats[0]?.avgRating
     ? Math.round(reviewStats[0].avgRating * 10) / 10
-    : 5.0
+    : 0
   const totalReviews = reviewStats[0]?.totalCount || 0
 
   const formattedRecentReviews = recentReviews.map((rev: any) => {

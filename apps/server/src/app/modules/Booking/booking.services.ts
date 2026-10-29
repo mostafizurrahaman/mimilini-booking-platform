@@ -1,3 +1,4 @@
+import { notificationServices } from '../Notification/notification.services'
 import {
   Account,
   Address,
@@ -8,6 +9,7 @@ import {
   Availability,
   Booking,
   BOOKING_STATUS,
+  NOTIFICATION_TYPE,
   BookingHistory,
   BOOKING_TIMELINE_MILESTONE,
   PaymentMethod,
@@ -743,6 +745,24 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     })
   }
 
+  // Notify artist of incoming request
+  try {
+    await notificationServices.sendNotification({
+      recipient: booking.artist,
+      sender: user._id,
+      senderName: user.name,
+      senderPicture: user.profileImage,
+      title: 'New Booking Request',
+      message: `${user.name} has requested a new booking #${booking.bookingNumber}`,
+      type: NOTIFICATION_TYPE.BOOKING_REQUESTED,
+      bookingId: booking._id,
+      bookingNumber: booking.bookingNumber,
+      actionUrl: `/bookings/${booking._id}`,
+    })
+  } catch (notifErr) {
+    logger.warn('[Booking Notification] Failed to notify artist:', notifErr)
+  }
+
   return {
     booking,
     clientSecret,
@@ -1278,6 +1298,23 @@ const artistCancelBooking = async (
     note: booking.cancellationReason,
   })
 
+  try {
+    await notificationServices.sendNotification({
+      recipient: (booking.customer as any)._id || booking.customer,
+      sender: user._id,
+      senderName: user.name,
+      senderPicture: user.profileImage,
+      title: 'Booking Cancelled by Artist',
+      message: `${user.name} has cancelled booking #${booking.bookingNumber}. Platform credit has been issued.`,
+      type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
+      bookingId: booking._id,
+      bookingNumber: booking.bookingNumber,
+      actionUrl: `/bookings/${booking._id}`,
+    })
+  } catch (notifErr) {
+    logger.warn('[Booking Notification] Failed to notify customer:', notifErr)
+  }
+
   return {
     message: artistCancelMessage,
     booking,
@@ -1418,14 +1455,29 @@ const getMyBookings = async (
       .skip(skip)
       .limit(limit)
       .populate('service', 'name durationMinutes price')
-      .populate('artist', 'name profilePicture')
-      .populate('customer', 'name profilePicture phone')
+      .populate('artist', 'name profileImage profilePicture')
+      .populate('customer', 'name profileImage profilePicture phone')
       .lean(),
     Booking.countDocuments(filter),
   ])
 
+  const bookingIds = bookings.map((b: any) => b._id)
+  const bookingReviews =
+    bookingIds.length > 0
+      ? await Review.find({ booking: { $in: bookingIds }, isActive: true })
+          .select('_id booking rating comment tags images beforeImage afterImage createdAt')
+          .lean()
+      : []
+
+  const reviewByBookingId = new Map(bookingReviews.map((r: any) => [String(r.booking), r]))
+
+  const enrichedBookings = bookings.map((b: any) => ({
+    ...b,
+    review: reviewByBookingId.get(String(b._id)) || null,
+  }))
+
   return {
-    bookings,
+    bookings: enrichedBookings,
     meta: {
       page,
       limit,
@@ -1441,8 +1493,8 @@ const getMyBookings = async (
 const getBookingById = async (user: IUser, bookingId: string) => {
   const booking = await Booking.findById(bookingId)
     .populate('service')
-    .populate('artist', 'name email profilePicture phone')
-    .populate('customer', 'name email profilePicture phone')
+    .populate('artist', 'name email profileImage profilePicture phone')
+    .populate('customer', 'name email profileImage profilePicture phone')
     .populate('address')
     .populate('promoCode', 'promotionName promoCode discountType discountValue')
 
@@ -1474,7 +1526,26 @@ const getBookingById = async (user: IUser, bookingId: string) => {
     await issueArtistRctiStripeInvoice(booking)
   }
 
-  return booking
+  const [artistReviews, bookingReview] = await Promise.all([
+    Review.find({ artist: booking.artist._id, isActive: true }).select('rating').lean(),
+    Review.findOne({ booking: booking._id, isActive: true }).lean(),
+  ])
+
+  const reviewsCount = artistReviews.length
+  const artistRating = reviewsCount
+    ? Number(
+        (artistReviews.reduce((acc, r) => acc + (r.rating || 0), 0) / reviewsCount).toFixed(1)
+      )
+    : 0
+
+  const bookingObj = booking.toObject() as Record<string, any>
+  if (bookingObj.artist && typeof bookingObj.artist === 'object') {
+    bookingObj.artist.rating = artistRating
+    bookingObj.artist.reviewsCount = reviewsCount
+  }
+  bookingObj.review = bookingReview || null
+
+  return bookingObj
 }
 
 /**
@@ -2424,6 +2495,24 @@ const acceptBooking = async (user: IUser, bookingId: string) => {
     performedByRole: (user.role as any) || 'artist',
   })
 
+  // Notify customer
+  try {
+    await notificationServices.sendNotification({
+      recipient: booking.customer,
+      sender: user._id,
+      senderName: user.name,
+      senderPicture: user.profileImage,
+      title: 'Booking Accepted',
+      message: `${user.name} has accepted your booking #${booking.bookingNumber}`,
+      type: NOTIFICATION_TYPE.BOOKING_ACCEPTED,
+      bookingId: booking._id,
+      bookingNumber: booking.bookingNumber,
+      actionUrl: `/bookings/${booking._id}`,
+    })
+  } catch (notifErr) {
+    logger.warn('[Booking Notification] Failed to notify customer:', notifErr)
+  }
+
   return booking
 }
 
@@ -2756,6 +2845,24 @@ const declineBooking = async (user: IUser, bookingId: string, reason?: string) =
     note: reason,
   })
 
+  // Notify customer
+  try {
+    await notificationServices.sendNotification({
+      recipient: booking.customer,
+      sender: user._id,
+      senderName: user.name,
+      senderPicture: user.profileImage,
+      title: 'Booking Declined',
+      message: `${user.name} could not accept booking #${booking.bookingNumber}${reason ? ': ' + reason : ''}`,
+      type: NOTIFICATION_TYPE.BOOKING_DECLINED,
+      bookingId: booking._id,
+      bookingNumber: booking.bookingNumber,
+      actionUrl: `/bookings/${booking._id}`,
+    })
+  } catch (notifErr) {
+    logger.warn('[Booking Notification] Failed to notify customer:', notifErr)
+  }
+
   return booking
 }
 
@@ -2838,6 +2945,24 @@ const completeBooking = async (
       proofPhotosCount: proofPhotoUrls.length,
     },
   })
+
+  // Notify customer with review prompt
+  try {
+    await notificationServices.sendNotification({
+      recipient: booking.customer,
+      sender: user._id,
+      senderName: user.name,
+      senderPicture: user.profileImage,
+      title: 'Order complete',
+      message: `Your order #${booking.bookingNumber} is complete. Give a short review!`,
+      type: NOTIFICATION_TYPE.ORDER_COMPLETE,
+      bookingId: booking._id,
+      bookingNumber: booking.bookingNumber,
+      actionUrl: `/reviews/write?bookingId=${booking._id}`,
+    })
+  } catch (notifErr) {
+    logger.warn('[Booking Notification] Failed to notify customer:', notifErr)
+  }
 
   return booking
 }
@@ -3222,6 +3347,26 @@ const requestReschedule = async (
   }
 
   await booking.save()
+
+  // Notify opponent
+  try {
+    const opponentId = isArtist ? booking.customer : booking.artist
+    await notificationServices.sendNotification({
+      recipient: opponentId,
+      sender: user._id,
+      senderName: user.name,
+      senderPicture: user.profileImage,
+      title: 'Reschedule Requested',
+      message: `${user.name} requested to reschedule booking #${booking.bookingNumber} to ${payload.newDate} at ${normalizedNewStartTime}`,
+      type: NOTIFICATION_TYPE.BOOKING_RESCHEDULED,
+      bookingId: booking._id,
+      bookingNumber: booking.bookingNumber,
+      actionUrl: `/bookings/${booking._id}`,
+    })
+  } catch (notifErr) {
+    logger.warn('[Booking Notification] Failed to notify opponent of reschedule request:', notifErr)
+  }
+
   return booking
 }
 
@@ -3314,6 +3459,29 @@ const respondReschedule = async (
   }
 
   await booking.save()
+
+  // Notify opponent of reschedule decision
+  try {
+    const opponentId = isCustomer ? booking.artist : booking.customer
+    await notificationServices.sendNotification({
+      recipient: opponentId,
+      sender: user._id,
+      senderName: user.name,
+      senderPicture: user.profileImage,
+      title: payload.action === 'accept' ? 'Reschedule Accepted' : 'Reschedule Declined',
+      message:
+        payload.action === 'accept'
+          ? `${user.name} accepted the reschedule request for booking #${booking.bookingNumber}`
+          : `${user.name} declined the reschedule request for booking #${booking.bookingNumber}`,
+      type: NOTIFICATION_TYPE.BOOKING_RESCHEDULED,
+      bookingId: booking._id,
+      bookingNumber: booking.bookingNumber,
+      actionUrl: `/bookings/${booking._id}`,
+    })
+  } catch (notifErr) {
+    logger.warn('[Booking Notification] Failed to notify opponent of reschedule decision:', notifErr)
+  }
+
   return booking
 }
 
@@ -4094,7 +4262,7 @@ const getBookingDetailsAdmin = async (bookingId: string) => {
   const totalReviews = reviews.length
   const avgRating = totalReviews
     ? Number((reviews.reduce((acc, r) => acc + (r.rating || 0), 0) / totalReviews).toFixed(1))
-    : 5.0
+    : 0
 
   const location =
     booking.serviceLocationSnapshot?.address ||

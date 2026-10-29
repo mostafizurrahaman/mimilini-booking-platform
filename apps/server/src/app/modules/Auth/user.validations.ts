@@ -16,10 +16,24 @@ const signUserSchema = z.object({
 
 // 2. Login
 const loginSchema = z.object({
-  body: signUserSchema.shape.body.pick({
-    email: true,
-    password: true,
-  }),
+  body: signUserSchema.shape.body
+    .pick({
+      email: true,
+      password: true,
+    })
+    .extend({
+      fcmToken: optionalString('fcmToken'),
+      deviceType: optionalString('deviceType'),
+      deviceName: optionalString('deviceName'),
+    }),
+})
+
+const logoutSchema = z.object({
+  body: z
+    .object({
+      fcmToken: optionalString('fcmToken'),
+    })
+    .optional(),
 })
 
 const resendSignupOtpSchema = z.object({
@@ -126,6 +140,7 @@ export const AuthValidations = {
   updateProfileSchema,
   refreshTokenSchema,
   updateUserStatusSchema,
+  logoutSchema,
 }
 
 export type ISignUpSchemaType = z.infer<typeof signUserSchema.shape.body>

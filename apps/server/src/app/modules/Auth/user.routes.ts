@@ -122,4 +122,12 @@ router.post(
   AuthController.refreshToken
 )
 
+
+// 14. Logout:
+router.post(
+  '/logout',
+  validateRequest(AuthValidations.logoutSchema),
+  AuthController.logout
+)
+
 export const authRoutes = router

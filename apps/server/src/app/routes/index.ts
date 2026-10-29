@@ -20,6 +20,8 @@ import { walletRoutes } from '@app/modules/Wallet/wallet.routes'
 import { bookingRoutes } from '@app/modules/Booking/booking.routes'
 import { penaltyRoutes } from '@app/modules/Penalty/penalty.routes'
 import { chatRoutes } from '@app/modules/Chat/chat.routes'
+import { reviewRoutes } from '@app/modules/Review/review.routes'
+import { notificationRoutes } from '@app/modules/Notification/notification.routes'
 import express, { Router } from 'express'
 
 const router: Router = express.Router()
@@ -114,6 +116,18 @@ const routes = [
   {
     path: '/chats',
     route: chatRoutes,
+  },
+  {
+    path: '/reviews',
+    route: reviewRoutes,
+  },
+  // {
+  //   path: '/notifications',
+  //   route: notificationRoutes,
+  // },
+  {
+    path: '/notifications',
+    route: notificationRoutes,
   },
 ]
 

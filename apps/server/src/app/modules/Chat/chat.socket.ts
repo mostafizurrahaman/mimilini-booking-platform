@@ -226,6 +226,10 @@ export const initSocketServer = (httpServer: HttpServer): SocketIOServer => {
 
     if (user.role === AuthRoles.ADMIN || user.role === AuthRoles.SUPER_ADMIN) {
       socket.join('role:admin')
+    } else if (user.role === AuthRoles.ARTIST) {
+      socket.join('role:artist')
+    } else if (user.role === AuthRoles.CUSTOMER) {
+      socket.join('role:customer')
     }
 
     logger.info(`🔌 Socket connected: ${user.name} (${user.role}) [${socket.id}]`)
