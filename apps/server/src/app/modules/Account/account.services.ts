@@ -34,11 +34,13 @@ const connectStripeAccount = async (user: IUser) => {
   }
 
   const stripeAccount = await createStripeAccount(user, artistProfile)
+  const country = (stripeAccount as any).country || 'AU'
+  const defaultCurrency = (stripeAccount as any).default_currency || 'aud'
 
   await Account.create({
     account: stripeAccount.id,
-    country: stripeAccount.country!,
-    currency: stripeAccount.default_currency!,
+    country,
+    currency: defaultCurrency,
     user: user._id,
     detailsSubmitted: false,
     chargesEnabled: false,

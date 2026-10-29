@@ -25,6 +25,7 @@ export interface IUser extends Document {
 
   // Stripe related:
   isStripeConnected: boolean
+  stripeCustomerId?: string
 
   // reason:
   blockedReason?: string | undefined

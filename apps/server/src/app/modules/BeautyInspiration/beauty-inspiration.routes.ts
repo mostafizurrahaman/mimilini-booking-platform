@@ -32,7 +32,7 @@ router.patch(
 
 router.get(
   '/all',
-  auth(),
+  // auth(),
   validateRequest(beautyInspirationValidations.getAllBeautyInspirationSchema),
   beautyInspirationControllers.getAllBeautyInspiration
 )

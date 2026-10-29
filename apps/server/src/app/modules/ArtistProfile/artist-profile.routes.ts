@@ -105,10 +105,58 @@ router.patch(
   artistProfileControllers.addNewPortfolioImage
 )
 
+// ?? Remove Portfolio image:
+router.patch(
+  '/remove-portfolio',
+  auth(AuthRoles.ARTIST),
+  validateRequest(artistProfileValidations.removePortfolioSchema),
+  artistProfileControllers.removePortfolioImage
+)
+
+router.delete(
+  '/remove-portfolio',
+  auth(AuthRoles.ARTIST),
+  validateRequest(artistProfileValidations.removePortfolioSchema),
+  artistProfileControllers.removePortfolioImage
+)
+
+// ?? Add Certification (one by one):
+router.patch(
+  '/add-certification',
+  auth(AuthRoles.ARTIST),
+  multerFactory({
+    category: 'image',
+    maxSizeInMB: 10,
+  }).single('certificate'),
+  validateRequest(artistProfileValidations.addCertificationSchema),
+  artistProfileControllers.addCertification
+)
+
+// ?? Remove Certification (one by one):
+router.delete(
+  '/remove-certification', 
+  auth(AuthRoles.ARTIST),
+  validateRequest(artistProfileValidations.removeCertificationSchema),
+  artistProfileControllers.removeCertification
+)
+
+router.get(
+  '/find',
+  validateRequest(artistProfileValidations.findAvailableArtistsSchema),
+  artistProfileControllers.findAvailableArtists
+)
+
 router.get(
   '/all',
   validateRequest(artistProfileValidations.getAllArtistProfileSchema),
   artistProfileControllers.getAllArtistProfile
+)
+
+// ?? Get Single Artist Profile View (Screen 15.png):
+router.get(
+  '/:artistId',
+  validateRequest(artistProfileValidations.getArtistDetailsSchema),
+  artistProfileControllers.getArtistDetails
 )
 
 export const artistProfileRoutes = router

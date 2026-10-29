@@ -69,6 +69,13 @@ const envSchema = z.object({
   GOOGLE_SHEET_ID: z.string().default('15wdGSXcReglZ912QdfhwBR-n5SSl1cnukPhMyMolLRw'),
   GOOGLE_SHEET_NAME: z.string().optional(),
   GOOGLE_SERVICE_ACCOUNT_KEY_PATH: z.string().optional(),
+
+  // Firebase Cloud Messaging (FCM)
+  FIREBASE_PROJECT_ID: z.string().optional(),
+  FIREBASE_CLIENT_EMAIL: z.string().optional(),
+  FIREBASE_PRIVATE_KEY: z.string().optional(),
+  FIREBASE_SERVICE_ACCOUNT_KEY_PATH: z.string().optional(),
+  FIREBASE_SERVICE_ACCOUNT_BASE64: z.string().optional(),
 })
 
 // 3. Validate process.env
@@ -158,6 +165,14 @@ const configs = {
     sheetId: env.GOOGLE_SHEET_ID,
     sheetName: env.GOOGLE_SHEET_NAME,
     keyPath: env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH,
+  },
+
+  firebase: {
+    projectId: env.FIREBASE_PROJECT_ID,
+    clientEmail: env.FIREBASE_CLIENT_EMAIL,
+    privateKey: env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    serviceAccountKeyPath: env.FIREBASE_SERVICE_ACCOUNT_KEY_PATH,
+    serviceAccountBase64: env.FIREBASE_SERVICE_ACCOUNT_BASE64,
   },
 } as const
 

@@ -630,8 +630,6 @@ const getUserDetailsById = async (id: string) => {
   return user[0]
 }
 
-
-
 export const userServices = {
   getAllUsers,
   getUserOverview,

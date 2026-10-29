@@ -111,64 +111,85 @@ export const verifyWebHookSignature = (secretKey: string, req: Request): Stripe.
   return event
 }
 
-// ?? Configure Stripe check session :
+// ?? Create stripe customer:
+export const createStripeCustomer = async ({
+  name,
+  email,
+  phone,
+}: {
+  email: string
+  name: string
+  phone: string
+}) => {
+  const customer = await stripe.customers.create({
+    name,
+    email,
+    phone,
+  })
 
+  return customer.id
+}
+
+// ?? Configure  Payment intent:
+export const customerPaymentIntent = async (customerId: string) => {
+  const result = await stripe.setupIntents.create({
+    customer: customerId,
+    automatic_payment_methods: { enabled: true },
+    usage: 'off_session',
+  })
+
+  return result
+}
+
+// ?? Retrieve Payment Method Info:
+export const retrievedPaymentMethodAndAttach = async (
+  paymentMethodId: string,
+  customerId: string
+) => {
+  const paymentMethod = await stripe.paymentMethods.retrieve(paymentMethodId)
+
+  if (!paymentMethod || !paymentMethod.card) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid payment method or not a card.')
+  }
+
+  // Attach to customer:
+  await stripe.paymentMethods.attach(paymentMethod.id, {
+    customer: customerId,
+  })
+
+  return paymentMethod
+}
+
+// ?? Configure Stripe check session :
 export const stripeCheckoutSession = async ({
   name,
   unit_amount,
-  campaignId,
-  campaignCode,
-  brandId,
   expiresAt,
   metadata,
 }: {
   name: string
   unit_amount: number
-  campaignId?: Types.ObjectId
-  brandId?: Types.ObjectId
-  campaignCode?: string
   expiresAt: number
   metadata: Stripe.MetadataParam
 }) => {
-  // ?? Success url :
-  // const successUrl =
-  //  success_url: `${configs.site.clientUrl}&brandId=${brandId}`,
-  //   cancel_url: `${configs.site.clientUrl}/payment/cancel?campaignId=${campaignId?.toString()}&campaignCode=${campaignCode}&brandId=${brandId}`,
-
-  const apiSuccessPath = brandId
-    ? `/brand-builder/success?session_id={CHECKOUT_SESSION_ID}&brandId=${brandId}`
-    : `/payment/success?session_id={CHECKOUT_SESSION_ID}&campaignId=${campaignId?.toString()}&campaignCode=${campaignCode}`
-  const apiCancelPath = brandId
-    ? `/cancel?session_id={CHECKOUT_SESSION_ID}&brandId=${brandId}`
-    : `/payment/cancel?session_id={CHECKOUT_SESSION_ID}&campaignId=${campaignId?.toString()}&campaignCode=${campaignCode}`
-
   const session = await stripe.checkout.sessions.create({
-    payment_method_types: ['card'],
     mode: 'payment',
     line_items: [
       {
         price_data: {
-          currency: 'usd',
+          currency: 'aud',
           product_data: {
             name,
           },
-
-          unit_amount, // $50.00
+          unit_amount,
         },
         quantity: 1,
       },
     ],
     expires_at: expiresAt,
-    metadata: {
-      ...metadata,
-    },
-    payment_intent_data: {
-      metadata: {
-        ...metadata,
-      },
-    },
-    success_url: `${configs.site.clientUrl}${apiSuccessPath}`,
-    cancel_url: `${configs.site.clientUrl}${apiCancelPath}`,
+    metadata,
+    success_url: `${configs.stripe.successUrl}?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: configs.stripe.cancelUrl,
   })
 
   return session
@@ -178,7 +199,6 @@ export const stripeCheckoutSessionWithApplicationFee = async ({
   name,
   unit_amount,
   application_fee,
-
   metadata,
   destinationAccountId,
 }: {
@@ -190,36 +210,30 @@ export const stripeCheckoutSessionWithApplicationFee = async ({
 }) => {
   const expiresAtSeconds = Math.floor(Date.now() / 1000) + 30 * 60
   const session = await stripe.checkout.sessions.create({
-    payment_method_types: ['card'],
     mode: 'payment',
     line_items: [
       {
         price_data: {
-          currency: 'usd',
+          currency: 'aud',
           product_data: {
             name,
           },
-
-          unit_amount, // $50.00
+          unit_amount,
         },
         quantity: 1,
       },
     ],
-    metadata: {
-      ...metadata,
-    },
+    metadata,
     expires_at: expiresAtSeconds,
     payment_intent_data: {
-      metadata: {
-        ...metadata,
-      },
+      metadata,
       application_fee_amount: application_fee,
       transfer_data: {
         destination: destinationAccountId,
       },
     },
-    success_url: `${configs.site.clientUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${configs.site.clientUrl}/payment/cancel`,
+    success_url: `${configs.stripe.successUrl}?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: configs.stripe.cancelUrl,
   })
 
   return session
@@ -244,4 +258,39 @@ export const createStripePayout = async (
       idempotencyKey,
     }
   )
+}
+
+// ? Get or create Stripe Tax Rate for Australian GST:
+export const getOrCreateStripeGstTaxRate = async (
+  gstPercentage: number = 10
+): Promise<Stripe.TaxRate> => {
+  const taxRates = await stripe.taxRates.list({ active: true, limit: 100 })
+  const existing = taxRates.data.find(
+    (rate) =>
+      rate.country === 'AU' &&
+      rate.percentage === gstPercentage &&
+      rate.display_name.toUpperCase() === 'GST'
+  )
+
+  if (existing) {
+    return existing
+  }
+
+  const taxRate = await stripe.taxRates.create({
+    display_name: 'GST',
+    description: `Australian Goods and Services Tax (${gstPercentage}%)`,
+    jurisdiction: 'AU',
+    country: 'AU',
+    percentage: gstPercentage,
+    inclusive: false,
+    active: true,
+    metadata: {
+      type: 'GST',
+      country: 'AU',
+      jurisdiction: 'AU',
+      source: 'PlatformSettings',
+    },
+  })
+
+  return taxRate
 }

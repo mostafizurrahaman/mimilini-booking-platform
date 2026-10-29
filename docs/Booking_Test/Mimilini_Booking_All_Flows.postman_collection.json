@@ -1,0 +1,540 @@
+{
+	"info": {
+		"_postman_id": "mimilini-booking-complete-suite-27",
+		"name": "Mimilini Booking Platform - Complete 27 APIs Test Suite",
+		"description": "Comprehensive Postman test collection covering all 27 Booking endpoints across 6 realistic testing flows.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Flow 1: Standard Booking & Happy Path Completion",
+			"item": [
+				{
+					"name": "1.1 Checkout Financial Preview",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}", "type": "text" },
+							{ "key": "Content-Type", "value": "application/json", "type": "text" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"artist\": \"{{artistId}}\",\n  \"service\": \"{{serviceId}}\",\n  \"guestCount\": 1,\n  \"visitType\": \"home_visit\",\n  \"address\": \"{{addressId}}\",\n  \"usePlatformCredit\": false\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/bookings/preview",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "preview"]
+						}
+					}
+				},
+				{
+					"name": "1.2 Create Booking Request (Non-Quick Booking)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"const jsonData = pm.response.json();",
+									"if (jsonData.data && jsonData.data.booking) {",
+									"    pm.environment.set('bookingId', jsonData.data.booking._id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}", "type": "text" },
+							{ "key": "Content-Type", "value": "application/json", "type": "text" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"artist\": \"{{artistId}}\",\n  \"service\": \"{{serviceId}}\",\n  \"visitType\": \"home_visit\",\n  \"address\": \"{{addressId}}\",\n  \"bookingDate\": \"2026-11-15\",\n  \"startTime\": \"10:00 AM\",\n  \"guestCount\": 1,\n  \"paymentMethodId\": \"{{paymentMethodId}}\",\n  \"usePlatformCredit\": false\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/bookings",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings"]
+						}
+					}
+				},
+				{
+					"name": "1.3 Artist Inbox Summary",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{artistToken}}", "type": "text" }
+						],
+						"url": {
+							"raw": "{{baseUrl}}/bookings/artist-inbox-summary",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "artist-inbox-summary"]
+						}
+					}
+				},
+				{
+					"name": "1.4 My Bookings List (Customer & Artist)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}", "type": "text" }
+						],
+						"url": {
+							"raw": "{{baseUrl}}/bookings/my-bookings?page=1&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "my-bookings"],
+							"query": [
+								{ "key": "page", "value": "1" },
+								{ "key": "limit", "value": "10" }
+							]
+						}
+					}
+				},
+				{
+					"name": "1.5 Artist Accepts Booking Request",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{artistToken}}", "type": "text" }
+						],
+						"url": {
+							"raw": "{{baseUrl}}/bookings/{{bookingId}}/accept",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "{{bookingId}}", "accept"]
+						}
+					}
+				},
+				{
+					"name": "1.6 Customer Confirms & Pays 20% Deposit",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}", "type": "text" },
+							{ "key": "Content-Type", "value": "application/json", "type": "text" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"paymentMethodId\": \"{{paymentMethodId}}\",\n  \"usePlatformCredit\": false\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/bookings/{{bookingId}}/confirm-payment",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "{{bookingId}}", "confirm-payment"]
+						}
+					}
+				},
+				{
+					"name": "1.7 View Timeline Event History",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}", "type": "text" }
+						],
+						"url": {
+							"raw": "{{baseUrl}}/bookings/{{bookingId}}/timeline",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "{{bookingId}}", "timeline"]
+						}
+					}
+				},
+				{
+					"name": "1.8 Download Customer Stripe Tax Invoice",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}", "type": "text" }
+						],
+						"url": {
+							"raw": "{{baseUrl}}/bookings/{{bookingId}}/invoice",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "{{bookingId}}", "invoice"]
+						}
+					}
+				},
+				{
+					"name": "1.9 Customer Pays 80% Balance",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}", "type": "text" },
+							{ "key": "Content-Type", "value": "application/json", "type": "text" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"paymentMethodId\": \"{{paymentMethodId}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/bookings/{{bookingId}}/pay-balance",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "{{bookingId}}", "pay-balance"]
+						}
+					}
+				},
+				{
+					"name": "1.10 Download 80% Balance Payment Receipt",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}", "type": "text" }
+						],
+						"url": {
+							"raw": "{{baseUrl}}/bookings/{{bookingId}}/receipt",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "{{bookingId}}", "receipt"]
+						}
+					}
+				},
+				{
+					"name": "1.11 Artist Uploads Proof Photos & Completes Service",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{artistToken}}", "type": "text" }
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{ "key": "specialNotes", "value": "Service finished smoothly.", "type": "text" }
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/bookings/{{bookingId}}/complete",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "{{bookingId}}", "complete"]
+						}
+					}
+				},
+				{
+					"name": "1.12 Customer Signs Completion Sign-off",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}", "type": "text" },
+							{ "key": "Content-Type", "value": "application/json", "type": "text" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"customerSignature\": \"Sarah Connor\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/bookings/{{bookingId}}/sign",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "{{bookingId}}", "sign"]
+						}
+					}
+				},
+				{
+					"name": "1.13 Artist Views RCTI Self-Billed Invoice",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{artistToken}}", "type": "text" }
+						],
+						"url": {
+							"raw": "{{baseUrl}}/bookings/{{bookingId}}/artist-invoice",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "{{bookingId}}", "artist-invoice"]
+						}
+					}
+				},
+				{
+					"name": "1.14 Get Single Booking Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}", "type": "text" }
+						],
+						"url": {
+							"raw": "{{baseUrl}}/bookings/{{bookingId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "{{bookingId}}"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Flow 2: Quick Booking & Reschedule Flow",
+			"item": [
+				{
+					"name": "2.1 Quick Booking (Instant Confirmation)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}", "type": "text" },
+							{ "key": "Content-Type", "value": "application/json", "type": "text" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"artist\": \"{{artistId}}\",\n  \"service\": \"{{serviceId}}\",\n  \"visitType\": \"home_visit\",\n  \"address\": \"{{addressId}}\",\n  \"bookingDate\": \"2026-11-20\",\n  \"startTime\": \"02:00 PM\",\n  \"guestCount\": 1,\n  \"paymentMethodId\": \"{{paymentMethodId}}\",\n  \"usePlatformCredit\": false\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/bookings",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings"]
+						}
+					}
+				},
+				{
+					"name": "2.2 Request Reschedule",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}", "type": "text" },
+							{ "key": "Content-Type", "value": "application/json", "type": "text" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"proposedDate\": \"2026-11-22\",\n  \"proposedStartTime\": \"03:00 PM\",\n  \"reason\": \"Schedule shifted by client\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/bookings/{{bookingId}}/reschedule-request",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "{{bookingId}}", "reschedule-request"]
+						}
+					}
+				},
+				{
+					"name": "2.3 Respond to Reschedule",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{artistToken}}", "type": "text" },
+							{ "key": "Content-Type", "value": "application/json", "type": "text" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"accepted\": true\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/bookings/{{bookingId}}/reschedule-respond",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "{{bookingId}}", "reschedule-respond"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Flow 3: Artist Decline Flow",
+			"item": [
+				{
+					"name": "3.1 Artist Declines Booking Request",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{artistToken}}", "type": "text" },
+							{ "key": "Content-Type", "value": "application/json", "type": "text" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Unavailable on selected date due to prior studio commitment.\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/bookings/{{bookingId}}/decline",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "{{bookingId}}", "decline"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Flow 4: Cancellations, Wallet & Penalties",
+			"item": [
+				{
+					"name": "4.1 Customer Cancels (>24h Wallet Credit)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}", "type": "text" },
+							{ "key": "Content-Type", "value": "application/json", "type": "text" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Change of plans\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/bookings/{{bookingId}}/customer-cancel",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "{{bookingId}}", "customer-cancel"]
+						}
+					}
+				},
+				{
+					"name": "4.2 Artist Cancels (Penalty & Hard Block)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{artistToken}}", "type": "text" },
+							{ "key": "Content-Type", "value": "application/json", "type": "text" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Medical emergency\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/bookings/{{bookingId}}/artist-cancel",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "{{bookingId}}", "artist-cancel"]
+						}
+					}
+				},
+				{
+					"name": "4.3 Standard Booking Cancel",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}", "type": "text" },
+							{ "key": "Content-Type", "value": "application/json", "type": "text" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Mutual cancellation\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/bookings/{{bookingId}}/cancel",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "{{bookingId}}", "cancel"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Flow 5: Customer No-Show & Safety Incident Reporting",
+			"item": [
+				{
+					"name": "5.1 Artist Reports Customer No-Show",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{artistToken}}", "type": "text" },
+							{ "key": "Content-Type", "value": "application/json", "type": "text" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Client was absent after waiting 25 minutes.\",\n  \"isSafetyConcern\": false\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/bookings/{{bookingId}}/report-no-show",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "{{bookingId}}", "report-no-show"]
+						}
+					}
+				},
+				{
+					"name": "5.2 Admin Verifies No-Show Claim",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{adminToken}}", "type": "text" },
+							{ "key": "Content-Type", "value": "application/json", "type": "text" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"isApproved\": true,\n  \"adminNotes\": \"Verified artist GPS location and unreturned calls. 100% payout released.\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/bookings/{{bookingId}}/verify-no-show",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "{{bookingId}}", "verify-no-show"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Flow 6: Admin Booking Management & Dashboard",
+			"item": [
+				{
+					"name": "6.1 Admin - Get All Bookings (Filters & KPI Cards)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{adminToken}}", "type": "text" }
+						],
+						"url": {
+							"raw": "{{baseUrl}}/bookings/admin/all?page=1&limit=10&sortBy=createdAt&sortOrder=desc",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "admin", "all"],
+							"query": [
+								{ "key": "page", "value": "1" },
+								{ "key": "limit", "value": "10" },
+								{ "key": "sortBy", "value": "createdAt" },
+								{ "key": "sortOrder", "value": "desc" }
+							]
+						}
+					}
+				},
+				{
+					"name": "6.2 Admin - Get Recent Bookings Widget",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{adminToken}}", "type": "text" }
+						],
+						"url": {
+							"raw": "{{baseUrl}}/bookings/admin/recent?limit=6",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "admin", "recent"],
+							"query": [
+								{ "key": "limit", "value": "6" }
+							]
+						}
+					}
+				},
+				{
+					"name": "6.3 Admin - Get Comprehensive Booking Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{adminToken}}", "type": "text" }
+						],
+						"url": {
+							"raw": "{{baseUrl}}/bookings/admin/{{bookingId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "admin", "{{bookingId}}"]
+						}
+					}
+				},
+				{
+					"name": "6.4 Admin - Get Chronological Booking Timeline",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{adminToken}}", "type": "text" }
+						],
+						"url": {
+							"raw": "{{baseUrl}}/bookings/admin/{{bookingId}}/timeline",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "admin", "{{bookingId}}", "timeline"]
+						}
+					}
+				},
+				{
+					"name": "6.5 Admin - Update Internal Notes",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{adminToken}}", "type": "text" },
+							{ "key": "Content-Type", "value": "application/json", "type": "text" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"adminNotes\": \"VIP customer. Special care requested for sensitive skin.\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/bookings/admin/{{bookingId}}/notes",
+							"host": ["{{baseUrl}}"],
+							"path": ["bookings", "admin", "{{bookingId}}", "notes"]
+						}
+					}
+				}
+			]
+		}
+	]
+}

@@ -23,7 +23,7 @@ router.patch(
 
 router.get(
   '/all',
-  auth(),
+  // auth(),
   validateRequest(categoryValidations.getAllCategorySchema),
   categoryControllers.getAllCategory
 )
@@ -34,7 +34,7 @@ router.get(
   categoryControllers.getCategoryById
 )
 
-//  TODO: Later we will handle it. 
+//  TODO: Later we will handle it.
 router.delete(
   '/:id',
   validateRequest(categoryValidations.deleteCategoryByIdSchema),

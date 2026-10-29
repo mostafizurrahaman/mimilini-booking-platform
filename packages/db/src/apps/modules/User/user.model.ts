@@ -76,6 +76,12 @@ const userSchema = new Schema<IUserDoc, IUserModel>(
       default: false,
     },
 
+    // Stripe customer ID:
+    stripeCustomerId: {
+      type: String,
+      default: null,
+    },
+
     // reason fields:
     blockedReason: {
       type: String,
