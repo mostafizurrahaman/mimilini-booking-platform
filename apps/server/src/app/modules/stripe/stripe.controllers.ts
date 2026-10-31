@@ -7,73 +7,73 @@ import { stripeServices } from './stripe.services'
 import moment from 'moment'
 import { logger } from '@app/libs'
 
-// const handleStripeWebhookForPlatform = catchAsync(async (req, res) => {
-//   //   Extract event from the header:
-//   const event = verifyWebHookSignature(configs.stripe.webhookPlatformKey, req)
+const handleStripeWebhookForPlatform = catchAsync(async (req, res) => {
+  //   Extract event from the header:
+  const event = verifyWebHookSignature(configs.stripe.webhookPlatformKey, req)
 
-//   // ?? Check the event ID:
-//   const isAlreadyProcessed = await ProcessedStripeEvent.findOne({
-//     eventId: event?.id,
-//   })
+  // ?? Check the event ID:
+  const isAlreadyProcessed = await ProcessedStripeEvent.findOne({
+    eventId: event?.id,
+  })
 
-//   if (isAlreadyProcessed) {
-//     return sendResponse(res, {
-//       statusCode: httpStatus.OK,
-//       success: true,
-//       message: 'Webhook already processed (Idempotency skip).',
-//       data: null,
-//     })
-//   }
+  if (isAlreadyProcessed) {
+    return sendResponse(res, {
+      statusCode: httpStatus.OK,
+      success: true,
+      message: 'Webhook already processed (Idempotency skip).',
+      data: null,
+    })
+  }
 
-//   await stripeServices.listenStripeEventsForPlatformAccount(event)
+  await stripeServices.listenStripeEventsForPlatformAccount(event)
 
-//   // ?? Update the event:
-//   await ProcessedStripeEvent.create({
-//     eventId: event.id,
-//     createdAt: moment().utc().toDate(),
-//   })
+  // ?? Update the event:
+  await ProcessedStripeEvent.create({
+    eventId: event.id,
+    createdAt: moment().utc().toDate(),
+  })
 
-//   sendResponse(res, {
-//     statusCode: httpStatus.OK,
-//     success: true,
-//     message: 'Webhook triggered successfully!',
-//     data: null,
-//   })
-// })
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: 'Webhook triggered successfully!',
+    data: null,
+  })
+})
 
-// const handleStripeWebhookForConnectedAccount = catchAsync(async (req, res) => {
-//   //   Extract event from the header:
-//   const event = verifyWebHookSignature(configs.stripe.webhookConnectedAccountKey, req)
+const handleStripeWebhookForConnectedAccount = catchAsync(async (req, res) => {
+  //   Extract event from the header:
+  const event = verifyWebHookSignature(configs.stripe.webhookConnectedAccountKey, req)
 
-//   // ?? Check the event ID:
-//   const isAlreadyProcessed = await ProcessedStripeEvent.findOne({
-//     eventId: event?.id,
-//   })
+  // ?? Check the event ID:
+  const isAlreadyProcessed = await ProcessedStripeEvent.findOne({
+    eventId: event?.id,
+  })
 
-//   if (isAlreadyProcessed) {
-//     return sendResponse(res, {
-//       statusCode: httpStatus.OK,
-//       success: true,
-//       message: 'Webhook already processed (Idempotency skip).',
-//       data: null,
-//     })
-//   }
+  if (isAlreadyProcessed) {
+    return sendResponse(res, {
+      statusCode: httpStatus.OK,
+      success: true,
+      message: 'Webhook already processed (Idempotency skip).',
+      data: null,
+    })
+  }
 
-//   await stripeServices.listenStripeEventsForConnectedAccount(event)
+  await stripeServices.listenStripeEventsForConnectedAccount(event)
 
-//   // ?? Update the event:
-//   await ProcessedStripeEvent.create({
-//     eventId: event.id,
-//     createdAt: moment().utc().toDate(),
-//   })
+  // ?? Update the event:
+  await ProcessedStripeEvent.create({
+    eventId: event.id,
+    createdAt: moment().utc().toDate(),
+  })
 
-//   sendResponse(res, {
-//     statusCode: httpStatus.OK,
-//     success: true,
-//     message: 'Webhook triggered successfully!',
-//     data: null,
-//   })
-// })
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: 'Webhook triggered successfully!',
+    data: null,
+  })
+})
 
 const handleStripeWebhookForLocal = catchAsync(async (req, res) => {
   const event = verifyWebHookSignature(configs.stripe.webhookKey, req)
@@ -107,8 +107,9 @@ const handleStripeWebhookForLocal = catchAsync(async (req, res) => {
     data: null,
   })
 })
+
 export const stripeController = {
-  // handleStripeWebhookForPlatform,
-  // handleStripeWebhookForConnectedAccount,
+  handleStripeWebhookForPlatform,
+  handleStripeWebhookForConnectedAccount,
   handleStripeWebhookForLocal,
 }
