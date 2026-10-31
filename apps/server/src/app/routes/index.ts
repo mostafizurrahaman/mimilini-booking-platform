@@ -23,6 +23,8 @@ import { chatRoutes } from '@app/modules/Chat/chat.routes'
 import { reviewRoutes } from '@app/modules/Review/review.routes'
 import { notificationRoutes } from '@app/modules/Notification/notification.routes'
 import { adminOperationsRoutes } from '@app/modules/AdminOperations/admin-operations.routes'
+import { reportRoutes } from '@app/modules/Report/report.routes'
+import { bugReportRoutes } from '@app/modules/BugReport/bug-report.routes'
 import express, { Router } from 'express'
 
 const router: Router = express.Router()
@@ -129,6 +131,14 @@ const routes = [
   {
     path: '/admin',
     route: adminOperationsRoutes,
+  },
+  {
+    path: '/reports',
+    route: reportRoutes,
+  },
+  {
+    path: '/bugs',
+    route: bugReportRoutes,
   },
 ]
 

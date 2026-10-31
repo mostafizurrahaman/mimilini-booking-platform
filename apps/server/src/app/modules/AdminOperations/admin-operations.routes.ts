@@ -4,6 +4,7 @@ import { validateRequest } from '@app/middlewares'
 import { AuthRoles } from '@repo/db'
 import { adminOperationsControllers } from './admin-operations.controllers'
 import { adminOperationsValidations } from './admin-operations.validations'
+import { reportRoutes } from '@app/modules/Report/report.routes'
 
 const router: Router = express.Router()
 
@@ -40,11 +41,7 @@ router.get(
 )
 
 // 4. Reports & Analytics (Figma Admin/13.png)
-router.get(
-  '/reports/analytics',
-  validateRequest(adminOperationsValidations.getReportsAnalyticsQuerySchema),
-  adminOperationsControllers.getAdminReportsAnalytics
-)
+router.use('/reports', reportRoutes)
 
 export const adminOperationsRoutes = router
 

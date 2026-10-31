@@ -2,6 +2,7 @@ import { Types, isValidObjectId } from 'mongoose'
 import httpStatus from 'http-status'
 import moment from 'moment'
 import { AppError } from '@repo/shared'
+import { reportServices } from '@app/modules/Report/report.services'
 import {
   ArtistProfile,
   ArtistServices,
@@ -655,158 +656,8 @@ const getAdminFinanceOverview = async (query: {
 /**
  * 4. Admin Reports & Business Intelligence Analytics (Figma Admin/13.png)
  */
-const getAdminReportsAnalytics = async (query: { year?: number; timeframe?: string } = {}) => {
-  const currentYear = query.year || moment().year()
-  const yearStart = moment().year(currentYear).startOf('year').toDate()
-
-  // 1. User Growth (New Registrations vs Active Users)
-  const userGrowthDocs = await User.aggregate([
-    {
-      $match: {
-        createdAt: { $gte: yearStart },
-        role: { $in: [AuthRoles.CUSTOMER, AuthRoles.ARTIST] },
-      },
-    },
-    {
-      $group: {
-        _id: { $month: '$createdAt' },
-        newUsers: { $sum: 1 },
-      },
-    },
-  ])
-  const growthMap = new Map(userGrowthDocs.map((item) => [item._id, item.newUsers]))
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-  const userGrowth = monthNames.map((name, idx) => ({
-    label: name,
-    newUsers: growthMap.get(idx + 1) || 0,
-    activeUsers: Math.round((growthMap.get(idx + 1) || 0) * 0.85),
-  }))
-
-  // 2. Booking Analytics (Status breakdown for last 6 months)
-  const sixMonthsAgo = moment().subtract(6, 'months').startOf('month').toDate()
-  const monthlyBookings = await Booking.aggregate([
-    { $match: { createdAt: { $gte: sixMonthsAgo } } },
-    {
-      $group: {
-        _id: {
-          month: { $month: '$createdAt' },
-          status: '$status',
-        },
-        count: { $sum: 1 },
-      },
-    },
-  ])
-
-  // 3. Top Artists Leaderboard (Ranked by completed bookings & revenue)
-  const topArtistsAgg = await Booking.aggregate([
-    { $match: { status: BOOKING_STATUS.COMPLETED } },
-    {
-      $group: {
-        _id: '$artist',
-        bookingsCount: { $sum: 1 },
-        revenue: { $sum: '$totalBookingPrice' },
-      },
-    },
-    { $sort: { revenue: -1 } },
-    { $limit: 7 },
-  ])
-
-  const artistUserIds = topArtistsAgg.map((a) => a._id)
-  const [artists, profiles, reviews] = await Promise.all([
-    User.find({ _id: { $in: artistUserIds } }).select('name profileImage').lean(),
-    ArtistProfile.find({ user: { $in: artistUserIds } }).lean(),
-    Review.aggregate<{ _id: Types.ObjectId; avgRating: number }>([
-      { $match: { artist: { $in: artistUserIds }, isActive: true } },
-      { $group: { _id: '$artist', avgRating: { $avg: '$rating' } } },
-    ]),
-  ])
-
-  const userMap = new Map(artists.map((u) => [String(u._id), u]))
-  const profMap = new Map(profiles.map((p) => [String(p.user), p]))
-  const reviewMap = new Map(reviews.map((r) => [String(r._id), r.avgRating]))
-
-  const topArtists = topArtistsAgg.map((item, index) => {
-    const artistUser = userMap.get(String(item._id))
-    const prof = profMap.get(String(item._id))
-    const rating = reviewMap.get(String(item._id)) || 0
-
-    return {
-      rank: index + 1,
-      artistId: item._id,
-      name: artistUser?.name || 'Artist',
-      profileImage: artistUser?.profileImage || null,
-      category: 'Bridal Makeup',
-      bookings: item.bookingsCount,
-      revenue: item.revenue,
-      rating: Number(rating.toFixed(2)),
-      growth: '+18.7%',
-    }
-  })
-
-  // 4. Customer Retention Breakdown
-  const totalCustomers = await User.countDocuments({ role: AuthRoles.CUSTOMER })
-  const repeatBookersAgg = await Booking.aggregate([
-    { $group: { _id: '$customer', count: { $sum: 1 } } },
-    { $match: { count: { $gt: 1 } } },
-    { $count: 'repeatCount' },
-  ])
-  const repeatCount = repeatBookersAgg[0]?.repeatCount || 0
-  const repeatRate = totalCustomers > 0 ? Number(((repeatCount / totalCustomers) * 100).toFixed(1)) : 74.2
-
-  // 5. Popular Services Leaderboard
-  const popularServicesAgg = await Booking.aggregate([
-    { $match: { service: { $ne: null } } },
-    {
-      $group: {
-        _id: '$service',
-        bookingsCount: { $sum: 1 },
-        revenue: { $sum: '$totalBookingPrice' },
-      },
-    },
-    { $sort: { bookingsCount: -1 } },
-    { $limit: 5 },
-  ])
-  const serviceIds = popularServicesAgg.map((s) => s._id)
-  const populatedServices = await ArtistServices.find({ _id: { $in: serviceIds } })
-    .populate('category', 'name')
-    .lean()
-  const serviceMap = new Map(populatedServices.map((s) => [String(s._id), s]))
-
-  const popularServices = popularServicesAgg.map((item, idx) => {
-    const serviceDoc = serviceMap.get(String(item._id))
-    return {
-      rank: idx + 1,
-      name: serviceDoc?.name || 'Beauty Service',
-      bookingsCount: item.bookingsCount,
-      revenue: item.revenue,
-      category: (serviceDoc?.category as any)?.name || 'Beauty',
-      growth: '+28.4%',
-    }
-  })
-
-  // 6. Location Analytics
-  const locationAnalytics = [
-    { city: 'Sydney, NSW', bookingsCount: 8421, revenue: 62840 },
-    { city: 'Melbourne, VIC', bookingsCount: 7184, revenue: 54120 },
-    { city: 'Brisbane, QLD', bookingsCount: 5920, revenue: 41480 },
-    { city: 'Perth, WA', bookingsCount: 4812, revenue: 34960 },
-    { city: 'Adelaide, SA', bookingsCount: 4248, revenue: 31480 },
-    { city: 'Gold Coast, QLD', bookingsCount: 3840, revenue: 27920 },
-  ]
-
-  return {
-    userGrowth,
-    topArtists,
-    customerRetention: {
-      newCustomers: Math.max(0, totalCustomers - repeatCount),
-      returningCustomers: repeatCount,
-      repeatBookings: repeatCount * 2,
-      repeatRatePercent: repeatRate,
-      avgIncomePerArtist: 284,
-    },
-    popularServices,
-    locationAnalytics,
-  }
+const getAdminReportsAnalytics = async (query: { year?: number; timeframe?: any; month?: number } = {}) => {
+  return await reportServices.getFullReportsAnalytics(query)
 }
 
 export const adminOperationsServices = {
