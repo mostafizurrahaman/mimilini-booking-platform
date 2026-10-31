@@ -29,7 +29,9 @@ const timeSchema = (fieldName = 'Start Time') =>
 const createBookingSchema = z.object({
   body: z.object({
     artist: requiredString('Artist ID'),
-    service: requiredString('Service ID'),
+    services: z
+      .array(requiredString('Service ID'))
+      .min(1, 'At least one service is required'),
     visitType: enumString(VISIT_TYPE_VALUES, 'Visit Type'),
     address: optionalString('Address ID'),
     bookingDate: requiredString('Booking Date (YYYY-MM-DD)'),
@@ -44,7 +46,9 @@ const createBookingSchema = z.object({
 const checkoutPreviewSchema = z.object({
   body: z.object({
     artist: requiredString('Artist ID'),
-    service: requiredString('Service ID'),
+    services: z
+      .array(requiredString('Service ID'))
+      .min(1, 'At least one service is required'),
     guestCount: positiveNumber('Guest Count'), // Mandatory
     visitType: optionalEnumString(VISIT_TYPE_VALUES, 'Visit Type'),
     address: optionalString('Address ID'),

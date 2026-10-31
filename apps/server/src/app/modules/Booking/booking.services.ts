@@ -53,7 +53,7 @@ import {
 
 export interface ICreateBookingInput {
   artist: string
-  service: string
+  services: string[]
   visitType: 'home_visit' | 'salon_visit'
   address?: string
   bookingDate: string // YYYY-MM-DD
@@ -66,12 +66,20 @@ export interface ICreateBookingInput {
 
 export interface ICheckoutPreviewInput {
   artist: string
-  service: string
+  services: string[]
   guestCount: number
   visitType?: 'home_visit' | 'salon_visit'
   address?: string
   promoCode?: string
   usePlatformCredit?: boolean
+}
+
+/**
+ * Extracts and deduplicates service IDs from input services array
+ */
+const extractServiceIds = (services: string[] = []): string[] => {
+  if (!Array.isArray(services)) return []
+  return Array.from(new Set(services.map((s) => String(s).trim()).filter(Boolean)))
 }
 
 /**
@@ -87,16 +95,23 @@ const generateBookingNumber = (): string => {
  * Preview financial breakdown before booking confirmation
  */
 const checkoutPreview = async (user: IUser, input: ICheckoutPreviewInput) => {
-  const service = await ArtistServices.findById(input.service)
-  if (!service || !service.isActive) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Service not found or inactive')
+  const serviceIds = extractServiceIds(input.services)
+  if (serviceIds.length === 0) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'At least one service must be selected')
   }
 
-  if (service.artist.toString() !== input.artist.toString()) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      'Selected service does not belong to this artist'
-    )
+  const services = await ArtistServices.find({ _id: { $in: serviceIds }, isActive: true })
+  if (services.length !== serviceIds.length) {
+    throw new AppError(httpStatus.NOT_FOUND, 'One or more selected services are unavailable or inactive')
+  }
+
+  for (const s of services) {
+    if (s.artist.toString() !== input.artist.toString()) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        `Selected service '${s.name}' does not belong to this artist`
+      )
+    }
   }
 
   if (user._id.toString() === input.artist.toString()) {
@@ -132,7 +147,13 @@ const checkoutPreview = async (user: IUser, input: ICheckoutPreviewInput) => {
   }
 
   const guestCount = Math.max(1, Number(input.guestCount) || 1)
-  const totalServicePrice = round2((service.price || 0) * guestCount)
+  const totalServicePrice = round2(
+    services.reduce((acc, s) => acc + (s.price || 0) * guestCount, 0)
+  )
+  const totalDuration = services.reduce(
+    (acc, s) => acc + (s.durationMinutes || 60) * guestCount,
+    0
+  )
 
   const platformSettings = await PlatformSettings.getSettings()
   const platformCommissionPercent = platformSettings?.platformPercentage ?? 20
@@ -228,13 +249,21 @@ const checkoutPreview = async (user: IUser, input: ICheckoutPreviewInput) => {
 
   return {
     service: {
-      id: service._id,
-      name: service.name,
-      unitPrice: service.price,
+      id: services[0]?._id,
+      name: services.map((s) => s.name).join(', '),
+      unitPrice: services[0]?.price,
       guestCount,
       totalServicePrice,
-      durationMinutes: (service.durationMinutes || 60) * guestCount,
+      durationMinutes: totalDuration,
     },
+    services: services.map((s) => ({
+      id: s._id,
+      name: s.name,
+      unitPrice: s.price,
+      guestCount,
+      totalServicePrice: round2((s.price || 0) * guestCount),
+      durationMinutes: (s.durationMinutes || 60) * guestCount,
+    })),
     travel: {
       visitType,
       distanceKm,
@@ -260,16 +289,26 @@ const checkoutPreview = async (user: IUser, input: ICheckoutPreviewInput) => {
  * Create a new booking, apply promo/wallet, charge 20% deposit and vault card
  */
 const createBooking = async (user: IUser, input: ICreateBookingInput) => {
-  const service = await ArtistServices.findById(input.service)
-  if (!service || !service.isActive) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Selected service is unavailable')
+  const serviceIds = extractServiceIds(input.services)
+  if (serviceIds.length === 0) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'At least one service must be selected')
   }
 
-  if (service.artist.toString() !== input.artist.toString()) {
+  const services = await ArtistServices.find({ _id: { $in: serviceIds }, isActive: true })
+  if (services.length !== serviceIds.length) {
     throw new AppError(
-      httpStatus.BAD_REQUEST,
-      'Selected service does not belong to this artist'
+      httpStatus.NOT_FOUND,
+      'One or more selected services are unavailable or inactive'
     )
+  }
+
+  for (const s of services) {
+    if (s.artist.toString() !== input.artist.toString()) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        `Selected service '${s.name}' does not belong to this artist`
+      )
+    }
   }
 
   if (user._id.toString() === input.artist.toString()) {
@@ -305,10 +344,15 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
   }
 
   const guestCount = Math.max(1, Number(input.guestCount) || 1)
-  const totalServicePrice = round2((service.price || 0) * guestCount)
+  const totalServicePrice = round2(
+    services.reduce((acc, s) => acc + (s.price || 0) * guestCount, 0)
+  )
 
-  // 1. Calculate appointment end time (duration multiplied by guest count)
-  const duration = (service.durationMinutes || 60) * guestCount
+  // 1. Calculate appointment end time (duration multiplied by guest count across all services)
+  const duration = services.reduce(
+    (acc, s) => acc + (s.durationMinutes || 60) * guestCount,
+    0
+  )
   const startMoment = moment(`${input.bookingDate} ${input.startTime.trim()}`, [
     'YYYY-MM-DD HH:mm',
     'YYYY-MM-DD hh:mm A',
@@ -634,7 +678,8 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     bookingGroupId,
     customer: user._id,
     artist: input.artist,
-    service: input.service,
+    service: new mongoose.Types.ObjectId(serviceIds[0]),
+    services: serviceIds.map((id) => new mongoose.Types.ObjectId(id)),
     visitType: input.visitType,
     address: input.address,
     serviceLocationSnapshot: serviceLocationSnapshot || undefined,
@@ -1478,6 +1523,7 @@ const getMyBookings = async (
       .skip(skip)
       .limit(limit)
       .populate('service', 'name durationMinutes price')
+      .populate('services', 'name durationMinutes price')
       .populate('artist', 'name profileImage profilePicture')
       .populate('customer', 'name profileImage profilePicture phone')
       .lean(),
@@ -1516,6 +1562,7 @@ const getMyBookings = async (
 const getBookingById = async (user: IUser, bookingId: string) => {
   const booking = await Booking.findById(bookingId)
     .populate('service')
+    .populate('services')
     .populate('artist', 'name email profileImage profilePicture phone')
     .populate('customer', 'name email profileImage profilePicture phone')
     .populate('address')
@@ -1868,7 +1915,16 @@ const issueCustomerStripeInvoice = async (booking: any) => {
       const artistProfile = await ArtistProfile.findOne({
         user: booking.artist?._id || booking.artist,
       })
-      const service = await ArtistServices.findById(booking.service?._id || booking.service)
+      const serviceIds =
+        Array.isArray(booking.services) && booking.services.length > 0
+          ? booking.services.map((s: any) => s?._id || s)
+          : [booking.service?._id || booking.service].filter(Boolean)
+      const fetchedServices =
+        serviceIds.length > 0 ? await ArtistServices.find({ _id: { $in: serviceIds } }) : []
+      const serviceNames =
+        fetchedServices.length > 0
+          ? fetchedServices.map((s) => s.name).join(', ')
+          : (booking.service as any)?.name || 'Beauty Service'
       const stripeCustomerId = booking.stripeCustomerId || customerUser?.stripeCustomerId
       if (!stripeCustomerId) return null
 
@@ -1950,7 +2006,7 @@ const issueCustomerStripeInvoice = async (booking: any) => {
         collection_method: 'send_invoice',
         ...(dueDateUnix ? { due_date: dueDateUnix } : { days_until_due: 1 }),
         pending_invoice_items_behavior: 'exclude',
-        description: `Tax Invoice for Booking #${booking.bookingNumber} | Service: ${service?.name || 'Beauty Service'} (${appointmentDateStr}) | Initial Deposit (${booking.initialPayment?.percentage || 20}%): $${(booking.initialPayment?.amount || 0).toFixed(2)} AUD [PAID] | Balance Due (80%): $${(booking.balancePayment?.amount || 0).toFixed(2)} AUD`,
+        description: `Tax Invoice for Booking #${booking.bookingNumber} | Service: ${serviceNames} (${appointmentDateStr}) | Initial Deposit (${booking.initialPayment?.percentage || 20}%): $${(booking.initialPayment?.amount || 0).toFixed(2)} AUD [PAID] | Balance Due (80%): $${(booking.balancePayment?.amount || 0).toFixed(2)} AUD`,
         custom_fields: [
           { name: 'Booking Ref', value: `#${booking.bookingNumber}` },
           { name: 'Appointment', value: appointmentDateStr.substring(0, 30) },
@@ -2004,7 +2060,7 @@ const issueCustomerStripeInvoice = async (booking: any) => {
           invoice,
           amount: Math.round(booking.servicePrice * 100),
           currency: 'aud',
-          description: `${service?.name || 'Beauty Service'} (Supplied by Artist: ${artistDisplayName}${artistAbnText})`,
+          description: `${serviceNames} (Supplied by Artist: ${artistDisplayName}${artistAbnText})`,
           ...gstTax,
           metadata: {
             bookingNumber: booking.bookingNumber,
@@ -2060,7 +2116,7 @@ const issueCustomerStripeInvoice = async (booking: any) => {
           invoice,
           amount: Math.round(booking.totalBookingPrice * 100),
           currency: 'aud',
-          description: `Booking #${booking.bookingNumber} - ${service?.name || 'Beauty Service'}`,
+          description: `Booking #${booking.bookingNumber} - ${serviceNames}`,
           metadata: { bookingNumber: booking.bookingNumber, bookingGroupId },
         })
       }
@@ -2376,6 +2432,7 @@ const issueArtistRctiStripeInvoice = async (booking: any) => {
 const getBookingReceipt = async (user: IUser, bookingId: string) => {
   const booking = await Booking.findById(bookingId)
     .populate('service')
+    .populate('services')
     .populate('artist', 'name email profilePicture phone')
     .populate('customer', 'name email profilePicture phone')
 
@@ -2411,6 +2468,7 @@ const getBookingReceipt = async (user: IUser, bookingId: string) => {
 const getArtistInvoice = async (user: IUser, bookingId: string) => {
   const booking = await Booking.findById(bookingId)
     .populate('service')
+    .populate('services')
     .populate('artist', 'name email profilePicture phone')
     .populate('customer', 'name email profilePicture phone')
 
@@ -2449,6 +2507,7 @@ const getArtistInvoice = async (user: IUser, bookingId: string) => {
 const getBookingInvoice = async (user: IUser, bookingId: string) => {
   const booking = await Booking.findById(bookingId)
     .populate('service')
+    .populate('services')
     .populate('artist', 'name email profilePicture phone')
     .populate('customer', 'name email profilePicture phone')
     .populate('address')
@@ -2903,7 +2962,7 @@ const completeBooking = async (
   payload: any,
   files?: Express.Multer.File[]
 ) => {
-  const booking = await Booking.findById(bookingId).populate('service')
+  const booking = await Booking.findById(bookingId).populate('service').populate('services')
   if (!booking) {
     throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
   }
@@ -2940,7 +2999,10 @@ const completeBooking = async (
     }
   }
 
-  const serviceName = (booking.service as any)?.name || 'Beauty Service'
+  const serviceName =
+    Array.isArray((booking as any).services) && (booking as any).services.length > 0
+      ? (booking as any).services.map((s: any) => s.name).join(', ')
+      : (booking.service as any)?.name || 'Beauty Service'
 
   booking.completionDetails = {
     servicesPerformed: finalPayload.servicesPerformed || serviceName,
@@ -4114,6 +4176,11 @@ const getAllBookingsAdmin = async (query: {
           select: 'name durationMinutes price category',
           populate: { path: 'category', select: 'name icon' },
         })
+        .populate({
+          path: 'services',
+          select: 'name durationMinutes price category',
+          populate: { path: 'category', select: 'name icon' },
+        })
         .populate('address')
         .lean(),
       Booking.countDocuments(filter),
@@ -4145,7 +4212,11 @@ const getAllBookingsAdmin = async (query: {
       customer: b.customer,
       artist: b.artist,
       service: b.service,
-      category: b.service?.category?.name || 'General',
+      services: b.services,
+      category:
+        b.service?.category?.name ||
+        (Array.isArray(b.services) && b.services[0]?.category?.name) ||
+        'General',
       bookingDate: b.bookingDate,
       startTime: b.startTime,
       endTime: b.endTime,
@@ -4198,6 +4269,11 @@ const getRecentBookingsAdmin = async (queryLimit = 6) => {
       select: 'name durationMinutes price category',
       populate: { path: 'category', select: 'name' },
     })
+    .populate({
+      path: 'services',
+      select: 'name durationMinutes price category',
+      populate: { path: 'category', select: 'name' },
+    })
     .lean()
 
   const formattedRecent = bookings.map((b: any) => {
@@ -4225,9 +4301,13 @@ const getRecentBookingsAdmin = async (queryLimit = 6) => {
       },
       service: {
         _id: b.service?._id,
-        name: b.service?.name || 'Beauty Service',
-        category: b.service?.category?.name,
+        name:
+          Array.isArray(b.services) && b.services.length > 0
+            ? b.services.map((s: any) => s.name).join(', ')
+            : b.service?.name || 'Beauty Service',
+        category: b.service?.category?.name || b.services?.[0]?.category?.name,
       },
+      services: b.services,
       amount: b.totalBookingPrice,
       status: b.status,
       paymentStatus,
@@ -4278,6 +4358,11 @@ const getBookingDetailsAdmin = async (bookingId: string) => {
     .populate('artist', 'name email phone profileImage role status')
     .populate({
       path: 'service',
+      select: 'name durationMinutes price description category',
+      populate: { path: 'category', select: 'name icon' },
+    })
+    .populate({
+      path: 'services',
       select: 'name durationMinutes price description category',
       populate: { path: 'category', select: 'name icon' },
     })
@@ -4362,12 +4447,18 @@ const getBookingDetailsAdmin = async (bookingId: string) => {
     },
     serviceDetails: {
       _id: (booking.service as any)?._id,
-      name: (booking.service as any)?.name,
-      category: (booking.service as any)?.category?.name,
-      durationMinutes: (booking.service as any)?.durationMinutes || booking.durationMinutes,
+      name:
+        Array.isArray((booking as any).services) && (booking as any).services.length > 0
+          ? (booking as any).services.map((s: any) => s.name).join(', ')
+          : (booking.service as any)?.name,
+      category:
+        (booking.service as any)?.category?.name ||
+        ((booking as any).services?.[0] as any)?.category?.name,
+      durationMinutes: booking.durationMinutes,
       price: booking.servicePrice,
       totalAmount: booking.totalBookingPrice,
       specialNotes: booking.completionDetails?.specialNotes || booking.clientNotes || '',
+      services: (booking as any).services || [],
     },
     paymentDetails: {
       transactionId:
