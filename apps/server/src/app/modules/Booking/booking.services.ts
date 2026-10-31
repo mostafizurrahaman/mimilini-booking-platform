@@ -2556,7 +2556,12 @@ const confirmBookingPayment = async (
     throw new AppError(httpStatus.FORBIDDEN, 'You are not authorized to confirm this booking')
   }
 
-  if (booking.status !== BOOKING_STATUS.ACCEPTED) {
+  const isPayable =
+    booking.status === BOOKING_STATUS.ACCEPTED ||
+    (booking.status === BOOKING_STATUS.RESCHEDULED &&
+      booking.initialPayment?.status !== PAYMENT_STAGE_STATUS.CAPTURED)
+
+  if (!isPayable) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
       `Cannot confirm payment for booking with status '${booking.status}'. Booking must be accepted by artist first.`
