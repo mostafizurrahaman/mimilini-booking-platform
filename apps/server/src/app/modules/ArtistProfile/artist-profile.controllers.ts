@@ -71,7 +71,7 @@ const findAvailableArtists = catchAsync(async (req, res) => {
 
 const getArtistDetails = catchAsync(async (req, res) => {
   const { artistId } = req.params
-  const result = await artistProfileServices.getArtistDetails(artistId as string, req.query)
+  const result = await artistProfileServices.getArtistDetails(artistId as string, req.query, req.user?._id)
 
   sendResponse(res, {
     success: true,
@@ -191,7 +191,38 @@ const removeCertification = catchAsync(async (req, res) => {
   })
 })
 
+
+// 10. Toggle Favorite Artist:
+const toggleFavoriteArtist = catchAsync(async (req, res) => {
+  const userId = req.user?._id
+  const { artistId } = req.params
+  const result = await artistProfileServices.toggleFavoriteArtist(userId, artistId as string)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: result.message,
+    data: result,
+  })
+})
+
+// 11. Get My Favorite Artists:
+const getMyFavoriteArtists = catchAsync(async (req, res) => {
+  const userId = req.user?._id
+  const result = await artistProfileServices.getMyFavoriteArtists(userId, req.query)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'Favorite artists retrieved successfully.',
+    meta: result.meta,
+    data: result.data,
+  })
+})
+
 export const artistProfileControllers = {
+  toggleFavoriteArtist,
+  getMyFavoriteArtists,
   createArtistProfile,
   updateArtistProfile,
   getAllArtistProfile,

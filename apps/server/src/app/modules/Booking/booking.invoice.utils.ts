@@ -98,6 +98,11 @@ export const generateBookingTaxInvoice = (
   const customer = booking.customer || {}
   const service = booking.service || {}
 
+  const serviceDescription =
+    Array.isArray(booking.services) && booking.services.length > 0
+      ? booking.services.map((s: any) => s.name).filter(Boolean).join(', ')
+      : service.name || 'Beauty & Wellness Service'
+
   const guestCount = booking.guestCount || 1
   const unitPrice =
     guestCount > 1
@@ -106,7 +111,7 @@ export const generateBookingTaxInvoice = (
 
   const items: IBookingTaxInvoice['items'] = [
     {
-      description: service.name || 'Beauty & Wellness Service',
+      description: serviceDescription,
       quantity: guestCount,
       unitPrice,
       amount: booking.servicePrice,
@@ -258,6 +263,10 @@ export const generateBalancePaymentReceipt = (booking: any): IBalancePaymentRece
   const artistProfile = booking.artistProfile || {}
   const customer = booking.customer || {}
   const service = booking.service || {}
+  const serviceName =
+    Array.isArray(booking.services) && booking.services.length > 0
+      ? booking.services.map((s: any) => s.name).filter(Boolean).join(', ')
+      : service.name || 'Beauty & Wellness Service'
 
   return {
     receiptTitle: 'PAYMENT RECEIPT',
@@ -266,7 +275,7 @@ export const generateBalancePaymentReceipt = (booking: any): IBalancePaymentRece
     bookingGroupId: booking.bookingGroupId || `GRP-${booking.bookingNumber}`,
     issueDate: moment(booking.balancePayment?.paidAt || new Date()).format('YYYY-MM-DD HH:mm:ss'),
     currency: 'AUD',
-    serviceName: service.name || 'Beauty & Wellness Service',
+    serviceName,
     totalBookingPrice: booking.totalBookingPrice,
     initialDepositPaid: booking.initialPayment?.amount || 0,
     balancePaidAmount: booking.balancePayment?.amount || 0,

@@ -118,7 +118,10 @@ const handlePaymentIntentSucceeded = async (paymentIntent: Stripe.PaymentIntent)
       booking.initialPayment.status = PAYMENT_STAGE_STATUS.CAPTURED
       booking.initialPayment.paidAt = new Date()
       booking.initialPayment.stripePaymentIntentId = paymentIntent.id
-      if (booking.status === BOOKING_STATUS.REQUESTED || booking.status === BOOKING_STATUS.ACCEPTED) {
+      if (
+        booking.status === BOOKING_STATUS.REQUESTED ||
+        booking.status === BOOKING_STATUS.ACCEPTED
+      ) {
         booking.status = BOOKING_STATUS.CONFIRMED
       }
       await booking.save()
@@ -220,10 +223,7 @@ const handlePaymentIntentSucceeded = async (paymentIntent: Stripe.PaymentIntent)
 const handleInvoicePaymentSucceeded = async (invoice: Stripe.Invoice) => {
   const bookingNumber = invoice.metadata?.bookingNumber
   const booking = await Booking.findOne({
-    $or: [
-      { stripeInvoiceId: invoice.id },
-      ...(bookingNumber ? [{ bookingNumber }] : []),
-    ],
+    $or: [{ stripeInvoiceId: invoice.id }, ...(bookingNumber ? [{ bookingNumber }] : [])],
   })
   if (!booking) {
     logger.info(`[Stripe Webhook] No booking matched for invoice ${invoice.id}`)
@@ -237,9 +237,7 @@ const handleInvoicePaymentSucceeded = async (invoice: Stripe.Invoice) => {
 
   const rawPaymentIntent = (invoice as any).payment_intent
   const paymentIntentId =
-    typeof rawPaymentIntent === 'string'
-      ? rawPaymentIntent
-      : rawPaymentIntent?.id || null
+    typeof rawPaymentIntent === 'string' ? rawPaymentIntent : rawPaymentIntent?.id || null
 
   booking.balancePayment.status = PAYMENT_STAGE_STATUS.CAPTURED
   booking.balancePayment.paidAt = new Date()
@@ -466,7 +464,9 @@ const handleChargeRefunded = async (charge: Stripe.Charge) => {
 
   if (booking.promoCode && !isAlreadyCancelled) {
     await PromoCode.findByIdAndUpdate(booking.promoCode, { $inc: { usageCount: -1 } })
-    logger.info(`[Stripe Webhook] Released promo code for refunded booking ${booking.bookingNumber}`)
+    logger.info(
+      `[Stripe Webhook] Released promo code for refunded booking ${booking.bookingNumber}`
+    )
   }
 
   // 5. Handle Wallet Credit properly at cancellation time:
@@ -676,11 +676,8 @@ const handleCheckoutSessionCompleted = async (session: Stripe.Checkout.Session) 
   }
 }
 
-const listenStripeEventsForConnectedAccount = async (event: Stripe.Event) => {
+const listenStripeEventsForPlatformAccount = async (event: Stripe.Event) => {
   switch (event.type) {
-    case 'account.updated':
-      await handleAccountUpdated(event)
-      break
     case 'payment_intent.succeeded':
       await handlePaymentIntentSucceeded(event.data.object as Stripe.PaymentIntent)
       break
@@ -706,6 +703,19 @@ const listenStripeEventsForConnectedAccount = async (event: Stripe.Event) => {
   return { received: true }
 }
 
+const listenStripeEventsForConnectedAccount = async (event: Stripe.Event) => {
+  switch (event.type) {
+    case 'account.updated':
+      await handleAccountUpdated(event)
+      break
+    default:
+      logger.info(`[Stripe Webhook] Unhandled event type: ${event.type}`)
+  }
+
+  return { received: true }
+}
+
 export const stripeServices = {
+  listenStripeEventsForPlatformAccount,
   listenStripeEventsForConnectedAccount,
 }
