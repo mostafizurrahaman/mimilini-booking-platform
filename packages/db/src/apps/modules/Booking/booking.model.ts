@@ -107,8 +107,14 @@ const bookingSchema = new Schema<IBookingDoc>(
     service: {
       type: Schema.Types.ObjectId,
       ref: 'ArtistServices',
-      required: true,
+      default: null,
     },
+    services: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'ArtistServices',
+      },
+    ],
     visitType: {
       type: String,
       enum: VISIT_TYPE_VALUES,

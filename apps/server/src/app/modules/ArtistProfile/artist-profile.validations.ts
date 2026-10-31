@@ -184,6 +184,12 @@ const getArtistDetailsSchema = z.object({
   }),
 })
 
+const toggleFavoriteArtistSchema = z.object({
+  params: z.object({
+    artistId: requiredMongooseId('Artist ID'),
+  }),
+})
+
 export const artistProfileValidations = {
   createArtistProfileSchema,
   updateArtistProfileSchema,
@@ -197,6 +203,9 @@ export const artistProfileValidations = {
   // ?? Verification Status:
   verifyArtistDocumentSchema,
   rejectArtistDocumentSchema,
+
+  // Favorites:
+  toggleFavoriteArtistSchema,
 }
 
 export type TCreateArtistProfilePayloadType = z.infer<typeof createArtistProfileSchema.shape.body>

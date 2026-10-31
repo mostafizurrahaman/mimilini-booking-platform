@@ -22,6 +22,10 @@ import { penaltyRoutes } from '@app/modules/Penalty/penalty.routes'
 import { chatRoutes } from '@app/modules/Chat/chat.routes'
 import { reviewRoutes } from '@app/modules/Review/review.routes'
 import { notificationRoutes } from '@app/modules/Notification/notification.routes'
+import { adminOperationsRoutes } from '@app/modules/AdminOperations/admin-operations.routes'
+import { reportRoutes } from '@app/modules/Report/report.routes'
+import { bugReportRoutes } from '@app/modules/BugReport/bug-report.routes'
+import { paymentTransactionRoutes } from '@app/modules/PaymentTransaction/payment-transaction.routes'
 import express, { Router } from 'express'
 
 const router: Router = express.Router()
@@ -121,13 +125,25 @@ const routes = [
     path: '/reviews',
     route: reviewRoutes,
   },
-  // {
-  //   path: '/notifications',
-  //   route: notificationRoutes,
-  // },
   {
     path: '/notifications',
     route: notificationRoutes,
+  },
+  {
+    path: '/admin',
+    route: adminOperationsRoutes,
+  },
+  {
+    path: '/reports',
+    route: reportRoutes,
+  },
+  {
+    path: '/bugs',
+    route: bugReportRoutes,
+  },
+  {
+    path: '/transactions',
+    route: paymentTransactionRoutes,
   },
 ]
 

@@ -30,7 +30,8 @@ export interface IBooking {
   bookingGroupId?: string | null | undefined
   customer: Types.ObjectId
   artist: Types.ObjectId
-  service: Types.ObjectId
+  service?: Types.ObjectId | string | null | undefined
+  services?: (Types.ObjectId | string)[] | undefined
 
   // Location:
   visitType: TVisitType
