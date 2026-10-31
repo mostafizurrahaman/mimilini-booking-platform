@@ -25,6 +25,7 @@ import { notificationRoutes } from '@app/modules/Notification/notification.route
 import { adminOperationsRoutes } from '@app/modules/AdminOperations/admin-operations.routes'
 import { reportRoutes } from '@app/modules/Report/report.routes'
 import { bugReportRoutes } from '@app/modules/BugReport/bug-report.routes'
+import { paymentTransactionRoutes } from '@app/modules/PaymentTransaction/payment-transaction.routes'
 import express, { Router } from 'express'
 
 const router: Router = express.Router()
@@ -139,6 +140,10 @@ const routes = [
   {
     path: '/bugs',
     route: bugReportRoutes,
+  },
+  {
+    path: '/transactions',
+    route: paymentTransactionRoutes,
   },
 ]
 
