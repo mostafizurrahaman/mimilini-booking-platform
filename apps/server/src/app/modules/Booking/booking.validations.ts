@@ -57,6 +57,20 @@ const checkoutPreviewSchema = z.object({
   }),
 })
 
+const publicCheckoutPreviewSchema = z.object({
+  body: z.object({
+    artist: requiredString('Artist ID'),
+    services: z
+      .array(requiredString('Service ID'))
+      .min(1, 'At least one service is required'),
+    guestCount: positiveNumber('Guest Count'), // Mandatory
+    visitType: optionalEnumString(VISIT_TYPE_VALUES, 'Visit Type'),
+    latitude: z.coerce.number().min(-90).max(90).optional(),
+    longitude: z.coerce.number().min(-180).max(180).optional(),
+    promoCode: optionalString('Promo Code'),
+  }),
+})
+
 const confirmBookingPaymentSchema = z.object({
   body: z.object({
     paymentMethodId: requiredString('Payment Method ID'),
@@ -174,6 +188,7 @@ const updateAdminBookingNotesSchema = z.object({
 export const bookingValidations = {
   createBookingSchema,
   checkoutPreviewSchema,
+  publicCheckoutPreviewSchema,
   confirmBookingPaymentSchema,
   cancelBookingSchema,
   payBalanceSchema,
