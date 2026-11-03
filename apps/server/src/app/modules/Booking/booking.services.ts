@@ -1180,6 +1180,23 @@ const customerCancelBooking = async (
       note: booking.cancellationReason,
     })
 
+    try {
+      await notificationServices.sendNotification({
+        recipient: (booking.artist as any)._id || booking.artist,
+        sender: user._id,
+        senderName: user.name,
+        senderPicture: user.profileImage,
+        title: 'Booking Cancelled by Customer',
+        message: `${user.name} has cancelled booking #${booking.bookingNumber}.`,
+        type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
+        bookingId: booking._id,
+        bookingNumber: booking.bookingNumber,
+        actionUrl: `/bookings/${booking._id}`,
+      })
+    } catch (notifErr) {
+      logger.warn('[Booking Notification] Failed to notify artist of customer cancellation:', notifErr)
+    }
+
     return {
       message,
       booking,
@@ -1317,6 +1334,23 @@ const customerCancelBooking = async (
     performedByRole: booking.cancelledByRole,
     note: booking.cancellationReason,
   })
+
+  try {
+    await notificationServices.sendNotification({
+      recipient: (booking.artist as any)._id || booking.artist,
+      sender: user._id,
+      senderName: user.name,
+      senderPicture: user.profileImage,
+      title: 'Booking Cancelled by Customer',
+      message: `${user.name} has cancelled booking #${booking.bookingNumber} (<24h cancellation).`,
+      type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
+      bookingId: booking._id,
+      bookingNumber: booking.bookingNumber,
+      actionUrl: `/bookings/${booking._id}`,
+    })
+  } catch (notifErr) {
+    logger.warn('[Booking Notification] Failed to notify artist of late cancellation:', notifErr)
+  }
 
   return {
     message: lateMessage,
@@ -1611,6 +1645,35 @@ const cancelBooking = async (user: IUser, bookingId: string, cancellationReason?
     performedByRole: 'admin',
     note: booking.cancellationReason,
   })
+
+  try {
+    await Promise.all([
+      notificationServices.sendNotification({
+        recipient: (booking.customer as any)._id || booking.customer,
+        sender: user._id,
+        senderName: 'Admin',
+        title: 'Booking Cancelled by Admin',
+        message: `Your booking #${booking.bookingNumber} was cancelled by administrator.${booking.cancellationReason ? ` Reason: ${booking.cancellationReason}` : ''}`,
+        type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
+        bookingId: booking._id,
+        bookingNumber: booking.bookingNumber,
+        actionUrl: `/bookings/${booking._id}`,
+      }),
+      notificationServices.sendNotification({
+        recipient: (booking.artist as any)._id || booking.artist,
+        sender: user._id,
+        senderName: 'Admin',
+        title: 'Booking Cancelled by Admin',
+        message: `Booking #${booking.bookingNumber} was cancelled by administrator.${booking.cancellationReason ? ` Reason: ${booking.cancellationReason}` : ''}`,
+        type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
+        bookingId: booking._id,
+        bookingNumber: booking.bookingNumber,
+        actionUrl: `/bookings/${booking._id}`,
+      }),
+    ])
+  } catch (notifErr) {
+    logger.warn('[Booking Notification] Failed to notify parties of admin cancellation:', notifErr)
+  }
 
   return { message: 'Booking cancelled by admin.', booking }
 }
@@ -1963,6 +2026,23 @@ const payBalance = async (user: IUser, bookingId: string, paymentMethodId?: stri
         performedByRole: 'customer',
         metadata: { stripePaymentIntentId: paymentIntent.id },
       })
+
+      try {
+        await notificationServices.sendNotification({
+          recipient: (booking.artist as any)._id || booking.artist,
+          sender: user._id,
+          senderName: user.name,
+          senderPicture: user.profileImage,
+          title: 'Balance Payment Completed',
+          message: `${user.name} has paid the remaining balance ($${booking.balancePayment.amount} AUD) for booking #${booking.bookingNumber}.`,
+          type: NOTIFICATION_TYPE.PAYMENT_SUCCESS,
+          bookingId: booking._id,
+          bookingNumber: booking.bookingNumber,
+          actionUrl: `/bookings/${booking._id}`,
+        })
+      } catch (notifErr) {
+        logger.warn('[Booking Notification] Failed to notify artist of balance payment:', notifErr)
+      }
 
       return {
         success: true,
@@ -3024,6 +3104,23 @@ const confirmBookingPayment = async (
     performedByRole: 'customer',
   })
 
+  try {
+    await notificationServices.sendNotification({
+      recipient: (booking.artist as any)._id || booking.artist,
+      sender: user._id,
+      senderName: user.name,
+      senderPicture: user.profileImage,
+      title: 'Booking Confirmed',
+      message: `${user.name} has paid the deposit for booking #${booking.bookingNumber}. The appointment is confirmed.`,
+      type: NOTIFICATION_TYPE.BOOKING_CONFIRMED,
+      bookingId: booking._id,
+      bookingNumber: booking.bookingNumber,
+      actionUrl: `/bookings/${booking._id}`,
+    })
+  } catch (notifErr) {
+    logger.warn('[Booking Notification] Failed to notify artist of confirmed booking payment:', notifErr)
+  }
+
   return {
     booking,
     clientSecret,
@@ -3373,6 +3470,23 @@ const customerSign = async (
       performedBy: user._id,
       performedByRole: 'customer',
     })
+
+    try {
+      await notificationServices.sendNotification({
+        recipient: (booking.artist as any)._id || booking.artist,
+        sender: user._id,
+        senderName: user.name,
+        senderPicture: user.profileImage,
+        title: 'Customer Signed Off',
+        message: `Customer verified and signed off on booking #${booking.bookingNumber}. Your payout has been released.`,
+        type: NOTIFICATION_TYPE.ORDER_COMPLETE,
+        bookingId: booking._id,
+        bookingNumber: booking.bookingNumber,
+        actionUrl: `/bookings/${booking._id}`,
+      })
+    } catch (notifErr) {
+      logger.warn('[Booking Notification] Failed to notify artist of customer signature:', notifErr)
+    }
   }
 
   return booking
@@ -3925,6 +4039,23 @@ const reportCustomerNoShow = async (
     `[No-Show Reported] Artist ${user._id} reported customer no-show for booking ${booking.bookingNumber}. Awaiting admin verification.`
   )
 
+  try {
+    await notificationServices.sendNotification({
+      recipient: (booking.customer as any)._id || booking.customer,
+      sender: user._id,
+      senderName: user.name,
+      senderPicture: user.profileImage,
+      title: 'Customer No-Show Reported',
+      message: `${user.name} reported that you were not present for booking #${booking.bookingNumber}. This case is under admin review.`,
+      type: NOTIFICATION_TYPE.GENERAL,
+      bookingId: booking._id,
+      bookingNumber: booking.bookingNumber,
+      actionUrl: `/bookings/${booking._id}`,
+    })
+  } catch (notifErr) {
+    logger.warn('[Booking Notification] Failed to notify customer of reported no-show:', notifErr)
+  }
+
   return {
     message:
       'Customer no-show reported successfully. Admin verification is required before releasing the payout.',
@@ -4037,6 +4168,51 @@ const verifyCustomerNoShow = async (
   }
 
   await booking.save()
+
+  try {
+    const customerId = (booking.customer as any)._id || booking.customer
+    const artistId = (booking.artist as any)._id || booking.artist
+    if (payload.isApproved) {
+      await Promise.all([
+        notificationServices.sendNotification({
+          recipient: customerId,
+          sender: adminUser._id,
+          senderName: 'Admin',
+          title: 'No-Show Verified & Approved',
+          message: `Your booking #${booking.bookingNumber} was verified as No-Show by admin. The payment has been forfeited according to policy.`,
+          type: NOTIFICATION_TYPE.GENERAL,
+          bookingId: booking._id,
+          bookingNumber: booking.bookingNumber,
+          actionUrl: `/bookings/${booking._id}`,
+        }),
+        notificationServices.sendNotification({
+          recipient: artistId,
+          sender: adminUser._id,
+          senderName: 'Admin',
+          title: 'No-Show Claim Approved',
+          message: `Customer no-show for booking #${booking.bookingNumber} was approved. Protected payout of $${booking.artistNetPayout} AUD has been released.`,
+          type: NOTIFICATION_TYPE.GENERAL,
+          bookingId: booking._id,
+          bookingNumber: booking.bookingNumber,
+          actionUrl: `/bookings/${booking._id}`,
+        }),
+      ])
+    } else {
+      await notificationServices.sendNotification({
+        recipient: artistId,
+        sender: adminUser._id,
+        senderName: 'Admin',
+        title: 'No-Show Claim Rejected',
+        message: `Your customer no-show report for booking #${booking.bookingNumber} was rejected by admin.`,
+        type: NOTIFICATION_TYPE.GENERAL,
+        bookingId: booking._id,
+        bookingNumber: booking.bookingNumber,
+        actionUrl: `/bookings/${booking._id}`,
+      })
+    }
+  } catch (notifErr) {
+    logger.warn('[Booking Notification] Failed to notify parties of no-show verification:', notifErr)
+  }
 
   return {
     message: payload.isApproved

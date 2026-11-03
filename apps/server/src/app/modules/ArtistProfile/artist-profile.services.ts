@@ -11,15 +11,18 @@ import {
   Booking,
   BOOKING_STATUS,
   verificationStatus,
+  NOTIFICATION_TYPE,
   type IUser,
   type IArtistCertification,
 } from '@repo/db'
 import httpStatus from 'http-status'
 import { AppError, getUserFromRequest } from '@repo/shared'
+import { logger } from '@app/libs/logger'
 import type { PipelineStage } from 'mongoose'
 import moment from 'moment'
 import { availabilityServices } from '../Availability/availability.services'
 import { calculateDistanceKm } from '../Booking/booking.utils'
+import { notificationServices } from '../Notification/notification.services'
 
 import type {
   TCreateArtistProfilePayloadType,
@@ -508,6 +511,18 @@ const verifyArtistDocuments = async (targetUserId: string) => {
   targetedUser.verificationStatus = verificationStatus.VERIFIED
   await targetedUser.save()
 
+  try {
+    await notificationServices.sendNotification({
+      recipient: targetedUser._id,
+      title: 'Documents Verified',
+      message: 'Congratulations! Your professional documents have been approved and verified by admin. You can now accept client bookings.',
+      type: NOTIFICATION_TYPE.ACCOUNT_STATUS,
+      actionUrl: '/profile',
+    })
+  } catch (notifErr) {
+    logger.warn('[ArtistProfile Notification] Failed to notify artist of verified documents:', notifErr)
+  }
+
   return {
     userId: targetedUser?._id,
     email: targetedUser?.email,
@@ -563,6 +578,18 @@ const rejectArtistDocuments = async (targetUserId: string, reason: string) => {
   targetedUser.verificationStatus = verificationStatus.REJECTED
   targetedUser.rejectionReason = reason
   await targetedUser.save()
+
+  try {
+    await notificationServices.sendNotification({
+      recipient: targetedUser._id,
+      title: 'Documents Verification Rejected',
+      message: `Your professional documents could not be verified. Reason: ${reason}. Please update and resubmit your documents.`,
+      type: NOTIFICATION_TYPE.ACCOUNT_STATUS,
+      actionUrl: '/profile',
+    })
+  } catch (notifErr) {
+    logger.warn('[ArtistProfile Notification] Failed to notify artist of rejected documents:', notifErr)
+  }
 
   return {
     userId: targetedUser?._id,
