@@ -2,13 +2,16 @@ import {
   ArtistProfile,
   Penalty,
   PENALTY_STATUS,
+  NOTIFICATION_TYPE,
   type IUser,
 } from '@repo/db'
 import { AppError } from '@repo/shared'
+import { logger } from '@app/libs/logger'
 import httpStatus from 'http-status'
 import Stripe from 'stripe'
 import { stripe } from '@app/libs/stripe'
 import configs from '@app/configs'
+import { notificationServices } from '../Notification/notification.services'
 
 /**
  * Get penalties for the logged-in artist
@@ -182,6 +185,22 @@ const waivePenalty = async (adminUser: IUser, penaltyId: string, reason?: string
       { user: penalty.artist },
       { $set: { isPenaltyRequired: false } }
     )
+  }
+
+  try {
+    await notificationServices.sendNotification({
+      recipient: penalty.artist,
+      sender: adminUser._id,
+      senderName: 'Admin',
+      title: 'Penalty Waived',
+      message: `Your cancellation penalty of $${penalty.penaltyAmount} AUD for booking #${penalty.bookingNumber} has been waived by admin.${remainingPending === 0 ? ' Your booking privileges have been restored.' : ''}`,
+      type: NOTIFICATION_TYPE.GENERAL,
+      bookingId: penalty.booking,
+      bookingNumber: penalty.bookingNumber,
+      actionUrl: '/penalties',
+    })
+  } catch (notifErr) {
+    logger.warn('[Penalty Notification] Failed to notify artist of waived penalty:', notifErr)
   }
 
   return {

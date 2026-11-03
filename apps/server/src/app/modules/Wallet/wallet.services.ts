@@ -3,13 +3,16 @@ import {
   WalletLedger,
   WALLET_SOURCE,
   WALLET_TRANSACTION_TYPE,
+  NOTIFICATION_TYPE,
   type TWalletSource,
   type TWalletUserRole,
 } from '@repo/db'
 import { AppError } from '@repo/shared'
+import { logger } from '@app/libs/logger'
 import httpStatus from 'http-status'
 import moment from 'moment'
 import { Types } from 'mongoose'
+import { notificationServices } from '../Notification/notification.services'
 
 interface ICreditWalletParams {
   userId: string | Types.ObjectId
@@ -104,6 +107,19 @@ const creditUserWallet = async (params: ICreditWalletParams) => {
 
   const ledgerEntry = await WalletLedger.create(ledgerPayload)
 
+  try {
+    await notificationServices.sendNotification({
+      recipient: userId,
+      title: 'Wallet Credited',
+      message: `You have received $${amount} AUD in platform credits.${description ? ` (${description})` : ''}`,
+      type: NOTIFICATION_TYPE.GENERAL,
+      bookingId: bookingId || undefined,
+      actionUrl: '/wallet',
+    })
+  } catch (notifErr) {
+    logger.warn('[Wallet Notification] Failed to notify user of credited wallet:', notifErr)
+  }
+
   return { wallet, ledgerEntry }
 }
 
@@ -145,6 +161,19 @@ const debitUserWallet = async (params: IDebitWalletParams) => {
   if (bookingGroupId) ledgerPayload.bookingGroupId = bookingGroupId
 
   const ledgerEntry = await WalletLedger.create(ledgerPayload)
+
+  try {
+    await notificationServices.sendNotification({
+      recipient: userId,
+      title: 'Wallet Debited',
+      message: `$${amount} AUD platform credit was used.${description ? ` (${description})` : ''}`,
+      type: NOTIFICATION_TYPE.GENERAL,
+      bookingId: bookingId || undefined,
+      actionUrl: '/wallet',
+    })
+  } catch (notifErr) {
+    logger.warn('[Wallet Notification] Failed to notify user of debited wallet:', notifErr)
+  }
 
   return { wallet, ledgerEntry }
 }

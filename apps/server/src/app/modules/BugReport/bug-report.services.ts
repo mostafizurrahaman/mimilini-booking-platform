@@ -1,17 +1,20 @@
 import { Types, isValidObjectId } from 'mongoose'
 import httpStatus from 'http-status'
 import { AppError } from '@repo/shared'
+import { logger } from '@app/libs/logger'
 import {
   BugReport,
   Booking,
   User,
   BUG_STATUS,
   AuthRoles,
+  NOTIFICATION_TYPE,
   type IUser,
   type TBugStatus,
 } from '@repo/db'
 import { uploadMultipleFileToS3 } from 'packages/media-hub/src'
 import { AWS_FOLDER_NAMES } from '@app/libs/files_folder'
+import { notificationServices } from '../Notification/notification.services'
 
 interface ICreateBugReportPayload {
   title: string
@@ -224,6 +227,20 @@ const updateBugReportStatus = async (
   }
 
   await bug.save()
+
+  try {
+    await notificationServices.sendNotification({
+      recipient: (bug.reportedBy as any)._id || bug.reportedBy,
+      sender: adminUser._id,
+      senderName: 'Admin',
+      title: 'Bug Report Update',
+      message: `Your bug report "${bug.title}" status is now: ${payload.status}.${payload.adminNote ? ` Note: ${payload.adminNote}` : ''}`,
+      type: NOTIFICATION_TYPE.GENERAL,
+      actionUrl: `/bugs/${bug._id}`,
+    })
+  } catch (notifErr) {
+    logger.warn('[BugReport Notification] Failed to notify reporter of status update:', notifErr)
+  }
 
   return await BugReport.findById(bug._id)
     .populate('reportedBy', 'name email role profileImage phone')
