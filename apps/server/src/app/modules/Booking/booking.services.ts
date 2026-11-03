@@ -39,6 +39,7 @@ import moment from 'moment'
 import { walletServices } from '../Wallet/wallet.services'
 import { uploadMultipleFileToS3 } from 'packages/media-hub/src'
 import { AWS_FOLDER_NAMES } from '@app/libs/files_folder'
+import { isValidCoordinates } from '@app/libs'
 import {
   calculateBookingBreakdown,
   calculateArtistCancellationPenalty,
@@ -72,6 +73,16 @@ export interface ICheckoutPreviewInput {
   address?: string
   promoCode?: string
   usePlatformCredit?: boolean
+}
+
+export interface IPublicCheckoutPreviewInput {
+  artist: string
+  services: string[]
+  guestCount: number
+  visitType?: 'home_visit' | 'salon_visit'
+  latitude?: number
+  longitude?: number
+  promoCode?: string
 }
 
 /**
@@ -281,6 +292,174 @@ const checkoutPreview = async (user: IUser, input: ICheckoutPreviewInput) => {
       stripeGstTaxRateId,
     },
     walletBalance: wallet.balance,
+    breakdown,
+  }
+}
+
+/**
+ * Public preview financial breakdown using coordinates instead of saved address
+ */
+const publicCheckoutPreview = async (input: IPublicCheckoutPreviewInput) => {
+  const serviceIds = extractServiceIds(input.services)
+  if (serviceIds.length === 0) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'At least one service must be selected')
+  }
+
+  const services = await ArtistServices.find({ _id: { $in: serviceIds }, isActive: true })
+  if (services.length !== serviceIds.length) {
+    throw new AppError(
+      httpStatus.NOT_FOUND,
+      'One or more selected services are unavailable or inactive'
+    )
+  }
+
+  for (const s of services) {
+    if (s.artist.toString() !== input.artist.toString()) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        `Selected service '${s.name}' does not belong to this artist`
+      )
+    }
+  }
+
+  const artistProfile = await ArtistProfile.findOne({ user: input.artist })
+  if (!artistProfile) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Artist profile not found')
+  }
+
+  if (artistProfile.isPenaltyRequired) {
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      'This artist is currently unavailable for new bookings.'
+    )
+  }
+
+  const artistUser = await User.findById(input.artist)
+  if (
+    !artistUser ||
+    artistUser.status !== AuthStatus.ACTIVE ||
+    !artistUser.isProfileCompleted ||
+    !artistUser.isStripeConnected
+  ) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'This artist cannot accept bookings as their profile or payment onboarding is incomplete.'
+    )
+  }
+
+  const guestCount = Math.max(1, Number(input.guestCount) || 1)
+  const totalServicePrice = round2(
+    services.reduce((acc, s) => acc + (s.price || 0) * guestCount, 0)
+  )
+  const totalDuration = services.reduce(
+    (acc, s) => acc + (s.durationMinutes || 60) * guestCount,
+    0
+  )
+
+  const platformSettings = await PlatformSettings.getSettings()
+  const platformCommissionPercent = platformSettings?.platformPercentage ?? 20
+  const gstPercent = platformSettings?.gstPercentage ?? 10
+  const stripeGstTaxRateId = platformSettings?.stripeGstTaxRateId || null
+  const travelingFeePerKm = platformSettings?.travelingFeePerKm ?? 0
+
+  let travelFee = 0
+  let distanceKm = 0
+  const visitType = input.visitType || 'home_visit'
+
+  if (visitType === 'home_visit') {
+    if (input.latitude === undefined || input.longitude === undefined) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'Latitude and longitude coordinates are required for home visits to calculate travel fee'
+      )
+    }
+
+    const latNum = Number(input.latitude)
+    const lngNum = Number(input.longitude)
+    if (!isValidCoordinates(latNum, lngNum)) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'Invalid latitude or longitude coordinates provided'
+      )
+    }
+
+    if (!artistProfile.location?.coordinates) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'Artist location coordinates not configured on profile'
+      )
+    }
+
+    distanceKm = calculateDistanceKm(
+      artistProfile.location.coordinates as [number, number],
+      [lngNum, latNum]
+    )
+
+    const artistMaxRadius = artistProfile.travelRadius || 0
+    if (artistMaxRadius > 0 && distanceKm > artistMaxRadius) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        `Selected location is outside this artist's travel radius (${artistMaxRadius} km). Current distance: ${distanceKm} km.`
+      )
+    }
+
+    travelFee = round2(distanceKm * travelingFeePerKm)
+  }
+
+  // Promo code check
+  let promoDoc = null
+  if (input.promoCode) {
+    promoDoc = await PromoCode.findOne({
+      promoCode: input.promoCode.toUpperCase().trim(),
+    })
+  }
+
+  const breakdown = calculateBookingBreakdown({
+    servicePrice: totalServicePrice,
+    travelFee,
+    parkingFee: 0,
+    isArtistGstRegistered: artistProfile.isGstRegistered,
+    promoCode: promoDoc,
+    usePlatformCredit: false,
+    availableWalletCredit: 0,
+    platformCommissionPercent,
+    gstPercent,
+  })
+
+  return {
+    service: {
+      id: services[0]?._id,
+      name: services.map((s) => s.name).join(', '),
+      unitPrice: services[0]?.price,
+      guestCount,
+      totalServicePrice,
+      durationMinutes: totalDuration,
+    },
+    services: services.map((s) => ({
+      id: s._id,
+      name: s.name,
+      unitPrice: s.price,
+      guestCount,
+      totalServicePrice: round2((s.price || 0) * guestCount),
+      durationMinutes: (s.durationMinutes || 60) * guestCount,
+    })),
+    travel: {
+      visitType,
+      distanceKm,
+      travelFee,
+      parkingFee: 0,
+    },
+    artist: {
+      id: input.artist,
+      businessName: artistProfile.businessName,
+      isGstRegistered: artistProfile.isGstRegistered,
+      travelRadius: artistProfile.travelRadius,
+    },
+    taxConfig: {
+      gstPercentage: gstPercent,
+      stripeGstTaxRateId,
+    },
+    walletBalance: 0,
     breakdown,
   }
 }
@@ -4521,6 +4700,7 @@ const updateAdminBookingNotes = async (bookingId: string, adminNotes: string) =>
 
 export const bookingServices = {
   checkoutPreview,
+  publicCheckoutPreview,
   createBooking,
   cancelBooking,
   customerCancelBooking,

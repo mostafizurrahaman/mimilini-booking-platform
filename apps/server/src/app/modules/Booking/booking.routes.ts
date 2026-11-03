@@ -9,6 +9,12 @@ import { bookingValidations } from './booking.validations'
 const router: Router = express.Router()
 
 router.post(
+  '/preview/public',
+  validateRequest(bookingValidations.publicCheckoutPreviewSchema),
+  bookingControllers.publicCheckoutPreview
+)
+
+router.post(
   '/preview',
   auth(AuthRoles.CUSTOMER, AuthRoles.ARTIST, AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
   validateRequest(bookingValidations.checkoutPreviewSchema),

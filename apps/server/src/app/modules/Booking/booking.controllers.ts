@@ -16,6 +16,17 @@ const checkoutPreview = catchAsync(async (req, res) => {
   })
 })
 
+const publicCheckoutPreview = catchAsync(async (req, res) => {
+  const result = await bookingServices.publicCheckoutPreview(req.body)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'Public checkout financial breakdown preview calculated successfully!',
+    data: result,
+  })
+})
+
 const createBooking = catchAsync(async (req, res) => {
   const user = await getUserFromRequest(req)
   const result = await bookingServices.createBooking(user, req.body)
@@ -391,6 +402,7 @@ const updateAdminBookingNotes = catchAsync(async (req, res) => {
 
 export const bookingControllers = {
   checkoutPreview,
+  publicCheckoutPreview,
   createBooking,
   cancelBooking,
   customerCancelBooking,
