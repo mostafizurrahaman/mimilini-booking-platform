@@ -6,6 +6,10 @@ import {
   AuthStatus,
   Review,
   User,
+  Availability,
+  ArtistBlockedDate,
+  Booking,
+  BOOKING_STATUS,
   verificationStatus,
   type IUser,
   type IArtistCertification,
@@ -1688,18 +1692,144 @@ export interface IGetArtistDetailsQuery {
   longitude?: string | number
 }
 
-const getArtistDetails = async (artistIdParam: string, query: IGetArtistDetailsQuery = {}, currentUserId?: string | mongoose.Types.ObjectId) => {
+/**
+ * Fast in-memory daily slot calculator to eliminate 30+ sequential DB round trips
+ */
+const computeDaySlots = (options: {
+  dateStr: string
+  daySchedule: any
+  isVacation: boolean
+  isBlocked: boolean
+  bookingsForDay: Array<{ startTime: string; endTime: string }>
+  serviceDurationMinutes: number
+  bufferTime: number
+  minNoticeHours: number
+  maxBookingPerDay?: number | null | undefined
+  onlyCheckHasSlots?: boolean | undefined
+}) => {
+  const {
+    dateStr,
+    daySchedule,
+    isVacation,
+    isBlocked,
+    bookingsForDay,
+    serviceDurationMinutes,
+    bufferTime,
+    minNoticeHours,
+    maxBookingPerDay,
+    onlyCheckHasSlots = false,
+  } = options
+
+  if (
+    !daySchedule ||
+    !daySchedule.isWorkingDay ||
+    !daySchedule.startTime ||
+    !daySchedule.endTime ||
+    isVacation ||
+    isBlocked
+  ) {
+    return { isWorkingDay: false, availableSlotsCount: 0, availableSlots: [] }
+  }
+
+  const isMaxBookingReached = Boolean(
+    maxBookingPerDay && bookingsForDay.length >= maxBookingPerDay
+  )
+  if (isMaxBookingReached && onlyCheckHasSlots) {
+    return { isWorkingDay: true, availableSlotsCount: 0, availableSlots: [] }
+  }
+
+  const totalSlotDuration = serviceDurationMinutes + bufferTime
+  const workStart = moment(`${dateStr} ${daySchedule.startTime}`, 'YYYY-MM-DD HH:mm')
+  const workEnd = moment(`${dateStr} ${daySchedule.endTime}`, 'YYYY-MM-DD HH:mm')
+
+  const breakRanges = (daySchedule.breakTimes || []).map((b: any) => ({
+    start: moment(`${dateStr} ${b.startTime}`, 'YYYY-MM-DD HH:mm'),
+    end: moment(`${dateStr} ${b.endTime}`, 'YYYY-MM-DD HH:mm'),
+  }))
+
+  const bookingRanges = bookingsForDay.map((bk) => ({
+    start: moment(`${dateStr} ${bk.startTime}`, 'YYYY-MM-DD HH:mm'),
+    end: moment(`${dateStr} ${bk.endTime}`, 'YYYY-MM-DD HH:mm').add(bufferTime, 'minutes'),
+  }))
+
+  const now = moment()
+  const earliestAllowedTime = now.clone().add(minNoticeHours, 'hours')
+
+  const slots: Array<{ startTime: string; endTime: string; formattedTime: string }> = []
+  let currentSlotStart = workStart.clone()
+
+  while (
+    currentSlotStart
+      .clone()
+      .add(serviceDurationMinutes, 'minutes')
+      .isSameOrBefore(workEnd)
+  ) {
+    const currentSlotEnd = currentSlotStart.clone().add(serviceDurationMinutes, 'minutes')
+    let isSlotAvailable = true
+
+    if (currentSlotStart.isBefore(now) || currentSlotStart.isBefore(earliestAllowedTime)) {
+      isSlotAvailable = false
+    }
+
+    if (isSlotAvailable && isMaxBookingReached) {
+      isSlotAvailable = false
+    }
+
+    if (isSlotAvailable) {
+      for (const brk of breakRanges) {
+        if (currentSlotStart.isBefore(brk.end) && currentSlotEnd.isAfter(brk.start)) {
+          isSlotAvailable = false
+          break
+        }
+      }
+    }
+
+    if (isSlotAvailable) {
+      for (const bkg of bookingRanges) {
+        if (currentSlotStart.isBefore(bkg.end) && currentSlotEnd.isAfter(bkg.start)) {
+          isSlotAvailable = false
+          break
+        }
+      }
+    }
+
+    if (isSlotAvailable) {
+      slots.push({
+        startTime: currentSlotStart.format('HH:mm'),
+        endTime: currentSlotEnd.format('HH:mm'),
+        formattedTime: currentSlotStart.format('h:mm A'),
+      })
+      if (onlyCheckHasSlots) {
+        return { isWorkingDay: true, availableSlotsCount: 1, availableSlots: slots }
+      }
+    }
+
+    currentSlotStart.add(totalSlotDuration, 'minutes')
+  }
+
+  return {
+    isWorkingDay: true,
+    availableSlotsCount: slots.length,
+    availableSlots: slots,
+  }
+}
+
+const getArtistDetails = async (
+  artistIdParam: string,
+  query: IGetArtistDetailsQuery = {},
+  currentUserId?: string | mongoose.Types.ObjectId
+) => {
   if (!mongoose.isValidObjectId(artistIdParam)) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Invalid artist ID.')
   }
 
   const targetId = new mongoose.Types.ObjectId(artistIdParam)
 
-  // Find ArtistProfile by either profile _id or user ID
+  // 1. Find ArtistProfile by either profile _id or user ID
   const artistProfile = await ArtistProfile.findOne({
     $or: [{ _id: targetId }, { user: targetId }],
     isPenaltyRequired: { $ne: true },
-  })
+  }).lean()
 
   if (!artistProfile) {
     throw new AppError(httpStatus.NOT_FOUND, 'Artist profile not found.')
@@ -1707,7 +1837,7 @@ const getArtistDetails = async (artistIdParam: string, query: IGetArtistDetailsQ
 
   const artistUserId = artistProfile.user
 
-  // Find corresponding User account
+  // 2. Find corresponding User account
   const userDoc = await User.findById(artistUserId).lean()
   if (
     !userDoc ||
@@ -1721,8 +1851,30 @@ const getArtistDetails = async (artistIdParam: string, query: IGetArtistDetailsQ
     )
   }
 
-  // 1. Review statistics and recent reviews
-  const [reviewStats, recentReviews] = await Promise.all([
+  // 3. Prepare dates for 7-day strip
+  const queryDateStr = query.date
+  const baseDate =
+    queryDateStr && moment(queryDateStr, 'YYYY-MM-DD').isValid()
+      ? moment(queryDateStr, 'YYYY-MM-DD')
+      : moment()
+
+  const dateStrings: string[] = []
+  for (let i = 0; i < 7; i++) {
+    dateStrings.push(baseDate.clone().add(i, 'days').format('YYYY-MM-DD'))
+  }
+  const startDateRange = baseDate.clone().startOf('day').toDate()
+  const endDateRange = baseDate.clone().add(6, 'days').endOf('day').toDate()
+
+  // 4. Concurrently fetch all auxiliary data in parallel
+  const [
+    reviewStats,
+    recentReviews,
+    services,
+    availability,
+    blockedDates,
+    rangeBookings,
+    isFavoriteDoc,
+  ] = await Promise.all([
     Review.aggregate([
       {
         $match: {
@@ -1743,6 +1895,30 @@ const getArtistDetails = async (artistIdParam: string, query: IGetArtistDetailsQ
       .limit(3)
       .populate('customer', 'name profileImage')
       .lean(),
+    ArtistServices.find({ artist: artistUserId, isActive: true })
+      .populate('category', 'name')
+      .sort({ isPopular: -1, price: -1 })
+      .lean(),
+    Availability.findOne({ user: artistUserId }).lean(),
+    ArtistBlockedDate.find({
+      user: artistUserId,
+      date: { $in: dateStrings },
+    }).lean(),
+    Booking.find({
+      artist: artistUserId,
+      bookingDate: { $gte: startDateRange, $lte: endDateRange },
+      status: {
+        $nin: [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.DECLINED],
+      },
+    })
+      .select('bookingDate startTime endTime status')
+      .lean(),
+    currentUserId && mongoose.isValidObjectId(currentUserId)
+      ? FavoriteArtist.exists({
+          user: new mongoose.Types.ObjectId(String(currentUserId)),
+          artist: artistUserId,
+        })
+      : Promise.resolve(null),
   ])
 
   const avgRating = reviewStats[0]?.avgRating
@@ -1767,12 +1943,7 @@ const getArtistDetails = async (artistIdParam: string, query: IGetArtistDetailsQ
     }
   })
 
-  // 2. Services Offered
-  const services = await ArtistServices.find({ artist: artistUserId, isActive: true })
-    .populate('category', 'name')
-    .sort({ isPopular: -1, price: -1 })
-    .lean()
-
+  // Format Services
   const formattedServices = services.map((s: any) => {
     const duration = s.durationMinutes || 60
     let durationText = `${duration} min`
@@ -1802,7 +1973,7 @@ const getArtistDetails = async (artistIdParam: string, query: IGetArtistDetailsQ
     }
   })
 
-  // 3. Specialties tags
+  // Specialties tags
   const specialtiesSet = new Set<string>()
   formattedServices.forEach((s) => {
     if (s.category?.name) specialtiesSet.add(s.category.name)
@@ -1818,13 +1989,7 @@ const getArtistDetails = async (artistIdParam: string, query: IGetArtistDetailsQ
   }
   const specialties = Array.from(specialtiesSet)
 
-  // 4. Availability 7-day strip & selected date slots
-  const queryDateStr = query.date
-  const baseDate =
-    queryDateStr && moment(queryDateStr, 'YYYY-MM-DD').isValid()
-      ? moment(queryDateStr, 'YYYY-MM-DD')
-      : moment()
-
+  // Determine target service duration
   let targetServiceDuration = 60
   if (query.serviceId) {
     const matchedSvc = formattedServices.find(
@@ -1841,23 +2006,68 @@ const getArtistDetails = async (artistIdParam: string, query: IGetArtistDetailsQ
     targetServiceDuration = formattedServices[0].durationMinutes
   }
 
+  // Pre-index blocked dates and bookings in memory
+  const blockedDateSet = new Set(blockedDates.map((b) => b.date))
+  const bookingsByDate: Record<string, Array<{ startTime: string; endTime: string }>> = {}
+  for (const bkg of rangeBookings) {
+    const dStr = moment(bkg.bookingDate).format('YYYY-MM-DD')
+    const utcStr = moment.utc(bkg.bookingDate).format('YYYY-MM-DD')
+    if (!bookingsByDate[dStr]) bookingsByDate[dStr] = []
+    bookingsByDate[dStr].push(bkg)
+    if (utcStr !== dStr) {
+      if (!bookingsByDate[utcStr]) bookingsByDate[utcStr] = []
+      bookingsByDate[utcStr].push(bkg)
+    }
+  }
+
+  const isVacationOnDate = (dStr: string) => {
+    if (
+      !availability?.isVacationEnabled ||
+      !availability.vacationStartDate ||
+      !availability.vacationEndDate
+    ) {
+      return false
+    }
+    const vStart = moment(availability.vacationStartDate).format('YYYY-MM-DD')
+    const vEnd = moment(availability.vacationEndDate).format('YYYY-MM-DD')
+    return dStr >= vStart && dStr <= vEnd
+  }
+
+  const dayNameMapping: Record<number, string> = {
+    0: 'sunday',
+    1: 'monday',
+    2: 'tuesday',
+    3: 'wednesday',
+    4: 'thursday',
+    5: 'friday',
+    6: 'saturday',
+  }
+
+  const weeklySchedule: any = availability?.weeklySchedule
+
+  // Fast 7-day strip calculation in memory
   const weekDays = []
   for (let i = 0; i < 7; i++) {
     const current = baseDate.clone().add(i, 'days')
-    const dateStr = current.format('YYYY-MM-DD')
+    const dateStr = dateStrings[i]!
     const isToday = current.isSame(moment(), 'day')
+    const dayName = dayNameMapping[current.day()] || 'monday'
+    const daySchedule = weeklySchedule?.[dayName]
 
-    let hasSlots = false
-    try {
-      const slotsInfo = await availabilityServices.getArtistAvailableSlotsForDate(
-        artistUserId.toString(),
-        dateStr,
-        targetServiceDuration
-      )
-      hasSlots = (slotsInfo?.availableSlotsCount || 0) > 0
-    } catch {
-      hasSlots = false
-    }
+    const daySlotsInfo = computeDaySlots({
+      dateStr,
+      daySchedule,
+      isVacation: isVacationOnDate(dateStr),
+      isBlocked: blockedDateSet.has(dateStr),
+      bookingsForDay: bookingsByDate[dateStr] || [],
+      serviceDurationMinutes: targetServiceDuration,
+      bufferTime: availability?.bufferTime || 0,
+      minNoticeHours: availability?.minNotice || 0,
+      maxBookingPerDay: availability?.maxBookingPerDay,
+      onlyCheckHasSlots: true,
+    })
+
+    const hasSlots = daySlotsInfo.availableSlotsCount > 0
 
     weekDays.push({
       date: dateStr,
@@ -1870,30 +2080,30 @@ const getArtistDetails = async (artistIdParam: string, query: IGetArtistDetailsQ
     })
   }
 
+  // Selected date full slots calculation in memory
   const selectedDay = weekDays.find((d) => d.hasSlots) || weekDays[0]
   const selectedDateStr = selectedDay ? selectedDay.date : baseDate.format('YYYY-MM-DD')
-  let availableSlotsList: Array<{ startTime: string; endTime: string; formattedTime: string }> = []
-  let isWorkingDay = false
+  const selectedDayName = dayNameMapping[moment(selectedDateStr).day()] || 'monday'
+  const selectedDaySchedule = weeklySchedule?.[selectedDayName]
 
-  try {
-    const daySlotsInfo = await availabilityServices.getArtistAvailableSlotsForDate(
-      artistUserId.toString(),
-      selectedDateStr,
-      targetServiceDuration
-    )
-    isWorkingDay = daySlotsInfo?.isWorkingDay ?? false
-    availableSlotsList = (daySlotsInfo?.availableSlots || []).map((slot: any) => ({
-      startTime: slot.startTime,
-      endTime: slot.endTime,
-      formattedTime: moment(slot.startTime, 'HH:mm').format('h:mm A'),
-    }))
-  } catch {
-    // Graceful fallback
-  }
+  const selectedDaySlotsResult = computeDaySlots({
+    dateStr: selectedDateStr,
+    daySchedule: selectedDaySchedule,
+    isVacation: isVacationOnDate(selectedDateStr),
+    isBlocked: blockedDateSet.has(selectedDateStr),
+    bookingsForDay: bookingsByDate[selectedDateStr] || [],
+    serviceDurationMinutes: targetServiceDuration,
+    bufferTime: availability?.bufferTime || 0,
+    minNoticeHours: availability?.minNotice || 0,
+    maxBookingPerDay: availability?.maxBookingPerDay,
+    onlyCheckHasSlots: false,
+  })
 
+  const isWorkingDay = selectedDaySlotsResult.isWorkingDay
+  const availableSlotsList = selectedDaySlotsResult.availableSlots
   const isAvailableToday = weekDays[0]?.hasSlots ?? false
 
-  // 5. Badges
+  // Badges
   const badges: string[] = []
   const isVerified = userDoc.verificationStatus === 'verified'
   if (isVerified) badges.push('Verified Artist')
@@ -1902,7 +2112,7 @@ const getArtistDetails = async (artistIdParam: string, query: IGetArtistDetailsQ
     badges.push('Top Rated')
   }
 
-  // 6. Location, distance, travel radius
+  // Location, distance, travel radius
   const travelRadius = artistProfile.travelRadius || 15
   const formattedLocation =
     [artistProfile.city, artistProfile.state].filter(Boolean).join(', ') ||
@@ -1986,12 +2196,7 @@ const getArtistDetails = async (artistIdParam: string, query: IGetArtistDetailsQ
     },
 
     // Favorite status
-    isFavorite: currentUserId && mongoose.isValidObjectId(currentUserId)
-      ? !!(await FavoriteArtist.exists({
-          user: new mongoose.Types.ObjectId(String(currentUserId)),
-          artist: artistUserId,
-        }))
-      : false,
+    isFavorite: Boolean(isFavoriteDoc),
 
     // Availability Preview (Screen 15.png)
     availability: {
