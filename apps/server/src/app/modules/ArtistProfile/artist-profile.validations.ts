@@ -14,8 +14,8 @@ import {
 } from '@repo/shared'
 import { artistProfileSortableFields } from '@repo/db'
 
-const createArtistProfileSchema = z.object({
-  body: z.object({
+const createArtistProfileBodySchema = z
+  .object({
     businessName: requiredString('Business name'),
     phone: requiredString('Phone').regex(
       /^(?:61|0)[234578]\d{8}$/,
@@ -49,22 +49,40 @@ const createArtistProfileSchema = z.object({
       .nullable(),
     facebook: requiredString('Facebook profile url')
       .regex(/^https?:\/\/(www\.)?facebook\.com\/[A-Za-z0-9._-]+\/?$/, 'Invalid Facebook URL')
-      .optional(),
+      .optional()
+      .nullable(),
     language: enumString(['english', 'australian english'], 'Language'),
     travelRadius: requiredNumber('Travel radius').min(0, {
       error: 'Min. travel radius must be 0',
     }),
-  }),
+  })
+  .refine(
+    (data) => {
+      const hasWebsite = Boolean(data.website && data.website.trim())
+      const hasInstagram = Boolean(data.instagram && data.instagram.trim())
+      const hasFacebook = Boolean(data.facebook && data.facebook.trim())
+      return hasWebsite || hasInstagram || hasFacebook
+    },
+    {
+      message: 'At least one of website, Instagram, or Facebook is mandatory.',
+      path: ['website'],
+    }
+  )
+
+const createArtistProfileSchema = z.object({
+  body: createArtistProfileBodySchema,
 })
 
-const updateArtistProfileSchema = z.object({
-  body: z.object({
+const updateArtistProfileBodySchema = z
+  .object({
     name: optionalString('Name'),
     professionalBio: optionalString('Professional bio'),
-    phone: requiredString('Phone').regex(
-      /^(?:(?:\+61|0061)\s?4\d{2}\s?\d{3}\s?\d{3}|0[2-8]\s?\d{4}\s?\d{4})$/,
-      'Invalid Australian phone number'
-    ).optional(),
+    phone: requiredString('Phone')
+      .regex(
+        /^(?:(?:\+61|0061)\s?4\d{2}\s?\d{3}\s?\d{3}|0[2-8]\s?\d{4}\s?\d{4})$/,
+        'Invalid Australian phone number'
+      )
+      .optional(),
     businessAddress: optionalString('Business address'),
     latitude: z.coerce
       .number()
@@ -88,14 +106,37 @@ const updateArtistProfileSchema = z.object({
       .nullable(),
     facebook: requiredString('Facebook profile url')
       .regex(/^https?:\/\/(www\.)?facebook\.com\/[A-Za-z0-9._-]+\/?$/, 'Invalid Facebook URL')
-      .optional(),
+      .optional()
+      .nullable(),
     language: enumString(['english', 'australian english'], 'Language').optional(),
     travelRadius: requiredNumber('Travel radius')
       .min(0, {
         error: 'Min. travel radius must be 0',
       })
       .optional(),
-  }),
+  })
+  .refine(
+    (data) => {
+      const hasWebsiteKey = data.website !== undefined
+      const hasInstagramKey = data.instagram !== undefined
+      const hasFacebookKey = data.facebook !== undefined
+
+      if (hasWebsiteKey && hasInstagramKey && hasFacebookKey) {
+        const hasWebsite = Boolean(data.website && data.website.trim())
+        const hasInstagram = Boolean(data.instagram && data.instagram.trim())
+        const hasFacebook = Boolean(data.facebook && data.facebook.trim())
+        return hasWebsite || hasInstagram || hasFacebook
+      }
+      return true
+    },
+    {
+      message: 'At least one of website, Instagram, or Facebook is mandatory.',
+      path: ['website'],
+    }
+  )
+
+const updateArtistProfileSchema = z.object({
+  body: updateArtistProfileBodySchema,
 })
 
 const getAllArtistProfileSchema = z.object({
@@ -161,15 +202,26 @@ const removeCertificationSchema = z.object({
       url: optionalString('Certificate URL'),
       certificationId: optionalString('Certificate ID'),
     })
-    .refine((data) => Boolean(data.url || data.certificationId), {
-      message: 'Either url or certificationId is required to remove a certification',
-    }),
+    .optional(),
+  query: z
+    .object({
+      url: optionalString('Certificate URL'),
+      certificationId: optionalString('Certificate ID'),
+    })
+    .optional(),
 })
 
 const removePortfolioSchema = z.object({
-  body: z.object({
-    url: requiredString('Portfolio image URL'),
-  }),
+  body: z
+    .object({
+      url: optionalString('Portfolio image URL'),
+    })
+    .optional(),
+  query: z
+    .object({
+      url: optionalString('Portfolio image URL'),
+    })
+    .optional(),
 })
 
 const getArtistDetailsSchema = z.object({
@@ -208,8 +260,8 @@ export const artistProfileValidations = {
   toggleFavoriteArtistSchema,
 }
 
-export type TCreateArtistProfilePayloadType = z.infer<typeof createArtistProfileSchema.shape.body>
-export type TUpdateArtistProfilePayloadType = z.infer<typeof updateArtistProfileSchema.shape.body>
+export type TCreateArtistProfilePayloadType = z.infer<typeof createArtistProfileBodySchema>
+export type TUpdateArtistProfilePayloadType = z.infer<typeof updateArtistProfileBodySchema>
 export type TGetAllArtistProfileQueryParamsType = z.infer<
   typeof getAllArtistProfileSchema.shape.query
 >

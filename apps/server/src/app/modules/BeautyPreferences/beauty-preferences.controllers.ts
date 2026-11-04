@@ -10,7 +10,7 @@ const createBeautyPreferences = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.CREATED,
-    message: 'The beauty preferences created successfully!',
+    message: 'Beauty preferences created successfully!',
     data: result,
   })
 })
@@ -22,7 +22,7 @@ const deleteBeautyPreferencesById = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The beauty preferences has been removed successfully!',
+    message: 'Beauty preferences removed successfully!',
     data: result,
   })
 })

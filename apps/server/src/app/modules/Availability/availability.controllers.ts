@@ -11,7 +11,7 @@ const createAvailability = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.CREATED,
-    message: 'The availability created successfully!',
+    message: 'Availability created successfully!',
     data: result,
   })
 })
@@ -23,7 +23,7 @@ const updateAvailability = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The availability updated successfully!',
+    message: 'Availability updated successfully!',
     data: result,
   })
 })
@@ -34,7 +34,7 @@ const getAllAvailability = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The availability retrieved successfully!',
+    message: 'Availabilities retrieved successfully!',
     data: result.data,
     meta: result.meta,
   })
@@ -47,7 +47,7 @@ const getAvailabilityByUserId = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The availability retrieved successfully!',
+    message: 'Availability retrieved successfully!',
     data: result,
   })
 })
@@ -58,7 +58,7 @@ const deleteAvailabilityById = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The availability deleted successfully!',
+    message: 'Availability deleted successfully!',
     data: result,
   })
 })
@@ -74,7 +74,7 @@ const getArtistAvailableDaysInMonth = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'Artist calendar availability days retrieved successfully!',
+    message: 'Calendar availability days retrieved successfully!',
     data: result,
   })
 })
@@ -100,7 +100,7 @@ const getArtistAvailableSlotsForDate = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'Artist available slots retrieved successfully!',
+    message: 'Available slots retrieved successfully!',
     data: result,
   })
 })

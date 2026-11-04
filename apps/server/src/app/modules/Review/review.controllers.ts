@@ -108,7 +108,7 @@ const getArtistReviews = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'Artist reviews retrieved successfully!',
+    message: 'Reviews retrieved successfully!',
     data: {
       summary: result.summary,
       reviews: result.reviews,

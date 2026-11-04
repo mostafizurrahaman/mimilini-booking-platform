@@ -10,7 +10,7 @@ const createArtistBlockedDate = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.CREATED,
-    message: 'The artist blocked date created successfully!',
+    message: 'Blocked date created successfully!',
     data: result,
   })
 })
@@ -26,7 +26,7 @@ const updateArtistBlockedDate = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The artist blocked date updated successfully!',
+    message: 'Blocked date updated successfully!',
     data: result,
   })
 })
@@ -37,7 +37,7 @@ const getAllArtistBlockedDate = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The artist blocked date retrieved successfully!',
+    message: 'Blocked dates retrieved successfully!',
     data: result.data,
     meta: result.meta,
   })
@@ -53,7 +53,7 @@ const getMyArtistBlockedDate = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The artist blocked date retrieved successfully!',
+    message: 'Blocked dates retrieved successfully!',
     data: result.data,
     meta: result.meta,
   })
@@ -65,7 +65,7 @@ const getArtistBlockedDateById = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The artist blocked date retrieved successfully!',
+    message: 'Blocked date retrieved successfully!',
     data: result,
   })
 })
@@ -80,7 +80,7 @@ const deleteArtistBlockedDateById = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The artist blocked date deleted successfully!',
+    message: 'Blocked date deleted successfully!',
     data: result,
   })
 })

@@ -4,12 +4,13 @@ export const contentSortableFields = ['createdAt', 'updatedAt'] as const
 
 // Const:
 export const ContentType = {
-  TERMS_AND_CONDITION: 'terms_and_condition',
+  TERMS_AND_CONDITION_CUSTOMER: 'terms_and_condition_customer',
+  TERMS_AND_CONDITION_PROFESSIONAL: 'terms_and_condition_professional',
   PRIVACY_POLICY: 'privacy_policy',
   CANCELLATION_POLICY: 'cancellation_policy',
   REFUND_POLICY: 'refund_policy',
   INCIDENT_REPORT: 'incident_report',
-  SAFETY_POLICY: 'safety_policy',
+  SAFETY_POLICY: 'safety_policy', 
   ABOUT_US: 'about_us',
 } as const
 

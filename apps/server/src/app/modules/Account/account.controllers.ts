@@ -10,7 +10,7 @@ const connectStripeAccount = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.CREATED,
-    message: 'The account created successfully!',
+    message: 'Stripe account connected successfully!',
     data: result,
   })
 })
@@ -22,7 +22,7 @@ const getAccountById = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The account retrieved successfully!',
+    message: 'Stripe account retrieved successfully!',
     data: result,
   })
 })
