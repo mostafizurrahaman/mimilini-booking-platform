@@ -1,6 +1,8 @@
 import { notificationServices } from '../Notification/notification.services'
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
+  Account,
+  accountStatus,
   AuthPermission,
   AuthRoles,
   AuthStatus,
@@ -387,6 +389,12 @@ const login = async (payload: ILoginType) => {
     refreshToken,
     accessToken,
     isOtpVerified: user.isOtpVerified,
+    isProfileCompleted: user.isProfileCompleted,
+    isDocumentVerified: user.verificationStatus === verificationStatus.VERIFIED,
+    isDocumentVerificationCompleted: user.verificationStatus === verificationStatus.VERIFIED,
+    verificationStatus: user.verificationStatus,
+    isStripeConnected: Boolean(user.isStripeConnected),
+    isStripeConnectCompleted: Boolean(user.isStripeConnected),
     role: user.role,
     email: user.email,
     isTwoFactorEnabled: user.isTwoFactorEnabled,
@@ -457,10 +465,9 @@ const artistLogin = async (payload: ILoginType) => {
 
   // ?? Write messages here:
   const message = user?.isProfileCompleted
-    ? `You are logged in successfully. Please complete your profile.`
-    : 'You are logged in successfully.'
+    ? 'You are logged in successfully.'
+    : 'You are logged in successfully. Please complete your profile.'
 
-  
   if (payload.fcmToken) {
     await notificationServices.registerFcmToken(user._id, {
       fcmToken: payload.fcmToken,
@@ -469,11 +476,34 @@ const artistLogin = async (payload: ILoginType) => {
     })
   }
 
+  const isDocumentVerified = user.verificationStatus === verificationStatus.VERIFIED
+  let isStripeConnected = Boolean(user.isStripeConnected)
+  if (!isStripeConnected) {
+    const account = await Account.findOne({ user: user._id })
+    if (
+      account &&
+      (account.status === accountStatus.ACTIVE ||
+        (account.detailsSubmitted && account.chargesEnabled && account.payoutsEnabled))
+    ) {
+      isStripeConnected = true
+      user.isStripeConnected = true
+      await user.save().catch(() => {})
+    }
+  }
+
   return {
     message,
     refreshToken,
     accessToken,
     isProfileCompleted: user.isProfileCompleted,
+    isDocumentVerified,
+    isDocumentVerificationCompleted: isDocumentVerified,
+    isDocumentRequired:
+      user.verificationStatus === verificationStatus.PENDING ||
+      user.verificationStatus === verificationStatus.REJECTED,
+    verificationStatus: user.verificationStatus,
+    isStripeConnected,
+    isStripeConnectCompleted: isStripeConnected,
     isOtpVerified: user.isOtpVerified,
     role: user.role,
     email: user.email,
@@ -913,10 +943,13 @@ const getMe = async (user: IUser) => {
           phone: { $ifNull: ['$phone', null] },
           status: '$status',
           verificationStatus: '$verificationStatus',
+          isDocumentVerified: { $eq: ['$verificationStatus', verificationStatus.VERIFIED] },
+          isDocumentVerificationCompleted: { $eq: ['$verificationStatus', verificationStatus.VERIFIED] },
           role: '$role',
           profileImage: { $ifNull: ['$profileImage', null] },
           isProfileCompleted: { $ifNull: ['$isProfileCompleted', null] },
-          isStripeConnected: { $ifNull: ['$isStripeConnected', null] },
+          isStripeConnected: { $ifNull: ['$isStripeConnected', false] },
+          isStripeConnectCompleted: { $ifNull: ['$isStripeConnected', false] },
           artistProfile: '$artistProfile',
           createdAt: '$createdAt',
           updatedAt: '$updatedAt',
@@ -982,11 +1015,14 @@ const getMe = async (user: IUser) => {
           phone: { $ifNull: ['$phone', null] },
           status: '$status',
           verificationStatus: '$verificationStatus',
+          isDocumentVerified: { $eq: ['$verificationStatus', verificationStatus.VERIFIED] },
+          isDocumentVerificationCompleted: { $eq: ['$verificationStatus', verificationStatus.VERIFIED] },
           customerPreferences: '$customerPreferences',
           role: '$role',
           profileImage: { $ifNull: ['$profileImage', null] },
           isProfileCompleted: { $ifNull: ['$isProfileCompleted', null] },
-          isStripeConnected: { $ifNull: ['$isStripeConnected', null] },
+          isStripeConnected: { $ifNull: ['$isStripeConnected', false] },
+          isStripeConnectCompleted: { $ifNull: ['$isStripeConnected', false] },
           artistProfile: '$artistProfile',
           createdAt: '$createdAt',
           updatedAt: '$updatedAt',
