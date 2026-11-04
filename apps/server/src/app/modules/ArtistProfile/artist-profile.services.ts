@@ -73,6 +73,17 @@ export const createArtistProfile = async (
     travelRadius,
   } = payload
 
+  const hasWebsite = Boolean(website && website.trim())
+  const hasInstagram = Boolean(instagram && instagram.trim())
+  const hasFacebook = Boolean(facebook && facebook.trim())
+
+  if (!hasWebsite && !hasInstagram && !hasFacebook) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'At least one of website, Instagram, or Facebook is mandatory.'
+    )
+  }
+
   if (user.isProfileCompleted) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Your professional profile is already completed.')
   }
@@ -189,9 +200,9 @@ export const createArtistProfile = async (
           city,
           state,
           postalCode,
-          website: website!,
-          instagram: instagram!,
-          facebook: facebook!,
+          website: website?.trim() || undefined,
+          instagram: instagram?.trim() || undefined,
+          facebook: facebook?.trim() || undefined,
           language,
           travelRadius,
         },
@@ -247,6 +258,7 @@ const updateArtistProfile = async (
     phone,
     facebook,
     instagram,
+    website,
     language,
     city,
     state,
@@ -277,6 +289,19 @@ const updateArtistProfile = async (
 
     if (!user?.isProfileCompleted) {
       throw new AppError(httpStatus.NOT_FOUND, 'Please complete your profile first.')
+    }
+
+    const updatedWebsite = website !== undefined ? website?.trim() : artistProfile.website?.trim()
+    const updatedInstagram =
+      instagram !== undefined ? instagram?.trim() : artistProfile.instagram?.trim()
+    const updatedFacebook =
+      facebook !== undefined ? facebook?.trim() : artistProfile.facebook?.trim()
+
+    if (!updatedWebsite && !updatedInstagram && !updatedFacebook) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'At least one of website, Instagram, or Facebook is mandatory.'
+      )
     }
 
     // --------------------------------------------------
@@ -386,12 +411,16 @@ const updateArtistProfile = async (
       artistProfile.businessAddress = businessAddress
     }
 
+    if (website !== undefined) {
+      artistProfile.website = website?.trim() || undefined
+    }
+
     if (facebook !== undefined) {
-      artistProfile.facebook = facebook
+      artistProfile.facebook = facebook?.trim() || undefined
     }
 
     if (instagram !== undefined) {
-      artistProfile.instagram = instagram!
+      artistProfile.instagram = instagram?.trim() || undefined
     }
 
     if (language !== undefined) {
@@ -834,10 +863,14 @@ const addPortFolio = async (user: IUser, portfolioImages: TMulterFileList) => {
 
 // ?? Remove Portfolio images:
 const removePortfolioImage = async (user: IUser, url: string) => {
+  if (!url) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Portfolio image URL is required.')
+  }
+
   // ?? Check is artist profile exists ?:
   const artistProfile = await ArtistProfile.findOne({ user: user?._id })
   if (!artistProfile) {
-    throw new AppError(httpStatus.BAD_REQUEST, "Artist profile doesn't exists.")
+    throw new AppError(httpStatus.BAD_REQUEST, "Profile doesn't exist.")
   }
 
   // ?? Has any portfolio images ?:
@@ -846,16 +879,40 @@ const removePortfolioImage = async (user: IUser, url: string) => {
     throw new AppError(httpStatus.BAD_REQUEST, 'No portfolio image exists.')
   }
 
-  // ?? Filter out the url :
-  const currentUrlExists = portfolioImageUrls.find(
-    (portfolioUrl) => portfolioUrl?.trim() === url?.trim()
-  )
+  // ?? Filter out the url (robust against URL encoding and partial paths):
+  const cleanUrl = url.trim()
+  let decodedUrl = cleanUrl
+  try {
+    decodedUrl = decodeURIComponent(cleanUrl)
+  } catch {
+    // ignore
+  }
+
+  const currentUrlExists = portfolioImageUrls.find((portfolioUrl) => {
+    if (!portfolioUrl) return false
+    const pTrim = portfolioUrl.trim()
+    let pDecoded = pTrim
+    try {
+      pDecoded = decodeURIComponent(pTrim)
+    } catch {
+      // ignore
+    }
+    return (
+      pTrim === cleanUrl ||
+      pDecoded === decodedUrl ||
+      pTrim === decodedUrl ||
+      pDecoded === cleanUrl ||
+      (cleanUrl && (pTrim.endsWith(cleanUrl) || pDecoded.endsWith(cleanUrl))) ||
+      (decodedUrl && (pTrim.endsWith(decodedUrl) || pDecoded.endsWith(decodedUrl)))
+    )
+  })
+
   if (!currentUrlExists) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Given url not found.')
   }
 
   // ?? Other images:
-  const otherImages = portfolioImageUrls.filter((img) => img?.trim() !== url?.trim())
+  const otherImages = portfolioImageUrls.filter((img) => img !== currentUrlExists)
 
   // ?? Attempt to delete the url:
   artistProfile.portfolioImages = otherImages
@@ -2266,10 +2323,10 @@ const toggleFavoriteArtist = async (
 
   if (existing) {
     await FavoriteArtist.deleteOne({ _id: existing._id })
-    return { isFavorite: false, message: 'Artist removed from favorites' }
+    return { isFavorite: false, message: 'Removed from favorites' }
   } else {
     await FavoriteArtist.create({ user: customerId, artist: artistUserId })
-    return { isFavorite: true, message: 'Artist saved to favorites' }
+    return { isFavorite: true, message: 'Saved to favorites' }
   }
 }
 

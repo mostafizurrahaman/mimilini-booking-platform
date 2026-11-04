@@ -10,7 +10,7 @@ const createBeautyInspiration = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.CREATED,
-    message: 'The beauty inspiration created successfully!',
+    message: 'Beauty inspiration created successfully!',
     data: result,
   })
 })
@@ -26,7 +26,7 @@ const updateBeautyInspiration = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The beauty inspiration updated successfully!',
+    message: 'Beauty inspiration updated successfully!',
     data: result,
   })
 })
@@ -37,7 +37,7 @@ const getAllBeautyInspiration = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The beauty inspiration retrieved successfully!',
+    message: 'Beauty inspirations retrieved successfully!',
     data: result.data,
     meta: result.meta,
   })
@@ -49,7 +49,7 @@ const getBeautyInspirationById = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The beauty inspiration retrieved successfully!',
+    message: 'Beauty inspiration retrieved successfully!',
     data: result,
   })
 })
@@ -62,7 +62,7 @@ const deleteBeautyInspirationById = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The beauty inspiration deleted successfully!',
+    message: 'Beauty inspiration deleted successfully!',
     data: result,
   })
 })

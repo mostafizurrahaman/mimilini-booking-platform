@@ -22,7 +22,7 @@ const addPaymentMethod = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.CREATED,
-    message: 'The payment method has been added successfully!',
+    message: 'Payment method added successfully!',
     data: result,
   })
 })
@@ -34,7 +34,7 @@ const markAsDefault = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The payment method marked as default successfully!',
+    message: 'Payment method marked as default successfully!',
     data: result,
   })
 })
@@ -46,7 +46,7 @@ const getAllPaymentMethod = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The payment method retrieved successfully!',
+    message: 'Payment methods retrieved successfully!',
     data: result.data,
     meta: result.meta,
   })
@@ -59,7 +59,7 @@ const getPaymentMethodById = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The payment method retrieved successfully!',
+    message: 'Payment method retrieved successfully!',
     data: result,
   })
 })
@@ -71,7 +71,7 @@ const deletePaymentMethodById = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The payment method deleted successfully!',
+    message: 'Payment method deleted successfully!',
     data: result,
   })
 })

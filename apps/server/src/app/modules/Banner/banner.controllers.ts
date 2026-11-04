@@ -13,7 +13,7 @@ const createBanner = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.CREATED,
-    message: 'The banner created successfully!',
+    message: 'Banner created successfully!',
     data: result,
   })
 })
@@ -25,7 +25,7 @@ const updateBanner = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The banner updated successfully!',
+    message: 'Banner updated successfully!',
     data: result,
   })
 })
@@ -36,7 +36,7 @@ const updateBannerStatus = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The banner status updated successfully!',
+    message: 'Banner status updated successfully!',
     data: result,
   })
 })
@@ -47,7 +47,7 @@ const getAllBanner = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The banner retrieved successfully!',
+    message: 'Banners retrieved successfully!',
     data: result.data,
     meta: result.meta,
   })
@@ -61,7 +61,7 @@ const getAllActiveBanner = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'all active banners are retrieved successfully!',
+    message: 'Active banners retrieved successfully!',
     data: result.data,
     meta: result.meta,
   })
@@ -73,7 +73,7 @@ const getBannerById = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The banner retrieved successfully!',
+    message: 'Banner retrieved successfully!',
     data: result,
   })
 })
@@ -84,7 +84,7 @@ const deleteBannerById = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The banner deleted successfully!',
+    message: 'Banner deleted successfully!',
     data: result,
   })
 })

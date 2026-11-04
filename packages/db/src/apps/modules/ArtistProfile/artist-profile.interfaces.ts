@@ -32,9 +32,9 @@ export interface IArtistProfile {
   city: string
   state: string
   postalCode: string
-  website?: string
-  instagram?: string
-  facebook?: string
+  website?: string | null | undefined
+  instagram?: string | null | undefined
+  facebook?: string | null | undefined
 
   // Portfolio:
   portfolioImages: string[]

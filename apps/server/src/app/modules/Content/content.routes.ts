@@ -15,6 +15,11 @@ router.patch(
 )
 
 router.get(
+  '/',
+  contentControllers.getAllContent
+)
+
+router.get(
   '/:type',
   validateRequest(contentValidations.getContentByIdSchema),
   contentControllers.getContentType

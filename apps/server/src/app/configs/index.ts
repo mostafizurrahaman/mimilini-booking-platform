@@ -61,6 +61,7 @@ const envSchema = z.object({
   SUPER_ADMIN_EMAIL: z.string().email(),
   SUPER_ADMIN_PHONE: z.string(),
   OTP_EXPIRES_IN: z.string().transform(Number).default(5),
+  OTP_COOLDOWN_SECONDS: z.string().transform(Number).default(60),
   OTP_DIGITS: z.string().transform(Number).default(6),
 
   // Google Sheets (Waitlist)
@@ -160,6 +161,7 @@ const configs = {
 
   otpSettings: {
     expiresIn: env.OTP_EXPIRES_IN,
+    cooldownSeconds: env.OTP_COOLDOWN_SECONDS,
     digits: env.OTP_DIGITS,
   },
 

@@ -12,7 +12,7 @@ const updateContentType = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The content updated successfully!',
+    message: 'Content updated successfully!',
     data: result,
   })
 })
@@ -23,7 +23,18 @@ const getContentType = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The content retrieved successfully!',
+    message: 'Content retrieved successfully!',
+    data: result,
+  })
+})
+
+const getAllContent = catchAsync(async (req, res) => {
+  const result = await contentServices.getAllContent()
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'Contents retrieved successfully!',
     data: result,
   })
 })
@@ -31,4 +42,5 @@ const getContentType = catchAsync(async (req, res) => {
 export const contentControllers = {
   updateContentType,
   getContentType,
+  getAllContent,
 }

@@ -10,7 +10,7 @@ const createArtistServices = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.CREATED,
-    message: 'The artist services created successfully!',
+    message: 'Service created successfully!',
     data: result,
   })
 })
@@ -26,7 +26,7 @@ const updateArtistServices = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The artist services updated successfully!',
+    message: 'Service updated successfully!',
     data: result,
   })
 })
@@ -61,7 +61,7 @@ const getAllArtistServices = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The artist services retrieved successfully!',
+    message: 'Services retrieved successfully!',
     data: result.data,
     meta: result.meta,
   })
@@ -72,7 +72,7 @@ const getAllActiveArtistServices = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'All active artists are services retrieved successfully!',
+    message: 'Active services retrieved successfully!',
     data: result.data,
     meta: result.meta,
   })
@@ -85,7 +85,7 @@ const getMyArtistServices = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'Your services are retrieved successfully!',
+    message: 'Services retrieved successfully!',
     data: result.data,
     meta: result.meta,
   })
@@ -97,7 +97,7 @@ const getArtistServicesById = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The artist services retrieved successfully!',
+    message: 'Service retrieved successfully!',
     data: result,
   })
 })
@@ -108,7 +108,7 @@ const deleteArtistServicesById = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The artist services deleted successfully!',
+    message: 'Service deleted successfully!',
     data: result,
   })
 })

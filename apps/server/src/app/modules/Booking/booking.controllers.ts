@@ -159,7 +159,7 @@ const getArtistInvoice = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'Artist Recipient Created Tax Invoice (RCTI) retrieved successfully!',
+    message: 'Recipient Created Tax Invoice (RCTI) retrieved successfully!',
     data: result,
   })
 })
@@ -300,7 +300,7 @@ const getArtistInboxSummary = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'Artist inbox summary retrieved successfully!',
+    message: 'Inbox summary retrieved successfully!',
     data: result,
   })
 })

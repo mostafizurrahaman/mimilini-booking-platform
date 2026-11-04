@@ -8,7 +8,7 @@ const createFaq = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.CREATED,
-    message: 'The faq created successfully!',
+    message: 'FAQ created successfully!',
     data: result,
   })
 })
@@ -19,7 +19,7 @@ const updateFaq = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The faq updated successfully!',
+    message: 'FAQ updated successfully!',
     data: result,
   })
 })
@@ -30,7 +30,7 @@ const getAllFaq = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The faq retrieved successfully!',
+    message: 'FAQs retrieved successfully!',
     data: result.data,
     meta: result.meta,
   })
@@ -42,7 +42,7 @@ const getFaqById = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The faq retrieved successfully!',
+    message: 'FAQ retrieved successfully!',
     data: result,
   })
 })
@@ -53,7 +53,7 @@ const deleteFaqById = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The faq deleted successfully!',
+    message: 'FAQ deleted successfully!',
     data: result,
   })
 })

@@ -11,7 +11,7 @@ const getAllUsers = catchAsync(async (req, res) => {
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
-    message: 'All users are retrieved successfully',
+    message: 'All users retrieved successfully!',
     data: result.data,
     meta: result.meta,
   })
@@ -23,7 +23,7 @@ const getOverview = catchAsync(async (req, res) => {
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
-    message: 'The user overview is retrieved successfully.',
+    message: 'User overview retrieved successfully!',
     data: result,
   })
 })
@@ -36,7 +36,7 @@ const getAllVerifications = catchAsync(async (req, res) => {
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
-    message: 'All verification request are retrieved successfully.',
+    message: 'Verification requests retrieved successfully!',
     data: result.data,
     meta: result.meta,
   })
@@ -50,7 +50,7 @@ const getUserDetailsById = catchAsync(async (req, res) => {
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
-    message: 'User details retrieved successfully.',
+    message: 'User details retrieved successfully!',
     data: result,
   })
 })

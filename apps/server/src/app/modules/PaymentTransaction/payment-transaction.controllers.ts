@@ -26,7 +26,7 @@ const getArtistTransactions = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'Artist earnings and payout transactions retrieved successfully!',
+    message: 'Earnings and payout transactions retrieved successfully!',
     data: {
       transactions: result.transactions,
       summary: result.summary,
@@ -47,7 +47,7 @@ const getMyTransactions = catchAsync(async (req, res) => {
     success: true,
     statusCode: httpStatus.OK,
     message: isArtist
-      ? 'Artist earnings and payout transactions retrieved successfully!'
+      ? 'Earnings and payout transactions retrieved successfully!'
       : 'Customer payment transactions retrieved successfully!',
     data: {
       transactions: result.transactions,

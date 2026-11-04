@@ -1,4 +1,4 @@
-import { catchAsync, sendResponse } from '@repo/shared'
+import { AppError, catchAsync, sendResponse } from '@repo/shared'
 import httpStatus from 'http-status'
 import { artistProfileServices } from './artist-profile.services'
 import { getUserFromRequest } from '@app/libs/get-user-from-request'
@@ -25,7 +25,7 @@ const createArtistProfile = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.CREATED,
-    message: 'The artist profile created successfully!',
+    message: 'Profile created successfully!',
     data: result,
   })
 })
@@ -40,7 +40,7 @@ const updateArtistProfile = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The artist profile updated successfully!',
+    message: 'Profile updated successfully!',
     data: result,
   })
 })
@@ -51,7 +51,7 @@ const getAllArtistProfile = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The artist profile retrieved successfully!',
+    message: 'Profiles retrieved successfully!',
     data: result.data,
     meta: result.meta,
   })
@@ -63,7 +63,7 @@ const findAvailableArtists = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'Available artists retrieved successfully!',
+    message: 'Available professionals retrieved successfully!',
     data: result.data,
     meta: result.meta,
   })
@@ -76,7 +76,7 @@ const getArtistDetails = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'Artist profile details retrieved successfully!',
+    message: 'Profile details retrieved successfully!',
     data: result,
   })
 })
@@ -90,7 +90,7 @@ const verifyDocument = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The artist document verified successfully.',
+    message: 'Document verified successfully!',
     data: result,
   })
 })
@@ -105,7 +105,7 @@ const rejectDocument = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The artist document is rejected successfully.',
+    message: 'Document rejected successfully!',
     data: result,
   })
 })
@@ -119,7 +119,7 @@ const resubmitDocuments = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The documents resubmitted successfully.',
+    message: 'Documents resubmitted successfully!',
     data: result,
   })
 })
@@ -133,7 +133,7 @@ const checkVerificationStatus = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The artist document verification status retrieved.',
+    message: 'Document verification status retrieved successfully!',
     data: result,
   })
 })
@@ -147,14 +147,17 @@ const addNewPortfolioImage = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'The portfolio images uploaded successfully.',
+    message: 'Portfolio images uploaded successfully!',
     data: result,
   })
 })
 
 const removePortfolioImage = catchAsync(async (req, res) => {
   const user = await getUserFromRequest(req)
-  const { url } = req.body
+  const url = (req.body?.url || req.query?.url) as string
+  if (!url) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Portfolio image URL is required.')
+  }
   const result = await artistProfileServices.removePortfolioImage(user, url)
 
   sendResponse(res, {
@@ -181,7 +184,13 @@ const addCertification = catchAsync(async (req, res) => {
 
 const removeCertification = catchAsync(async (req, res) => {
   const user = await getUserFromRequest(req)
-  const result = await artistProfileServices.removeCertification(user, req.body)
+  const url = (req.body?.url || req.query?.url) as string | undefined
+  const certificationId = (req.body?.certificationId || req.query?.certificationId) as string | undefined
+  const payload = {
+    ...(url ? { url } : {}),
+    ...(certificationId ? { certificationId } : {}),
+  }
+  const result = await artistProfileServices.removeCertification(user, payload)
 
   sendResponse(res, {
     success: true,
@@ -214,7 +223,7 @@ const getMyFavoriteArtists = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'Favorite artists retrieved successfully.',
+    message: 'Favorites retrieved successfully.',
     meta: result.meta,
     data: result.data,
   })

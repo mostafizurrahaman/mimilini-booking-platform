@@ -32,8 +32,13 @@ const getContentByType = async (type: TContentType) => {
   return result
 }
 
+const getAllContent = async () => {
+  const result = await Content.find({})
+  return result
+}
+
 export const contentServices = {
   updateContentType,
-
   getContentByType,
+  getAllContent,
 }

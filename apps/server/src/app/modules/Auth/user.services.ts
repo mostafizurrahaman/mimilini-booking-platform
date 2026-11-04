@@ -65,6 +65,7 @@ const signUp = async (payload: ISignUpSchemaType, profileImage: TMulterFile) => 
         const otp = await getNewOtp({
           userId: existingUser._id,
           type: otpTypes.SIGNUP,
+          checkCooldown: true,
         })
 
         const htmlTemplate = await renderEmail(
@@ -73,7 +74,7 @@ const signUp = async (payload: ISignUpSchemaType, profileImage: TMulterFile) => 
             companyName: configs.site.name,
             companyLogo: configs.site.logo as string,
             otpCode: otp?.otp as string,
-            expiresInMin: 1,
+            expiresInMin: configs.otpSettings.expiresIn || 5,
           })
         )
 
@@ -152,6 +153,7 @@ const signUp = async (payload: ISignUpSchemaType, profileImage: TMulterFile) => 
       userId: newUser?._id,
       type: otpTypes.SIGNUP,
       session: mongoSession,
+      checkCooldown: false,
     })
 
     // 6. Render Signup Template:
@@ -161,7 +163,7 @@ const signUp = async (payload: ISignUpSchemaType, profileImage: TMulterFile) => 
         companyName: configs.site.name,
         companyLogo: configs.site.logo as string,
         otpCode: otp?.otp as string,
-        expiresInMin: 1,
+        expiresInMin: configs.otpSettings.expiresIn || 5,
       })
     )
 
@@ -227,43 +229,25 @@ const resendSignupOTP = async (payload: IResendSignupType) => {
     throw new AppError(httpStatus.CONFLICT, 'Your account already verified!')
   }
 
-  // 2. Get Existing OTP ? :
-  const existingOTP = await Otp.findValidOtp(user._id?.toString(), otpTypes.SIGNUP)
-
-  if (existingOTP) {
-    const now = new Date().getTime()
-    const lastSendedAt = new Date(existingOTP.updatedAt).getTime()
-    const twoMinutes = configs.otpSettings.expiresIn * 60 * 1000
-
-    // 3. Check the is OTP trying to send within to 2 minutes ?:
-    if (now - lastSendedAt < twoMinutes) {
-      const remainingTime = Math.ceil((twoMinutes - (now - lastSendedAt)) / 1000)
-
-      throw new AppError(
-        httpStatus.TOO_MANY_REQUESTS,
-        `An OTP was already sent. Please wait ${remainingTime} seconds before requesting another one.`
-      )
-    }
-  }
-
-  // 3. Generate the opt:
+  // 2. Generate the otp (with 1-min cooldown & replacement):
   const otp = await getNewOtp({
     userId: user?._id?.toString(),
     type: otpTypes.SIGNUP,
+    checkCooldown: true,
   })
 
-  // 4. Signup otp template:
+  // 3. Signup otp template:
   const htmlTemplate = await renderEmail(
     SignupOTPEmail({
       userFirstName: user.name,
       companyName: configs.site.name,
       companyLogo: configs.site.logo as string,
       otpCode: otp?.otp as string,
-      expiresInMin: 1,
+      expiresInMin: configs.otpSettings.expiresIn || 5,
     })
   )
 
-  // . Send OTP with rendered template
+  // 4. Send OTP with rendered template
   sendEmail({
     to: user.email,
     html: htmlTemplate.html,
@@ -614,30 +598,14 @@ const forgotPassword = async (payload: IForgotPasswordType) => {
     throw new AppError(httpStatus.PRECONDITION_REQUIRED, 'Your account is not verified!')
   }
 
-  // 4. Generate new otp
-  const newOtp = generateOtp({
-    length: configs.otpSettings.digits,
+  // 4. Generate new otp (with 1-min cooldown & replacement):
+  const otp = await getNewOtp({
+    userId: user._id,
+    type: otpTypes.RESET,
+    checkCooldown: true,
   })
 
-  // 9. Store reset password otp:
-  const otp = await Otp.findOneAndUpdate(
-    {
-      user: user?._id?.toString(),
-      type: otpTypes.RESET,
-    },
-    {
-      user: user?._id?.toString(),
-      type: otpTypes.RESET,
-      expiresAt: addTime(configs.otpSettings.expiresIn, 'minutes'),
-      otp: newOtp,
-    },
-    {
-      new: true,
-      upsert: true,
-    }
-  )
-
-  // 6. Render Reset password otp template:
+  // 5. Render Reset password otp template:
   const htmlTemplate = await renderEmail(
     ResetPasswordOTPEmail({
       userFirstName: user.name,
@@ -645,11 +613,11 @@ const forgotPassword = async (payload: IForgotPasswordType) => {
       companyName: configs.site.name,
       companyLogo: configs.site.logo as string,
       otpCode: otp?.otp as string,
-      expirationMinutes: 1,
+      expirationMinutes: configs.otpSettings.expiresIn || 5,
     })
   )
 
-  // 7. Send OTP with rendered template
+  // 6. Send OTP with rendered template
   sendEmail({
     to: user.email,
     html: htmlTemplate.html,
@@ -739,33 +707,14 @@ const resendOTP = async (payload: IResendSignupType) => {
     throw new AppError(httpStatus.CONFLICT, 'Your account is not verified yet!')
   }
 
-  // 2. Check Otp exists ? :
-  const existingOTP = await Otp.findValidOtp(user._id?.toString(), otpTypes.RESET)
-
-  // 3. If existing otp still valid resend otp:
-  if (existingOTP) {
-    const now = new Date().getTime()
-    const lastSendedAt = new Date(existingOTP.updatedAt).getTime()
-    const twoMinutes = configs.otpSettings.expiresIn * 60 * 1000
-
-    // 4. Check the is OTP trying to send within to 2 minutes ?:
-    if (now - lastSendedAt < twoMinutes) {
-      const remainingTime = Math.ceil((twoMinutes - (now - lastSendedAt)) / 1000)
-
-      throw new AppError(
-        httpStatus.TOO_MANY_REQUESTS,
-        `An OTP was already sent. Please wait ${remainingTime} seconds before requesting another one.`
-      )
-    }
-  }
-
-  // 5. Generate new otp:
+  // 2. Generate new otp (with 1-min cooldown & replacement):
   const newOtp = await getNewOtp({
     userId: user?._id?.toString(),
     type: otpTypes.RESET,
+    checkCooldown: true,
   })
 
-  // 6. Render Signup Template:
+  // 3. Render Reset password Template:
   const htmlTemplate = await renderEmail(
     ResetPasswordOTPEmail({
       userFirstName: user.name,
@@ -773,11 +722,11 @@ const resendOTP = async (payload: IResendSignupType) => {
       companyName: configs.site.name,
       companyLogo: configs.site.logo as string,
       otpCode: newOtp?.otp as string,
-      expirationMinutes: 1,
+      expirationMinutes: configs.otpSettings.expiresIn || 5,
     })
   )
 
-  // 7. Send OTP with rendered template
+  // 4. Send OTP with rendered template
   sendEmail({
     to: user.email,
     html: htmlTemplate.html,
