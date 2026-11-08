@@ -513,13 +513,13 @@ const verifyArtistDocuments = async (targetUserId: string) => {
 
   // ?? Check is user profile completed?:
   if (!targetedUser.isProfileCompleted) {
-    throw new AppError(httpStatus.BAD_REQUEST, `Artist profile is incomplete.`)
+    throw new AppError(httpStatus.BAD_REQUEST, `Professional profile is incomplete.`)
   }
 
   // ?? Check Artist profile exists?:
   const artistProfile = await ArtistProfile.findOne({ user: targetedUser?._id })
   if (!artistProfile) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Artist professional profile does not exists.')
+    throw new AppError(httpStatus.BAD_REQUEST, 'Professional profile does not exist.')
   }
 
   // ?? Check verification status: PENDING
@@ -529,12 +529,12 @@ const verifyArtistDocuments = async (targetUserId: string) => {
 
   // ?? Check verification status: VERIFIED
   if (targetedUser.verificationStatus === verificationStatus.VERIFIED) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'The artist documents have already been verified.')
+    throw new AppError(httpStatus.BAD_REQUEST, 'The professional documents have already been verified.')
   }
 
   // ?? Check verification status: REJECTED:
   if (targetedUser.verificationStatus === verificationStatus.REJECTED) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'The artist documents have been rejected.')
+    throw new AppError(httpStatus.BAD_REQUEST, 'The professional documents have been rejected.')
   }
 
   targetedUser.verificationStatus = verificationStatus.VERIFIED
@@ -580,13 +580,13 @@ const rejectArtistDocuments = async (targetUserId: string, reason: string) => {
 
   // ?? Check is user profile completed?:
   if (!targetedUser.isProfileCompleted) {
-    throw new AppError(httpStatus.BAD_REQUEST, `Artist profile is incomplete.`)
+    throw new AppError(httpStatus.BAD_REQUEST, `Professional profile is incomplete.`)
   }
 
   // ?? Check Artist profile exists?:
   const artistProfile = await ArtistProfile.findOne({ user: targetedUser?._id })
   if (!artistProfile) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Artist professional profile does not exists.')
+    throw new AppError(httpStatus.BAD_REQUEST, 'Professional profile does not exist.')
   }
 
   // ?? Check verification status: PENDING
@@ -596,12 +596,12 @@ const rejectArtistDocuments = async (targetUserId: string, reason: string) => {
 
   // ?? Check verification status: VERIFIED
   if (targetedUser.verificationStatus === verificationStatus.VERIFIED) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'The artist documents have already been verified.')
+    throw new AppError(httpStatus.BAD_REQUEST, 'The professional documents have already been verified.')
   }
 
   // ?? Check verification status: REJECTED:
   if (targetedUser.verificationStatus === verificationStatus.REJECTED) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'The artist documents have already been rejected.')
+    throw new AppError(httpStatus.BAD_REQUEST, 'The professional documents have already been rejected.')
   }
 
   targetedUser.verificationStatus = verificationStatus.REJECTED
@@ -786,7 +786,7 @@ const getVerificationStatus = async (user: IUser) => {
   })
 
   if (!artistProfile) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Artist profiles does not exists.')
+    throw new AppError(httpStatus.NOT_FOUND, 'Professional profile does not exist.')
   }
 
   return {
@@ -1141,6 +1141,29 @@ const getAllArtistProfile = async (query: Partial<TGetAllArtistProfileQueryParam
     })
   }
 
+  pipeline.push(
+    {
+      $lookup: {
+        from: 'availabilities',
+        localField: 'user',
+        foreignField: 'user',
+        as: 'availabilityDoc',
+      },
+    },
+    {
+      $addFields: {
+        isQuickBookingEnabled: {
+          $ifNull: [{ $arrayElemAt: ['$availabilityDoc.isQuickBookingEnabled', 0] }, false],
+        },
+      },
+    },
+    {
+      $project: {
+        availabilityDoc: 0,
+      },
+    }
+  )
+
   pipeline.push({ $sort: { [sortBy]: sortOrder === 'asc' ? 1 : -1 } })
 
   pipeline.push({
@@ -1179,6 +1202,7 @@ export interface IFindArtistsQuery {
   guestCount?: number | string
   radius?: number | string
   availableToday?: boolean | string
+  isQuickBookingEnabled?: boolean | string
   page?: number | string
   limit?: number | string
 }
@@ -1199,6 +1223,7 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
     guestCount = 1,
     page = 1,
     limit = 10,
+    isQuickBookingEnabled,
   } = query
 
   const pageNum = Math.max(1, Number(page) || 1)
@@ -1377,7 +1402,25 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
     },
   })
 
-  // 5. Date / Weekly schedule availability filtering if date is provided
+  // 5. Availability lookup for schedule and quick booking settings
+  pipeline.push(
+    {
+      $lookup: {
+        from: 'availabilities',
+        localField: 'user',
+        foreignField: 'user',
+        as: 'availabilityDoc',
+      },
+    },
+    {
+      $unwind: {
+        path: '$availabilityDoc',
+        preserveNullAndEmptyArrays: true,
+      },
+    }
+  )
+
+  // 5.1 Date / Weekly schedule availability filtering if date is provided
   if (date) {
     const dayOfWeek = moment(date).format('dddd').toLowerCase()
     const isWorkingDayField = `availabilityDoc.weeklySchedule.${dayOfWeek}.isWorkingDay`
@@ -1386,26 +1429,12 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
 
     pipeline.push(
       {
-        $lookup: {
-          from: 'availabilities',
-          localField: 'user',
-          foreignField: 'artist',
-          as: 'availabilityDoc',
-        },
-      },
-      {
-        $unwind: {
-          path: '$availabilityDoc',
-          preserveNullAndEmptyArrays: true,
-        },
-      },
-      {
         $match: {
           $nor: [
             {
-              'availabilityDoc.vacationMode.isVacationMode': true,
-              'availabilityDoc.vacationMode.startDate': { $lte: endOfDay },
-              'availabilityDoc.vacationMode.endDate': { $gte: startOfDay },
+              'availabilityDoc.isVacationEnabled': true,
+              'availabilityDoc.vacationStartDate': { $lte: endOfDay },
+              'availabilityDoc.vacationEndDate': { $gte: startOfDay },
             },
           ],
           $or: [
@@ -1423,7 +1452,12 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
               $match: {
                 $expr: {
                   $and: [
-                    { $eq: ['$artist', '$$artistUserId'] },
+                    {
+                      $or: [
+                        { $eq: ['$user', '$$artistUserId'] },
+                        { $eq: ['$artist', '$$artistUserId'] },
+                      ],
+                    },
                     { $gte: ['$date', startOfDay] },
                     { $lte: ['$date', endOfDay] },
                   ],
@@ -1442,6 +1476,15 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
     )
   }
 
+  // 5.2 Filter by isQuickBookingEnabled if requested in query
+  if (isQuickBookingEnabled === true || isQuickBookingEnabled === 'true') {
+    pipeline.push({
+      $match: {
+        'availabilityDoc.isQuickBookingEnabled': true,
+      },
+    })
+  }
+
   // 6. Projection directly in aggregation pipeline
   pipeline.push({
     $project: {
@@ -1455,10 +1498,13 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
           { $arrayElemAt: ['$portfolioImages', 0] },
         ],
       },
+      isQuickBookingEnabled: {
+        $ifNull: ['$availabilityDoc.isQuickBookingEnabled', false],
+      },
       category: {
         $ifNull: [
           { $arrayElemAt: ['$services.categoryDoc.name', 0] },
-          'Beauty Artist',
+          'Beauty Professional',
         ],
       },
       headline: {
@@ -1904,7 +1950,7 @@ const getArtistDetails = async (
   currentUserId?: string | mongoose.Types.ObjectId
 ) => {
   if (!mongoose.isValidObjectId(artistIdParam)) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid artist ID.')
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid professional ID.')
   }
 
   const targetId = new mongoose.Types.ObjectId(artistIdParam)
@@ -1916,7 +1962,7 @@ const getArtistDetails = async (
   }).lean()
 
   if (!artistProfile) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Artist profile not found.')
+    throw new AppError(httpStatus.NOT_FOUND, 'Professional profile not found.')
   }
 
   const artistUserId = artistProfile.user
@@ -1931,7 +1977,7 @@ const getArtistDetails = async (
   ) {
     throw new AppError(
       httpStatus.NOT_FOUND,
-      'Artist profile is currently unavailable or onboarding is incomplete.'
+      'Professional profile is currently unavailable or onboarding is incomplete.'
     )
   }
 
@@ -2082,7 +2128,7 @@ const getArtistDetails = async (
     if (!matchedSvc) {
       throw new AppError(
         httpStatus.NOT_FOUND,
-        'Selected service does not exist for this artist.'
+        'Selected service does not exist for this professional.'
       )
     }
     targetServiceDuration = matchedSvc.durationMinutes
@@ -2190,7 +2236,7 @@ const getArtistDetails = async (
   // Badges
   const badges: string[] = []
   const isVerified = userDoc.verificationStatus === 'verified'
-  if (isVerified) badges.push('Verified Artist')
+  if (isVerified) badges.push('Verified Professional')
   if (isAvailableToday) badges.push('Available Today')
   if ((artistProfile.yearOfExperience || 0) >= 5 || avgRating >= 4.8) {
     badges.push('Top Rated')
@@ -2224,18 +2270,21 @@ const getArtistDetails = async (
 
   const headline =
     artistProfile.professionalBio?.slice(0, 50) ||
-    (specialties.length > 0 ? `${specialties.join(' & ')} Specialist` : 'Beauty Artist')
+    (specialties.length > 0 ? `${specialties.join(' & ')} Specialist` : 'Beauty Professional')
+
+  const isQuickBookingEnabled = Boolean(availability?.isQuickBookingEnabled)
 
   return {
     artistId: artistUserId,
     profileId: artistProfile._id,
-    name: userDoc.name || artistProfile.businessName || 'Beauty Artist',
+    name: userDoc.name || artistProfile.businessName || 'Beauty Professional',
     profileImage: userDoc.profileImage || artistProfile.portfolioImages?.[0] || null,
     businessName: artistProfile.businessName || userDoc.name,
     headline,
     isVerified,
     badges,
     isAvailableToday,
+    isQuickBookingEnabled,
     rating: avgRating,
     reviewCount: totalReviews,
     location: {
@@ -2264,7 +2313,7 @@ const getArtistDetails = async (
       years: artistProfile.yearOfExperience || 0,
       yearsText: `${artistProfile.yearOfExperience || 0} YRS`,
       title: 'Years of Experience',
-      subtitle: 'Professional Beauty Artist',
+      subtitle: 'Professional Beauty Specialist',
       bio: artistProfile.professionalBio || '',
       specialties,
     },
@@ -2284,6 +2333,7 @@ const getArtistDetails = async (
 
     // Availability Preview (Screen 15.png)
     availability: {
+      isQuickBookingEnabled,
       selectedDate: selectedDateStr,
       selectedDateText: `AVAILABLE TIMES — ${moment(selectedDateStr).format('MMMM D')}`,
       isWorkingDay,
@@ -2302,7 +2352,7 @@ const toggleFavoriteArtist = async (
   artistIdParam: string
 ) => {
   if (!mongoose.isValidObjectId(artistIdParam)) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid artist ID.')
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid professional ID.')
   }
   const targetId = new mongoose.Types.ObjectId(artistIdParam)
 
@@ -2310,7 +2360,7 @@ const toggleFavoriteArtist = async (
     $or: [{ _id: targetId }, { user: targetId }],
   })
   if (!artistProfile) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Artist not found.')
+    throw new AppError(httpStatus.NOT_FOUND, 'Professional not found.')
   }
   const artistUserId = artistProfile.user
 

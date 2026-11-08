@@ -120,7 +120,7 @@ const checkoutPreview = async (user: IUser, input: ICheckoutPreviewInput) => {
     if (s.artist.toString() !== input.artist.toString()) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        `Selected service '${s.name}' does not belong to this artist`
+        `Selected service '${s.name}' does not belong to this professional`
       )
     }
   }
@@ -134,13 +134,13 @@ const checkoutPreview = async (user: IUser, input: ICheckoutPreviewInput) => {
 
   const artistProfile = await ArtistProfile.findOne({ user: input.artist })
   if (!artistProfile) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Artist profile not found')
+    throw new AppError(httpStatus.NOT_FOUND, 'Professional profile not found')
   }
 
   if (artistProfile.isPenaltyRequired) {
     throw new AppError(
       httpStatus.FORBIDDEN,
-      'This artist is currently unavailable for new bookings.'
+      'This professional is currently unavailable for new bookings.'
     )
   }
 
@@ -153,7 +153,7 @@ const checkoutPreview = async (user: IUser, input: ICheckoutPreviewInput) => {
   ) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'This artist cannot accept bookings as their profile or payment onboarding is incomplete.'
+      'This professional cannot accept bookings as their profile or payment onboarding is incomplete.'
     )
   }
 
@@ -215,7 +215,7 @@ const checkoutPreview = async (user: IUser, input: ICheckoutPreviewInput) => {
     if (!artistProfile.location?.coordinates) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        'Artist location coordinates not configured on profile'
+        'Professional location coordinates not configured on profile'
       )
     }
 
@@ -228,7 +228,7 @@ const checkoutPreview = async (user: IUser, input: ICheckoutPreviewInput) => {
     if (artistMaxRadius > 0 && distanceKm > artistMaxRadius) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        `Selected address is outside this artist's travel radius (${artistMaxRadius} km). Current distance: ${distanceKm} km.`
+        `Selected address is outside this professional's travel radius (${artistMaxRadius} km). Current distance: ${distanceKm} km.`
       )
     }
 
@@ -317,20 +317,20 @@ const publicCheckoutPreview = async (input: IPublicCheckoutPreviewInput) => {
     if (s.artist.toString() !== input.artist.toString()) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        `Selected service '${s.name}' does not belong to this artist`
+        `Selected service '${s.name}' does not belong to this professional`
       )
     }
   }
 
   const artistProfile = await ArtistProfile.findOne({ user: input.artist })
   if (!artistProfile) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Artist profile not found')
+    throw new AppError(httpStatus.NOT_FOUND, 'Professional profile not found')
   }
 
   if (artistProfile.isPenaltyRequired) {
     throw new AppError(
       httpStatus.FORBIDDEN,
-      'This artist is currently unavailable for new bookings.'
+      'This professional is currently unavailable for new bookings.'
     )
   }
 
@@ -343,7 +343,7 @@ const publicCheckoutPreview = async (input: IPublicCheckoutPreviewInput) => {
   ) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'This artist cannot accept bookings as their profile or payment onboarding is incomplete.'
+      'This professional cannot accept bookings as their profile or payment onboarding is incomplete.'
     )
   }
 
@@ -386,7 +386,7 @@ const publicCheckoutPreview = async (input: IPublicCheckoutPreviewInput) => {
     if (!artistProfile.location?.coordinates) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        'Artist location coordinates not configured on profile'
+        'Professional location coordinates not configured on profile'
       )
     }
 
@@ -399,7 +399,7 @@ const publicCheckoutPreview = async (input: IPublicCheckoutPreviewInput) => {
     if (artistMaxRadius > 0 && distanceKm > artistMaxRadius) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        `Selected location is outside this artist's travel radius (${artistMaxRadius} km). Current distance: ${distanceKm} km.`
+        `Selected location is outside this professional's travel radius (${artistMaxRadius} km). Current distance: ${distanceKm} km.`
       )
     }
 
@@ -485,7 +485,7 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     if (s.artist.toString() !== input.artist.toString()) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        `Selected service '${s.name}' does not belong to this artist`
+        `Selected service '${s.name}' does not belong to this professional`
       )
     }
   }
@@ -499,13 +499,13 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
 
   const artistProfile = await ArtistProfile.findOne({ user: input.artist })
   if (!artistProfile) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Artist profile not found')
+    throw new AppError(httpStatus.NOT_FOUND, 'Professional profile not found')
   }
 
   if (artistProfile.isPenaltyRequired) {
     throw new AppError(
       httpStatus.FORBIDDEN,
-      'This artist is currently unavailable for new bookings.'
+      'This professional is currently unavailable for new bookings.'
     )
   }
 
@@ -518,7 +518,7 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
   ) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'This artist cannot accept bookings as their profile or payment onboarding is incomplete.'
+      'This professional cannot accept bookings as their profile or payment onboarding is incomplete.'
     )
   }
 
@@ -554,7 +554,7 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     if (minNoticeHours > 0 && startMoment.isBefore(moment().add(minNoticeHours, 'hours'))) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        `This artist requires at least ${minNoticeHours} hours advance notice for appointments.`
+        `This professional requires at least ${minNoticeHours} hours advance notice for appointments.`
       )
     }
 
@@ -569,7 +569,7 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
       if (dailyCount >= availability.maxBookingPerDay) {
         throw new AppError(
           httpStatus.CONFLICT,
-          `This artist has reached the maximum booking limit for this day (${availability.maxBookingPerDay} bookings).`
+          `This professional has reached the maximum booking limit for this day (${availability.maxBookingPerDay} bookings).`
         )
       }
     }
@@ -595,7 +595,7 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
   if (existingConflict) {
     throw new AppError(
       httpStatus.CONFLICT,
-      'This artist is already booked for the selected time slot. Please choose another time.'
+      'This professional is already booked for the selected time slot. Please choose another time.'
     )
   }
 
@@ -650,7 +650,7 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     if (!artistProfile.location?.coordinates) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        'Artist location coordinates not configured on profile'
+        'Professional location coordinates not configured on profile'
       )
     }
 
@@ -663,7 +663,7 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     if (artistMaxRadius > 0 && distanceKm > artistMaxRadius) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        `Selected address is outside this artist's travel radius (${artistMaxRadius} km). Current distance: ${distanceKm} km.`
+        `Selected address is outside this professional's travel radius (${artistMaxRadius} km). Current distance: ${distanceKm} km.`
       )
     }
 
@@ -1227,7 +1227,7 @@ const customerCancelBooking = async (
           source: WALLET_SOURCE.CANCELLATION_CREDIT,
           bookingId: booking._id,
           bookingGroupId: booking.bookingGroupId,
-          description: `Booking #${booking.bookingNumber} late cancellation credit (50% of artist net payout)`,
+          description: `Booking #${booking.bookingNumber} late cancellation credit (50% of professional net payout)`,
         })
       }
     }
@@ -1257,14 +1257,14 @@ const customerCancelBooking = async (
             `[Late Cancel Payout Sandbox Bypass] Cross-border US->AU transfer skipped in ${configs.nodeEnv} mode (${err.message}). Marked as transferred for testing.`
           )
         } else {
-          transferFailureReason = err?.message || 'Artist payout transfer pending available balance'
+          transferFailureReason = err?.message || 'Professional payout transfer pending available balance'
           logger.warn(
             `[Late Cancel Payout Queued] Transfer pending for booking ${booking.bookingNumber}: ${transferFailureReason}`
           )
         }
       }
     } else if (artistShareAmount > 0) {
-      transferFailureReason = 'Artist Stripe Connected Account not found'
+      transferFailureReason = 'Professional Stripe Connected Account not found'
     }
 
     const lateCancelTxnId = `TXN-${booking.bookingNumber}-LATE-CANCEL`
@@ -1318,7 +1318,7 @@ const customerCancelBooking = async (
   await booking.save()
 
   const lateMessage = isBalancePaid
-    ? `Booking cancelled under Late Cancellation policy (<24h). Platform retained the 20% deposit. You received $${customerCreditAmount} Platform Credit (50% of artist net payout).`
+    ? `Booking cancelled under Late Cancellation policy (<24h). Platform retained the 20% deposit. You received $${customerCreditAmount} Platform Credit (50% of professional net payout).`
     : isInitialPaid
       ? 'Booking cancelled under Late Cancellation policy (<24h). The 20% deposit is non-refundable and forfeited.'
       : 'Booking cancelled successfully. No payment was charged.'
@@ -1374,7 +1374,7 @@ const artistCancelBooking = async (
   const isArtist = booking.artist._id.toString() === user._id.toString()
   const isAdmin = user.role === 'admin' || user.role === 'super_admin'
   if (!isArtist && !isAdmin) {
-    throw new AppError(httpStatus.FORBIDDEN, 'Only the assigned artist can cancel this booking')
+    throw new AppError(httpStatus.FORBIDDEN, 'Only the assigned professional can cancel this booking')
   }
 
   if (
@@ -1434,7 +1434,7 @@ const artistCancelBooking = async (
         source: WALLET_SOURCE.CANCELLATION_CREDIT,
         bookingId: booking._id,
         bookingGroupId: booking.bookingGroupId,
-        description: `Artist cancelled booking #${booking.bookingNumber} - Platform credit issued ($${totalPaid} minus $${totalTransactionFee} transaction fee, valid 36 months)`,
+        description: `Professional cancelled booking #${booking.bookingNumber} - Platform credit issued ($${totalPaid} minus $${totalTransactionFee} transaction fee, valid 36 months)`,
       })
     }
   }
@@ -1451,7 +1451,7 @@ const artistCancelBooking = async (
         amount: booking.platformCreditApplied,
         source: WALLET_SOURCE.BOOKING_ROLLBACK,
         bookingId: booking._id,
-        description: `Artist cancelled booking #${booking.bookingNumber} - credit restored`,
+        description: `Professional cancelled booking #${booking.bookingNumber} - credit restored`,
       })
     }
   }
@@ -1486,7 +1486,7 @@ const artistCancelBooking = async (
         timeframeTier: penaltyCalc.timeframeTier,
         penaltyAmount: penaltyCalc.penaltyAmount,
         currency: 'AUD',
-        reason: cancellationReason || 'Artist cancelled appointment',
+        reason: cancellationReason || 'Professional cancelled appointment',
         isPenaltyRequired: true,
         status: PENALTY_STATUS.PENDING,
         deductedFromWallet: false,
@@ -1512,7 +1512,7 @@ const artistCancelBooking = async (
   booking.status = BOOKING_STATUS.CANCELLED
   booking.cancelledBy = user._id
   booking.cancelledByRole = isAdmin && !isArtist ? 'admin' : 'artist'
-  booking.cancellationReason = cancellationReason || 'Artist cancelled appointment'
+  booking.cancellationReason = cancellationReason || 'Professional cancelled appointment'
   booking.cancelledAt = new Date()
   if (isInitialPaid) {
     booking.initialPayment.status = PAYMENT_STAGE_STATUS.REFUNDED
@@ -1549,7 +1549,7 @@ const artistCancelBooking = async (
     bookingNumber: booking.bookingNumber,
     status: BOOKING_STATUS.CANCELLED,
     milestone: BOOKING_TIMELINE_MILESTONE.CANCELLED,
-    title: 'Booking Cancelled by Artist',
+    title: 'Booking Cancelled by Professional',
     description: artistCancelMessage,
     performedBy: user._id,
     performedByRole: booking.cancelledByRole,
@@ -1562,7 +1562,7 @@ const artistCancelBooking = async (
       sender: user._id,
       senderName: user.name,
       senderPicture: user.profileImage,
-      title: 'Booking Cancelled by Artist',
+      title: 'Booking Cancelled by Professional',
       message: `${user.name} has cancelled booking #${booking.bookingNumber}. Platform credit has been issued.`,
       type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
       bookingId: booking._id,
@@ -2226,7 +2226,7 @@ const issueCustomerStripeInvoice = async (booking: any) => {
       }
 
       const bookingGroupId = booking.bookingGroupId || `GRP-${booking.bookingNumber}`
-      const artistDisplayName = artistProfile?.businessName || 'Independent Artist'
+      const artistDisplayName = artistProfile?.businessName || 'Independent Professional'
       const artistAbnText = artistProfile?.abn ? `, ABN: ${artistProfile.abn}` : ''
 
       const siteTitle = configs.site?.name || 'Stunner alert'
@@ -2269,7 +2269,7 @@ const issueCustomerStripeInvoice = async (booking: any) => {
         custom_fields: [
           { name: 'Booking Ref', value: `#${booking.bookingNumber}` },
           { name: 'Appointment', value: appointmentDateStr.substring(0, 30) },
-          { name: 'Artist ABN', value: (artistProfile?.abn || 'Not Registered').substring(0, 30) },
+          { name: 'Professional ABN', value: (artistProfile?.abn || 'Not Registered').substring(0, 30) },
           {
             name: 'Deposit Paid (20%)',
             value: `$${(booking.initialPayment?.amount || 0).toFixed(2)} AUD [PAID]`.substring(
@@ -2319,7 +2319,7 @@ const issueCustomerStripeInvoice = async (booking: any) => {
           invoice,
           amount: Math.round(booking.servicePrice * 100),
           currency: 'aud',
-          description: `${serviceNames} (Supplied by Artist: ${artistDisplayName}${artistAbnText})`,
+          description: `${serviceNames} (Supplied by Professional: ${artistDisplayName}${artistAbnText})`,
           ...gstTax,
           metadata: {
             bookingNumber: booking.bookingNumber,
@@ -2334,7 +2334,7 @@ const issueCustomerStripeInvoice = async (booking: any) => {
             invoice,
             amount: Math.round(booking.travelFee * 100),
             currency: 'aud',
-            description: 'Mobile Artist Travel Surcharge',
+            description: 'Mobile Professional Travel Surcharge',
             ...gstTax,
             metadata: { bookingNumber: booking.bookingNumber, bookingGroupId, type: 'TRAVEL_FEE' },
           })
@@ -2346,7 +2346,7 @@ const issueCustomerStripeInvoice = async (booking: any) => {
             invoice,
             amount: Math.round(booking.parkingFee * 100),
             currency: 'aud',
-            description: 'Artist Parking Fee Reimbursement',
+            description: 'Professional Parking Fee Reimbursement',
             ...gstTax,
             metadata: { bookingNumber: booking.bookingNumber, bookingGroupId, type: 'PARKING_FEE' },
           })
@@ -2599,9 +2599,9 @@ const issueArtistRctiStripeInvoice = async (booking: any) => {
         custom_fields: [
           { name: 'Gross Booking Total', value: `$${grossTotal} AUD` },
           { name: 'Platform Fee (20%+GST)', value: `$${platformFee} AUD` },
-          { name: 'Net Artist Payout', value: `$${netPayout} AUD` },
+          { name: 'Net Professional Payout', value: `$${netPayout} AUD` },
         ],
-        footer: `Gross Collection: $${grossTotal} AUD | Platform Deductions: $${platformFee} AUD | Net Payout to Artist: $${netPayout} AUD`,
+        footer: `Gross Collection: $${grossTotal} AUD | Platform Deductions: $${platformFee} AUD | Net Payout to Professional: $${netPayout} AUD`,
         metadata: {
           bookingNumber: booking.bookingNumber,
           bookingGroupId,
@@ -2739,7 +2739,7 @@ const getArtistInvoice = async (user: IUser, bookingId: string) => {
   const isAdmin = user.role === 'admin' || user.role === 'super_admin'
 
   if (!isArtist && !isAdmin) {
-    throw new AppError(httpStatus.FORBIDDEN, 'Access denied to this artist invoice')
+    throw new AppError(httpStatus.FORBIDDEN, 'Access denied to this professional invoice')
   }
 
   // Ensure Artist RCTI Stripe Invoice is issued and finalized if missing URL/PDF
@@ -2812,7 +2812,7 @@ const acceptBooking = async (user: IUser, bookingId: string) => {
   const isArtist = booking.artist.toString() === user._id.toString()
   const isAdmin = user.role === 'admin' || user.role === 'super_admin'
   if (!isArtist && !isAdmin) {
-    throw new AppError(httpStatus.FORBIDDEN, 'Only the assigned artist can accept this booking')
+    throw new AppError(httpStatus.FORBIDDEN, 'Only the assigned professional can accept this booking')
   }
 
   if (booking.status !== BOOKING_STATUS.REQUESTED) {
@@ -2830,8 +2830,8 @@ const acceptBooking = async (user: IUser, bookingId: string) => {
     bookingNumber: booking.bookingNumber,
     status: BOOKING_STATUS.ACCEPTED,
     milestone: BOOKING_TIMELINE_MILESTONE.ARTIST_ACCEPTED,
-    title: 'Artist Accepted',
-    description: 'Artist accepted the booking request',
+    title: 'Professional Accepted',
+    description: 'Professional accepted the booking request',
     performedBy: user._id,
     performedByRole: (user.role as any) || 'artist',
   })
@@ -2882,7 +2882,7 @@ const confirmBookingPayment = async (
   if (!isPayable) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      `Cannot confirm payment for booking with status '${booking.status}'. Booking must be accepted by artist first.`
+      `Cannot confirm payment for booking with status '${booking.status}'. Booking must be accepted by professional first.`
     )
   }
 
@@ -3140,7 +3140,7 @@ const declineBooking = async (user: IUser, bookingId: string, reason?: string) =
   const isArtist = booking.artist.toString() === user._id.toString()
   const isAdmin = user.role === 'admin' || user.role === 'super_admin'
   if (!isArtist && !isAdmin) {
-    throw new AppError(httpStatus.FORBIDDEN, 'Only the assigned artist can decline this booking')
+    throw new AppError(httpStatus.FORBIDDEN, 'Only the assigned professional can decline this booking')
   }
 
   if (
@@ -3155,7 +3155,7 @@ const declineBooking = async (user: IUser, bookingId: string, reason?: string) =
   }
 
   booking.status = BOOKING_STATUS.DECLINED
-  booking.cancellationReason = reason || 'Declined by artist'
+  booking.cancellationReason = reason || 'Declined by professional'
   booking.cancelledAt = new Date()
   booking.cancelledBy = user._id as any
   booking.cancelledByRole = 'artist'
@@ -3183,7 +3183,7 @@ const declineBooking = async (user: IUser, bookingId: string, reason?: string) =
       source: WALLET_SOURCE.BOOKING_ROLLBACK,
       bookingId: booking._id,
       bookingGroupId: booking.bookingGroupId,
-      description: `Booking #${booking.bookingNumber} declined by artist - platform credit restored`,
+      description: `Booking #${booking.bookingNumber} declined by professional - platform credit restored`,
     })
   }
 
@@ -3202,7 +3202,7 @@ const declineBooking = async (user: IUser, bookingId: string, reason?: string) =
     status: BOOKING_STATUS.DECLINED,
     milestone: BOOKING_TIMELINE_MILESTONE.DECLINED,
     title: 'Booking Declined',
-    description: reason || 'Booking declined by artist',
+    description: reason || 'Booking declined by professional',
     performedBy: user._id,
     performedByRole: (user.role as any) || 'artist',
     note: reason,
@@ -3246,7 +3246,7 @@ const completeBooking = async (
   const isArtist = booking.artist.toString() === user._id.toString()
   const isAdmin = user.role === 'admin' || user.role === 'super_admin'
   if (!isArtist && !isAdmin) {
-    throw new AppError(httpStatus.FORBIDDEN, 'Only the assigned artist can complete this booking')
+    throw new AppError(httpStatus.FORBIDDEN, 'Only the assigned professional can complete this booking')
   }
 
   if (
@@ -3302,7 +3302,7 @@ const completeBooking = async (
     status: BOOKING_STATUS.COMPLETED,
     milestone: BOOKING_TIMELINE_MILESTONE.SERVICE_COMPLETED,
     title: 'Service Completed',
-    description: 'Artist completed service and uploaded proof',
+    description: 'Professional completed service and uploaded proof',
     performedBy: user._id,
     performedByRole: (user.role as any) || 'artist',
     metadata: {
@@ -3418,14 +3418,14 @@ const customerSign = async (
             `[Customer Sign Payout Sandbox Bypass] Cross-border US->AU transfer skipped in ${configs.nodeEnv} mode (Platform is US, Artist is AU 'full' agreement). Recorded payout of $${netPayout} AUD for testing.`
           )
         } else {
-          transferFailureReason = err?.message || 'Artist payout transfer pending available balance'
+          transferFailureReason = err?.message || 'Professional payout transfer pending available balance'
           logger.warn(
             `[Customer Sign Payout Queued] Transfer pending for booking ${booking.bookingNumber}: ${transferFailureReason}`
           )
         }
       }
     } else {
-      transferFailureReason = 'Artist Stripe Connected Account not found'
+      transferFailureReason = 'Professional Stripe Connected Account not found'
     }
 
     const isTransferred = Boolean(booking.completionDetails!.payoutTransferredAt)
@@ -3581,7 +3581,7 @@ const requestReschedule = async (
   if (blockedDate) {
     throw new AppError(
       httpStatus.CONFLICT,
-      `The artist is unavailable on this date (${blockedDate.reason || 'Blocked date'}).`
+      `The professional is unavailable on this date (${blockedDate.reason || 'Blocked date'}).`
     )
   }
 
@@ -3599,7 +3599,7 @@ const requestReschedule = async (
       if (payload.newDate >= vStart && payload.newDate <= vEnd) {
         throw new AppError(
           httpStatus.CONFLICT,
-          availability.vacationMessage || 'The artist is currently on vacation during this date.'
+          availability.vacationMessage || 'The professional is currently on vacation during this date.'
         )
       }
     }
@@ -3620,7 +3620,7 @@ const requestReschedule = async (
     if (!daySchedule || !daySchedule.isWorkingDay || !daySchedule.startTime || !daySchedule.endTime) {
       throw new AppError(
         httpStatus.CONFLICT,
-        'The artist does not have working hours scheduled on this day of the week.'
+        'The professional does not have working hours scheduled on this day of the week.'
       )
     }
 
@@ -3628,7 +3628,7 @@ const requestReschedule = async (
     if (normalizedNewStartTime < daySchedule.startTime || newEndTime > daySchedule.endTime) {
       throw new AppError(
         httpStatus.CONFLICT,
-        `Requested slot is outside the artist's working hours (${daySchedule.startTime} - ${daySchedule.endTime}).`
+        `Requested slot is outside the professional's working hours (${daySchedule.startTime} - ${daySchedule.endTime}).`
       )
     }
 
@@ -3639,7 +3639,7 @@ const requestReschedule = async (
           if (b.startTime < newEndTime && b.endTime > normalizedNewStartTime) {
             throw new AppError(
               httpStatus.CONFLICT,
-              `Requested slot overlaps with the artist's scheduled break (${b.startTime} - ${b.endTime}).`
+              `Requested slot overlaps with the professional's scheduled break (${b.startTime} - ${b.endTime}).`
             )
           }
         }
@@ -3665,7 +3665,7 @@ const requestReschedule = async (
       if (dailyCount >= availability.maxBookingPerDay) {
         throw new AppError(
           httpStatus.CONFLICT,
-          `The artist has already reached the maximum booking limit (${availability.maxBookingPerDay} bookings) for this day.`
+          `The professional has already reached the maximum booking limit (${availability.maxBookingPerDay} bookings) for this day.`
         )
       }
     }
@@ -3692,7 +3692,7 @@ const requestReschedule = async (
   if (conflict) {
     throw new AppError(
       httpStatus.CONFLICT,
-      'The artist already has another booking during this requested time slot.'
+      'The professional already has another booking during this requested time slot.'
     )
   }
 
@@ -3781,14 +3781,14 @@ const respondReschedule = async (
     if (!isArtist && !isAdmin) {
       throw new AppError(
         httpStatus.FORBIDDEN,
-        'Only the artist can respond to a customer reschedule request'
+        'Only the professional can respond to a customer reschedule request'
       )
     }
   } else if (booking.rescheduleRequest.requestedByRole === 'artist') {
     if (!isCustomer && !isAdmin) {
       throw new AppError(
         httpStatus.FORBIDDEN,
-        'Only the customer can respond to an artist reschedule request'
+        'Only the customer can respond to a professional reschedule request'
       )
     }
   }
@@ -3815,7 +3815,7 @@ const respondReschedule = async (
     if (conflict) {
       throw new AppError(
         httpStatus.CONFLICT,
-        'Cannot accept reschedule: The artist already has another booking during this time slot.'
+        'Cannot accept reschedule: The professional already has another booking during this time slot.'
       )
     }
 
@@ -3975,7 +3975,7 @@ const reportCustomerNoShow = async (
   if (!isArtist) {
     throw new AppError(
       httpStatus.FORBIDDEN,
-      'Only the assigned artist can report a customer no-show'
+      'Only the assigned professional can report a customer no-show'
     )
   }
 
@@ -4126,14 +4126,14 @@ const verifyCustomerNoShow = async (
             `[No-Show Payout Sandbox Bypass] Cross-border US->AU transfer skipped in ${configs.nodeEnv} mode (${err.message}). Recorded payout of $${netPayout} AUD for testing.`
           )
         } else {
-          transferFailureReason = err?.message || 'Artist payout transfer pending available balance'
+          transferFailureReason = err?.message || 'Professional payout transfer pending available balance'
           logger.warn(
             `[No-Show Payout Queued] Transfer pending for booking ${booking.bookingNumber}: ${transferFailureReason}`
           )
         }
       }
     } else if (netPayout > 0) {
-      transferFailureReason = 'Artist Stripe Connected Account not found'
+      transferFailureReason = 'Professional Stripe Connected Account not found'
     }
 
     const noShowTxnId = `TXN-${booking.bookingNumber}-NO-SHOW-PAYOUT`
@@ -4216,7 +4216,7 @@ const verifyCustomerNoShow = async (
 
   return {
     message: payload.isApproved
-      ? `Customer no-show verified and approved. Full payout of $${booking.artistNetPayout} AUD has been released to the artist.`
+      ? `Customer no-show verified and approved. Full payout of ${booking.artistNetPayout} AUD has been released to the professional.`
       : 'Customer no-show claim was rejected by admin.',
     booking,
   }
@@ -4295,8 +4295,8 @@ const getBookingTimelineFromHistory = async (booking: any) => {
         bookingNumber: booking.bookingNumber,
         status: BOOKING_STATUS.ACCEPTED,
         milestone: BOOKING_TIMELINE_MILESTONE.ARTIST_ACCEPTED,
-        title: 'Artist Accepted',
-        description: 'Artist accepted the booking request',
+        title: 'Professional Accepted',
+        description: 'Professional accepted the booking request',
         performedBy: booking.artist,
         performedByRole: 'artist',
         createdAt: booking.initialPayment?.paidAt || booking.updatedAt,

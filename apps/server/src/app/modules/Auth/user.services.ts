@@ -398,7 +398,7 @@ const artistLogin = async (payload: ILoginType) => {
   if (user.role !== AuthRoles.ARTIST) {
     throw new AppError(
       httpStatus.FORBIDDEN,
-      'Only artist accounts are permitted to log in through this app.'
+      'Only professional accounts are permitted to log in through this app.'
     )
   }
 

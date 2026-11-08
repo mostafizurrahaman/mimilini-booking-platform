@@ -188,7 +188,7 @@ const getAdminDashboardOverview = async (timeframe: 'daily' | 'weekly' | 'monthl
       name: a.name,
       profileImage: a.profileImage || null,
       businessName: prof?.businessName || a.name,
-      category: 'Makeup Artist',
+      category: 'Makeup Professional',
       submittedDate: moment(a.createdAt).format('MMM D'),
       status: 'pending',
     }
@@ -608,7 +608,7 @@ const getAdminFinanceOverview = async (query: {
   const reportRows = transactions.map((t) => ({
     transactionId: t.transactionId,
     type: 'Booking Payment',
-    customerArtist: `${(t.user as any)?.name || 'Client'} / ${(t.artist as any)?.name || 'Artist'}`,
+    customerArtist: `${(t.user as any)?.name || 'Client'} / ${(t.artist as any)?.name || 'Professional'}`,
     amount: t.amount,
     currency: t.currency || 'AUD',
     date: moment(t.createdAt).format('MMM D, YYYY'),

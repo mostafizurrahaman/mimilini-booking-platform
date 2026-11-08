@@ -472,7 +472,7 @@ const adminBroadcastNotification = async (
   payload: {
     title: string
     message: string
-    audience: 'all' | 'customers' | 'artists'
+    audience: 'all' | 'customers' | 'artists' | 'professionals'
     sendPush?: boolean
     actionUrl?: string
     senderPicture?: string
@@ -484,7 +484,7 @@ const adminBroadcastNotification = async (
 
   if (payload.audience === 'customers') {
     userQuery.role = AuthRoles.CUSTOMER
-  } else if (payload.audience === 'artists') {
+  } else if (payload.audience === 'artists' || payload.audience === 'professionals') {
     userQuery.role = AuthRoles.ARTIST
   } else {
     userQuery.role = { $in: [AuthRoles.CUSTOMER, AuthRoles.ARTIST] }
@@ -536,7 +536,7 @@ const adminBroadcastNotification = async (
 
       if (payload.audience === 'customers') {
         io.to('role:customer').emit('notification:new', broadcastData)
-      } else if (payload.audience === 'artists') {
+      } else if (payload.audience === 'artists' || payload.audience === 'professionals') {
         io.to('role:artist').emit('notification:new', broadcastData)
       } else {
         io.emit('notification:new', broadcastData)

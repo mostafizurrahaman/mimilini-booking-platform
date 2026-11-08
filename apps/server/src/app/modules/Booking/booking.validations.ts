@@ -28,7 +28,7 @@ const timeSchema = (fieldName = 'Start Time') =>
 
 const createBookingSchema = z.object({
   body: z.object({
-    artist: requiredString('Artist ID'),
+    artist: requiredString('Professional ID'),
     services: z
       .array(requiredString('Service ID'))
       .min(1, 'At least one service is required'),
@@ -45,7 +45,7 @@ const createBookingSchema = z.object({
 
 const checkoutPreviewSchema = z.object({
   body: z.object({
-    artist: requiredString('Artist ID'),
+    artist: requiredString('Professional ID'),
     services: z
       .array(requiredString('Service ID'))
       .min(1, 'At least one service is required'),
@@ -59,7 +59,7 @@ const checkoutPreviewSchema = z.object({
 
 const publicCheckoutPreviewSchema = z.object({
   body: z.object({
-    artist: requiredString('Artist ID'),
+    artist: requiredString('Professional ID'),
     services: z
       .array(requiredString('Service ID'))
       .min(1, 'At least one service is required'),

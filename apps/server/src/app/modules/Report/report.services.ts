@@ -630,7 +630,7 @@ const exportReport = async (query: {
   if (type === 'artists') {
     const data = await getTopArtists({ limit: 50, year })
     if (format === 'csv') {
-      const header = 'Rank,Artist ID,Name,Category,Bookings,Revenue ($),Rating,Growth\n'
+      const header = 'Rank,Professional ID,Name,Category,Bookings,Revenue ($),Rating,Growth\n'
       const rows = data
         .map((a) => `${a.rank},"${a.artistId}","${a.name}","${a.category}",${a.bookings},${a.revenue},${a.rating},"${a.growth}"`)
         .join('\n')
@@ -660,7 +660,7 @@ const exportReport = async (query: {
       `Total Commission,$${fullData.revenueAnalytics.summary.totalCommission}`,
       `Total Net Profit,$${fullData.revenueAnalytics.summary.totalProfit}`,
       `Repeat Rate,${fullData.customerRetention.repeatRatePercent}%`,
-      `Avg Income Per Artist,$${fullData.customerRetention.avgIncomePerArtist}`,
+      `Avg Income Per Professional,${fullData.customerRetention.avgIncomePerArtist}`,
     ].join('\n')
     return { format: 'csv', filename: `platform-analytics-report-${year}.csv`, data: header + summaryRows }
   }

@@ -16,7 +16,7 @@ const connectStripeAccount = async (user: IUser) => {
   })
 
   if (!artistProfile) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Artist profile not found.')
+    throw new AppError(httpStatus.NOT_FOUND, 'Professional profile not found.')
   }
 
   const existingAccount = await Account.findOne({
