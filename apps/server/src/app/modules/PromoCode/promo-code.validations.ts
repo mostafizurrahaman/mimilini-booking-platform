@@ -154,7 +154,7 @@ const validatePromoCodeSchema = z.object({
       0.01,
       'Booking amount must be greater than 0.'
     ),
-    artistId: optionalString('Artist ID'),
+    artistId: optionalString('Professional ID'),
   }),
 })
 

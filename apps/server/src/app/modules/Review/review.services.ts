@@ -379,8 +379,8 @@ const getCustomerStories = async (query: {
       },
       artist: {
         _id: artistObj?._id || null,
-        name: artistObj?.name || artistProf?.businessName || 'Beauty Artist',
-        businessName: artistProf?.businessName || artistObj?.name || 'Beauty Artist',
+        name: artistObj?.name || artistProf?.businessName || 'Beauty Professional',
+        businessName: artistProf?.businessName || artistObj?.name || 'Beauty Professional',
         profileImage: artistObj?.profileImage || null,
       },
       location: resolvedLocation,
@@ -521,8 +521,8 @@ const getCustomerStoryById = async (storyId: string) => {
       },
       artist: {
         _id: artistObj?._id || null,
-        name: artistObj?.name || artistProf?.businessName || 'Beauty Artist',
-        businessName: artistProf?.businessName || artistObj?.name || 'Beauty Artist',
+        name: artistObj?.name || artistProf?.businessName || 'Beauty Professional',
+        businessName: artistProf?.businessName || artistObj?.name || 'Beauty Professional',
         profileImage: artistObj?.profileImage || null,
       },
       rating: rev.rating,
@@ -1034,7 +1034,7 @@ const getAdminReviewModeration = async (query: {
       artist: {
         _id: art?._id || null,
         name: art?.name || 'Artist',
-        businessName: artProfile?.businessName || art?.name || 'Beauty Artist',
+        businessName: artProfile?.businessName || art?.name || 'Beauty Professional',
         initials: getInitials(artProfile?.businessName || art?.name),
         profileImage: art?.profileImage || null,
       },

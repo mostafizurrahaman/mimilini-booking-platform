@@ -275,7 +275,7 @@ export const processPendingArtistPayouts = async () => {
             marketplaceFeeGst: bk.platformCommissionGst || 0,
             stripeFeeBorne: bk.stripeBalanceFee || 0,
             artistNetShare: bk.artistNetPayout,
-            failureReason: 'Artist payout transfer pending available balance',
+            failureReason: 'Professional payout transfer pending available balance',
           },
         },
         { upsert: true, new: true }

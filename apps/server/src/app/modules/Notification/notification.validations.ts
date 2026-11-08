@@ -42,7 +42,7 @@ const adminBroadcastSchema = z.object({
   body: z.object({
     title: z.string().trim().min(1, 'Title is required').max(150, 'Title cannot exceed 150 characters'),
     message: z.string().trim().min(1, 'Message is required').max(1000, 'Message cannot exceed 1000 characters'),
-    audience: z.enum(['all', 'customers', 'artists']).default('all'),
+    audience: z.enum(['all', 'customers', 'artists', 'professionals']).default('all'),
     sendPush: z.boolean().optional().default(true),
     actionUrl: z.string().trim().optional(),
     senderPicture: z.string().trim().optional(),

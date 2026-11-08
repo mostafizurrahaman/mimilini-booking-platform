@@ -47,7 +47,7 @@ const createArtistServices = async (user: IUserDoc, payload: TCreateArtistServic
   if (duplicateSlug) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'This artist already has a service for the selected category with same name.'
+      'This professional already has a service for the selected category with same name.'
     )
   }
 
@@ -105,7 +105,7 @@ const updateArtistServices = async (
     if (duplicateSlug) {
       throw new AppError(
         httpStatus.CONFLICT,
-        'This artist already has a service for the selected category with same name.'
+        'This professional already has a service for the selected category with same name.'
       )
     }
     slug = newSlug

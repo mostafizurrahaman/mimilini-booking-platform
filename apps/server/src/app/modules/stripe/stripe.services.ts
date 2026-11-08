@@ -507,7 +507,7 @@ const handleChargeRefunded = async (charge: Stripe.Charge) => {
         source: WALLET_SOURCE.ARTIST_COMPENSATION,
         bookingId: (booking as any)._id,
         bookingGroupId: booking.bookingGroupId,
-        description: `Compensation for artist cancellation on booking #${booking.bookingNumber}`,
+        description: `Compensation for professional cancellation on booking #${booking.bookingNumber}`,
       })
       logger.info(
         `[Stripe Webhook] Credited $15 AUD artist cancellation compensation to customer wallet for booking ${booking.bookingNumber}`
@@ -551,7 +551,7 @@ const handleChargeRefunded = async (charge: Stripe.Charge) => {
             timeframeTier: penaltyCalc.timeframeTier,
             penaltyAmount: penaltyCalc.penaltyAmount,
             currency: 'AUD',
-            reason: 'Artist cancelled appointment (refunded via Stripe)',
+            reason: 'Professional cancelled appointment (refunded via Stripe)',
             isPenaltyRequired: true,
             status: PENALTY_STATUS.PENDING,
             deductedFromWallet: false,

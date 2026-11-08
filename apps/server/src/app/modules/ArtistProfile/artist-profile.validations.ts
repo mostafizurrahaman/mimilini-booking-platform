@@ -171,7 +171,7 @@ const rejectArtistDocumentSchema = z.object({
 
 const findAvailableArtistsSchema = z.object({
   query: z.object({
-    artistId: optionalString('Artist ID'),
+    artistId: optionalString('Professional ID'),
     searchTerm: optionalString('Search Term'),
     sortBy: optionalString('Sort By'),
     sortOrder: optionalString('Sort Order'),
@@ -183,6 +183,7 @@ const findAvailableArtistsSchema = z.object({
     time: z.string().optional(),
     guestCount: z.string().optional(),
     availableToday: z.string().optional(),
+    isQuickBookingEnabled: z.string().optional(),
     page: z.string().optional(),
     limit: z.string().optional(),
   }),
@@ -226,7 +227,7 @@ const removePortfolioSchema = z.object({
 
 const getArtistDetailsSchema = z.object({
   params: z.object({
-    artistId: requiredString('Artist ID'),
+    artistId: requiredString('Professional ID'),
   }),
   query: z.object({
     date: optionalDate('Date'),
@@ -238,7 +239,7 @@ const getArtistDetailsSchema = z.object({
 
 const toggleFavoriteArtistSchema = z.object({
   params: z.object({
-    artistId: requiredMongooseId('Artist ID'),
+    artistId: requiredMongooseId('Professional ID'),
   }),
 })
 

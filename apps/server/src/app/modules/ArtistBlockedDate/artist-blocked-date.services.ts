@@ -85,11 +85,11 @@ const updateArtistBlockedDate = async (
   const existing = await ArtistBlockedDate.findById(id)
 
   if (!existing) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Artist blocked date not found')
+    throw new AppError(httpStatus.NOT_FOUND, 'Professional blocked date not found')
   }
 
   if (user.role === AuthRoles.ARTIST && String(existing.user) !== String(user._id)) {
-    throw new AppError(httpStatus.FORBIDDEN, 'You cannot update another artist blocked date')
+    throw new AppError(httpStatus.FORBIDDEN, 'You cannot update another professional blocked date')
   }
 
   assertBlockedDateIsUpcoming(existing.date, 'updated')
@@ -202,7 +202,7 @@ const getArtistBlockedDateById = async (id: string) => {
   const result = await ArtistBlockedDate.findById(id)
 
   if (!result) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Artist blocked date not found')
+    throw new AppError(httpStatus.NOT_FOUND, 'Professional blocked date not found')
   }
 
   return result
@@ -212,11 +212,11 @@ const deleteArtistBlockedDateById = async (user: IUser, id: string) => {
   const existing = await ArtistBlockedDate.findById(id)
 
   if (!existing) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Artist blocked date not found')
+    throw new AppError(httpStatus.NOT_FOUND, 'Professional blocked date not found')
   }
 
   if (user.role === AuthRoles.ARTIST && String(existing.user) !== String(user._id)) {
-    throw new AppError(httpStatus.FORBIDDEN, 'You cannot delete another artist blocked date')
+    throw new AppError(httpStatus.FORBIDDEN, 'You cannot delete another professional blocked date')
   }
 
   assertBlockedDateIsUpcoming(existing.date, 'deleted')
