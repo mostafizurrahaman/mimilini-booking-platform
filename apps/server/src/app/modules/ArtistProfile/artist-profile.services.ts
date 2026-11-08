@@ -1499,7 +1499,11 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
         ],
       },
       isQuickBookingEnabled: {
-        $ifNull: ['$availabilityDoc.isQuickBookingEnabled', false],
+        $cond: {
+          if: { $eq: ['$availabilityDoc.isQuickBookingEnabled', true] },
+          then: true,
+          else: false,
+        },
       },
       category: {
         $ifNull: [
@@ -1793,6 +1797,7 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
 
       return {
         ...artist,
+        isQuickBookingEnabled: Boolean(artist.isQuickBookingEnabled),
         badges,
         isAvailableToday,
         isAvailable,
