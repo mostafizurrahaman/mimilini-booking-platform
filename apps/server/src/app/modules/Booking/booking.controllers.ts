@@ -224,6 +224,18 @@ const declineBooking = catchAsync(async (req, res) => {
   })
 })
 
+const startService = catchAsync(async (req, res) => {
+  const user = await getUserFromRequest(req)
+  const result = await bookingServices.startService(user, req.params.id as string)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'Service marked as started and in progress!',
+    data: result,
+  })
+})
+
 const completeBooking = catchAsync(async (req, res) => {
   const user = await getUserFromRequest(req)
   const files = (req.files as Express.Multer.File[]) || []
@@ -416,6 +428,7 @@ export const bookingControllers = {
   acceptBooking,
   confirmBookingPayment,
   declineBooking,
+  startService,
   completeBooking,
   customerSign,
   requestReschedule,
