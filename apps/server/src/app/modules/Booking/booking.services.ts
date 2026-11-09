@@ -1070,6 +1070,13 @@ const customerCancelBooking = async (
     )
   }
 
+  if (booking.status === BOOKING_STATUS.IN_PROGRESS) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Cannot cancel a booking that is currently in progress. Please contact the professional or support.'
+    )
+  }
+
   const appointmentDateStr = moment.utc(booking.bookingDate).format('YYYY-MM-DD')
   const appointmentDateTime = moment(
     `${appointmentDateStr} ${booking.startTime}`,
@@ -1389,6 +1396,13 @@ const artistCancelBooking = async (
     )
   }
 
+  if (booking.status === BOOKING_STATUS.IN_PROGRESS) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Cannot cancel a booking that is currently in progress. Please contact the professional or support.'
+    )
+  }
+
   const appointmentDateStr = moment.utc(booking.bookingDate).format('YYYY-MM-DD')
   const appointmentDateTime = moment(
     `${appointmentDateStr} ${booking.startTime}`,
@@ -1607,6 +1621,13 @@ const cancelBooking = async (user: IUser, bookingId: string, cancellationReason?
     throw new AppError(
       httpStatus.BAD_REQUEST,
       `Cannot cancel booking that is already '${booking.status}'`
+    )
+  }
+
+  if (!isAdmin && booking.status === BOOKING_STATUS.IN_PROGRESS) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Cannot cancel a booking that is currently in progress. Please contact support.'
     )
   }
 
@@ -1877,8 +1898,24 @@ const payBalance = async (user: IUser, bookingId: string, paymentMethodId?: stri
     throw new AppError(httpStatus.BAD_REQUEST, 'Remaining balance is already paid')
   }
 
-  if (booking.status === BOOKING_STATUS.CANCELLED || booking.status === BOOKING_STATUS.DECLINED) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Booking is cancelled and cannot be paid')
+  if (booking.initialPayment.status !== PAYMENT_STAGE_STATUS.CAPTURED) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Initial deposit must be paid and captured before paying the remaining balance'
+    )
+  }
+
+  const validBalancePayStatuses = [
+    BOOKING_STATUS.CONFIRMED,
+    BOOKING_STATUS.RESCHEDULED,
+    BOOKING_STATUS.IN_PROGRESS,
+    BOOKING_STATUS.COMPLETED,
+  ]
+  if (!validBalancePayStatuses.includes(booking.status as any)) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Cannot pay balance for booking with status '${booking.status}'`
+    )
   }
 
   let effectivePaymentMethodId: string | undefined
@@ -3143,14 +3180,10 @@ const declineBooking = async (user: IUser, bookingId: string, reason?: string) =
     throw new AppError(httpStatus.FORBIDDEN, 'Only the assigned professional can decline this booking')
   }
 
-  if (
-    booking.status === BOOKING_STATUS.COMPLETED ||
-    booking.status === BOOKING_STATUS.CANCELLED ||
-    booking.status === BOOKING_STATUS.DECLINED
-  ) {
+  if (booking.status !== BOOKING_STATUS.REQUESTED) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      `Cannot decline booking that is already '${booking.status}'`
+      `Cannot decline booking with status '${booking.status}'. Only requested bookings can be declined.`
     )
   }
 
@@ -3230,6 +3263,68 @@ const declineBooking = async (user: IUser, bookingId: string, reason?: string) =
 }
 
 /**
+ * Professional starts the service delivery (transitions CONFIRMED -> IN_PROGRESS)
+ */
+const startService = async (user: IUser, bookingId: string) => {
+  const booking = await Booking.findById(bookingId)
+  if (!booking) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
+  }
+
+  const isArtist = booking.artist.toString() === user._id.toString()
+  const isAdmin = user.role === 'admin' || user.role === 'super_admin'
+  if (!isArtist && !isAdmin) {
+    throw new AppError(httpStatus.FORBIDDEN, 'Only the assigned professional can start this service')
+  }
+
+  const canStart =
+    booking.status === BOOKING_STATUS.CONFIRMED ||
+    (booking.status === BOOKING_STATUS.RESCHEDULED &&
+      booking.initialPayment?.status === PAYMENT_STAGE_STATUS.CAPTURED)
+
+  if (!canStart) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Cannot start service for booking with status '${booking.status}'. Booking must be confirmed and deposit paid.`
+    )
+  }
+
+  booking.status = BOOKING_STATUS.IN_PROGRESS
+  await booking.save()
+
+  await recordBookingHistory({
+    booking: booking._id,
+    bookingNumber: booking.bookingNumber,
+    status: BOOKING_STATUS.IN_PROGRESS,
+    milestone: BOOKING_TIMELINE_MILESTONE.SERVICE_STARTED,
+    title: 'Service Started',
+    description: 'Professional has started the service delivery',
+    performedBy: user._id,
+    performedByRole: (user.role as any) || 'artist',
+  })
+
+  // Notify customer
+  try {
+    await notificationServices.sendNotification({
+      recipient: booking.customer,
+      sender: user._id,
+      senderName: user.name,
+      senderPicture: user.profileImage,
+      title: 'Service Started',
+      message: `${user.name} has started your service for booking #${booking.bookingNumber}`,
+      type: NOTIFICATION_TYPE.BOOKING_CONFIRMED,
+      bookingId: booking._id,
+      bookingNumber: booking.bookingNumber,
+      actionUrl: `/bookings/${booking._id}`,
+    })
+  } catch (notifErr) {
+    logger.warn('[Booking Notification] Failed to notify customer:', notifErr)
+  }
+
+  return booking
+}
+
+/**
  * Artist completes a service (proof photos, products used, working time, notes, signature)
  */
 const completeBooking = async (
@@ -3249,14 +3344,16 @@ const completeBooking = async (
     throw new AppError(httpStatus.FORBIDDEN, 'Only the assigned professional can complete this booking')
   }
 
-  if (
-    booking.status === BOOKING_STATUS.COMPLETED ||
-    booking.status === BOOKING_STATUS.CANCELLED ||
-    booking.status === BOOKING_STATUS.DECLINED
-  ) {
+  const canComplete =
+    booking.status === BOOKING_STATUS.IN_PROGRESS ||
+    booking.status === BOOKING_STATUS.CONFIRMED ||
+    (booking.status === BOOKING_STATUS.RESCHEDULED &&
+      booking.initialPayment?.status === PAYMENT_STAGE_STATUS.CAPTURED)
+
+  if (!canComplete) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      `Cannot complete booking with status '${booking.status}'`
+      `Cannot complete booking with status '${booking.status}'. Service must be confirmed or in progress.`
     )
   }
 
@@ -3355,12 +3452,12 @@ const customerSign = async (
   }
 
   if (
-    booking.status === BOOKING_STATUS.CANCELLED ||
-    booking.status === BOOKING_STATUS.DECLINED
+    booking.status !== BOOKING_STATUS.IN_PROGRESS &&
+    booking.status !== BOOKING_STATUS.COMPLETED
   ) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      `Cannot sign a booking that is '${booking.status}'`
+      `Cannot sign a booking with status '${booking.status}'. Service must be in progress or completed.`
     )
   }
 
@@ -3518,14 +3615,29 @@ const requestReschedule = async (
     throw new AppError(httpStatus.FORBIDDEN, 'Access denied to reschedule this booking')
   }
 
-  if (
-    booking.status === BOOKING_STATUS.COMPLETED ||
-    booking.status === BOOKING_STATUS.CANCELLED ||
-    booking.status === BOOKING_STATUS.DECLINED
-  ) {
+  const allowedRescheduleStatuses = [
+    BOOKING_STATUS.REQUESTED,
+    BOOKING_STATUS.ACCEPTED,
+    BOOKING_STATUS.CONFIRMED,
+    BOOKING_STATUS.RESCHEDULED,
+  ]
+
+  if (!allowedRescheduleStatuses.includes(booking.status as any)) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      `Cannot reschedule a booking that is '${booking.status}'`
+      `Cannot reschedule a booking that is '${booking.status}'. Rescheduling is only allowed before service starts.`
+    )
+  }
+
+  const currentApptDateStr = moment.utc(booking.bookingDate).format('YYYY-MM-DD')
+  const currentApptDateTime = moment(
+    `${currentApptDateStr} ${booking.startTime}`,
+    'YYYY-MM-DD HH:mm'
+  )
+  if (moment().isAfter(currentApptDateTime)) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Cannot reschedule an appointment that has already passed or started'
     )
   }
 
@@ -3979,13 +4091,28 @@ const reportCustomerNoShow = async (
     )
   }
 
-  if (
-    booking.status !== BOOKING_STATUS.CONFIRMED &&
-    booking.status !== BOOKING_STATUS.IN_PROGRESS
-  ) {
+  const canReportNoShow =
+    booking.status === BOOKING_STATUS.CONFIRMED ||
+    booking.status === BOOKING_STATUS.IN_PROGRESS ||
+    (booking.status === BOOKING_STATUS.RESCHEDULED &&
+      booking.initialPayment?.status === PAYMENT_STAGE_STATUS.CAPTURED)
+
+  if (!canReportNoShow) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
       `Cannot report no-show for a booking in '${booking.status}' status`
+    )
+  }
+
+  const appointmentDateStr = moment.utc(booking.bookingDate).format('YYYY-MM-DD')
+  const appointmentDateTime = moment(
+    `${appointmentDateStr} ${booking.startTime}`,
+    'YYYY-MM-DD HH:mm'
+  )
+  if (moment().isBefore(appointmentDateTime.clone().add(15, 'minutes'))) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Customer no-show can only be reported after 15 minutes past the scheduled appointment start time'
     )
   }
 
@@ -4892,6 +5019,7 @@ export const bookingServices = {
   acceptBooking,
   confirmBookingPayment,
   declineBooking,
+  startService,
   completeBooking,
   customerSign,
   requestReschedule,

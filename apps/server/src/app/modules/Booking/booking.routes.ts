@@ -101,6 +101,12 @@ router.patch(
   bookingControllers.declineBooking
 )
 
+router.patch(
+  '/:id/start-service',
+  auth(AuthRoles.ARTIST, AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
+  bookingControllers.startService
+)
+
 router.post(
   '/:id/complete',
   auth(AuthRoles.ARTIST, AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
