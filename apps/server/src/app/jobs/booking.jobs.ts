@@ -2,6 +2,8 @@ import {
   Account,
   Booking,
   BOOKING_STATUS,
+  BOOKING_TIMELINE_MILESTONE,
+  NOTIFICATION_TYPE,
   PaymentTransaction,
   PAYMENT_GATEWAY,
   PAYMENT_STAGE_STATUS,
@@ -13,6 +15,7 @@ import { logger } from '@app/libs/logger'
 import { stripe } from '@app/libs/stripe'
 import { bookingServices } from '../modules/Booking/booking.services'
 import { walletServices } from '../modules/Wallet/wallet.services'
+import { notificationServices } from '../modules/Notification/notification.services'
 import { round2 } from '../modules/Booking/booking.utils'
 import moment from 'moment'
 
@@ -238,6 +241,112 @@ export const processExpiredRectificationCancellations = async () => {
   }
 }
 
+/**
+ * 1-Hour Initial Deposit Timeout Job:
+ * If customer does not complete 20% deposit within 1 hour after professional accepts:
+ * - Booking is automatically cancelled (status: CANCELLED)
+ * - Reason: Customer did not complete initial deposit payment within 1 hour
+ * - Original platform credit applied is restored to wallet (if any)
+ * - Timeline milestone CANCELLED recorded
+ * - Both customer and professional are notified
+ * - Professional slot is freed up
+ */
+export const processExpiredInitialPaymentBookings = async () => {
+  try {
+    const now = new Date()
+
+    const expiredBookings = await Booking.find({
+      status: BOOKING_STATUS.ACCEPTED,
+      'initialPayment.status': { $ne: PAYMENT_STAGE_STATUS.CAPTURED },
+      $or: [
+        { 'initialPayment.dueDate': { $lte: now } },
+        {
+          'initialPayment.dueDate': null,
+          updatedAt: { $lte: moment().subtract(1, 'hour').toDate() },
+        },
+      ],
+    })
+
+    if (expiredBookings.length === 0) return
+
+    logger.warn(
+      `[Cron: Initial Payment Expiry] Cancelling ${expiredBookings.length} accepted bookings due to expired 1-hour payment window.`
+    )
+
+    for (const booking of expiredBookings) {
+      // Restore platform credit if applied
+      if (booking.platformCreditApplied > 0) {
+        await walletServices.creditUserWallet({
+          userId: booking.customer,
+          amount: booking.platformCreditApplied,
+          source: WALLET_SOURCE.BOOKING_ROLLBACK,
+          bookingId: booking._id,
+          bookingGroupId: booking.bookingGroupId,
+          description: `Booking #${booking.bookingNumber} auto-cancelled (unpaid within 1 hour) - platform credit restored`,
+        })
+      }
+
+      booking.status = BOOKING_STATUS.CANCELLED
+      booking.cancellationReason =
+        'Auto-cancelled: Customer did not complete initial deposit payment within 1 hour'
+      booking.cancelledAt = now
+      booking.cancelledByRole = 'system'
+      booking.cancellationFeeCharged = 0
+      booking.depositForfeited = false
+      booking.platformCreditIssued = 0
+      await booking.save()
+
+      await bookingServices.recordBookingHistory({
+        booking: booking._id,
+        bookingNumber: booking.bookingNumber,
+        status: BOOKING_STATUS.CANCELLED,
+        milestone: BOOKING_TIMELINE_MILESTONE.CANCELLED,
+        title: 'Booking Auto-Cancelled (Payment Timeout)',
+        description:
+          'Booking was automatically cancelled because initial deposit payment was not completed within 1 hour.',
+        performedByRole: 'system',
+        note: booking.cancellationReason,
+      })
+
+      // Notify customer
+      try {
+        await notificationServices.sendNotification({
+          recipient: booking.customer,
+          title: 'Booking Cancelled (Payment Expired)',
+          message: `Booking #${booking.bookingNumber} has been automatically cancelled because the deposit payment was not completed within 1 hour.`,
+          type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
+          bookingId: booking._id,
+          bookingNumber: booking.bookingNumber,
+          actionUrl: `/bookings/${booking._id}`,
+        })
+      } catch (notifErr) {
+        logger.warn('[Booking Notification] Failed to notify customer of payment expiry:', notifErr)
+      }
+
+      // Notify professional
+      try {
+        await notificationServices.sendNotification({
+          recipient: booking.artist,
+          title: 'Booking Cancelled (Unpaid Slot Released)',
+          message: `Booking #${booking.bookingNumber} was automatically cancelled because the customer did not pay within 1 hour. Your schedule has been freed up.`,
+          type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
+          bookingId: booking._id,
+          bookingNumber: booking.bookingNumber,
+          actionUrl: `/bookings/${booking._id}`,
+        })
+      } catch (notifErr) {
+        logger.warn('[Booking Notification] Failed to notify artist of payment expiry:', notifErr)
+      }
+
+      logger.info(
+        `[Cron: Initial Payment Expiry] Booking #${booking.bookingNumber} auto-cancelled due to 1-hour payment timeout. Slot released.`
+      )
+    }
+  } catch (err: any) {
+    logger.error('[Cron: Initial Payment Expiry] Encountered an error:', err)
+  }
+}
+
 const activePayoutRetryLocks = new Set<string>()
 
 /**
@@ -397,10 +506,18 @@ export const startBookingCronJobs = () => {
     2 * 60 * 1000
   )
 
+  // Run 1-hour initial deposit timeout check immediately and then every 2 minutes
+  processExpiredInitialPaymentBookings()
+  const initialPaymentTimeoutInterval = setInterval(
+    processExpiredInitialPaymentBookings,
+    2 * 60 * 1000
+  )
+
   // Run pending artist payout retry every day at 09:00 AM
   scheduleDailyAt9AM(processPendingArtistPayouts)
 
   // Unref intervals so they don't block clean process shutdown if needed
   if (balanceInterval.unref) balanceInterval.unref()
   if (rectificationInterval.unref) rectificationInterval.unref()
+  if (initialPaymentTimeoutInterval.unref) initialPaymentTimeoutInterval.unref()
 }

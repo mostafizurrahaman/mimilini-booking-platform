@@ -1077,17 +1077,77 @@ const customerCancelBooking = async (
     )
   }
 
+  const isInitialPaid = booking.initialPayment.status === PAYMENT_STAGE_STATUS.CAPTURED
+  const isBalancePaid =
+    booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED &&
+    (booking.balancePayment.amount || 0) > 0
+
+  // Pre-payment cancellation (Rule 1): Customer cancels before paying/confirming -> no charge, no refund
+  if (!isInitialPaid) {
+    booking.status = BOOKING_STATUS.CANCELLED
+    booking.cancelledBy = user._id
+    booking.cancelledByRole = isAdmin && !isCustomer ? 'admin' : 'customer'
+    booking.cancellationReason = cancellationReason || 'Cancelled by customer before payment/confirmation'
+    booking.cancelledAt = new Date()
+    booking.cancellationFeeCharged = 0
+    booking.depositForfeited = false
+    booking.platformCreditIssued = 0
+
+    if (booking.platformCreditApplied > 0) {
+      await walletServices.creditUserWallet({
+        userId: booking.customer._id,
+        amount: booking.platformCreditApplied,
+        source: WALLET_SOURCE.BOOKING_ROLLBACK,
+        bookingId: booking._id,
+        bookingGroupId: booking.bookingGroupId,
+        description: `Booking #${booking.bookingNumber} cancelled before payment - platform credit restored`,
+      })
+    }
+
+    await booking.save()
+
+    await recordBookingHistory({
+      booking: booking._id,
+      bookingNumber: booking.bookingNumber,
+      status: BOOKING_STATUS.CANCELLED,
+      milestone: BOOKING_TIMELINE_MILESTONE.CANCELLED,
+      title: 'Booking Cancelled',
+      description: 'Customer cancelled the booking request before payment',
+      performedBy: user._id,
+      performedByRole: booking.cancelledByRole,
+      note: booking.cancellationReason,
+    })
+
+    // Notify artist
+    try {
+      await notificationServices.sendNotification({
+        recipient: (booking.artist as any)._id || booking.artist,
+        sender: user._id,
+        senderName: user.name,
+        senderPicture: user.profileImage,
+        title: 'Booking Request Cancelled',
+        message: `${user.name} has cancelled booking #${booking.bookingNumber} before payment.`,
+        type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
+        bookingId: booking._id,
+        bookingNumber: booking.bookingNumber,
+        actionUrl: `/bookings/${booking._id}`,
+      })
+    } catch (notifErr) {
+      logger.warn('[Booking Notification] Failed to notify artist of customer cancellation:', notifErr)
+    }
+
+    return {
+      message: 'Booking cancelled successfully. No payment was charged.',
+      booking,
+    }
+  }
+
   const appointmentDateStr = moment.utc(booking.bookingDate).format('YYYY-MM-DD')
   const appointmentDateTime = moment(
     `${appointmentDateStr} ${booking.startTime}`,
     'YYYY-MM-DD HH:mm'
   )
   const hoursUntilAppointment = appointmentDateTime.diff(moment(), 'hours', true)
-
-  const isInitialPaid = booking.initialPayment.status === PAYMENT_STAGE_STATUS.CAPTURED
-  const isBalancePaid =
-    booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED &&
-    (booking.balancePayment.amount || 0) > 0
 
   // Release promo code if applied and deposit was captured
   if (booking.promoCode && isInitialPaid) {
@@ -1403,17 +1463,77 @@ const artistCancelBooking = async (
     )
   }
 
+  const isInitialPaid = booking.initialPayment.status === PAYMENT_STAGE_STATUS.CAPTURED
+  const isBalancePaid =
+    booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED &&
+    (booking.balancePayment.amount || 0) > 0
+
+  // Pre-payment cancellation: Professional cancels before payment/confirmation -> no charge, no refund
+  if (!isInitialPaid) {
+    booking.status = BOOKING_STATUS.CANCELLED
+    booking.cancelledBy = user._id
+    booking.cancelledByRole = isAdmin && !isArtist ? 'admin' : 'artist'
+    booking.cancellationReason = cancellationReason || 'Cancelled by professional before payment/confirmation'
+    booking.cancelledAt = new Date()
+    booking.cancellationFeeCharged = 0
+    booking.depositForfeited = false
+    booking.platformCreditIssued = 0
+
+    if (booking.platformCreditApplied > 0) {
+      await walletServices.creditUserWallet({
+        userId: booking.customer._id,
+        amount: booking.platformCreditApplied,
+        source: WALLET_SOURCE.BOOKING_ROLLBACK,
+        bookingId: booking._id,
+        bookingGroupId: booking.bookingGroupId,
+        description: `Booking #${booking.bookingNumber} cancelled by professional before payment - platform credit restored`,
+      })
+    }
+
+    await booking.save()
+
+    await recordBookingHistory({
+      booking: booking._id,
+      bookingNumber: booking.bookingNumber,
+      status: BOOKING_STATUS.CANCELLED,
+      milestone: BOOKING_TIMELINE_MILESTONE.CANCELLED,
+      title: 'Booking Cancelled',
+      description: 'Professional cancelled the booking before payment',
+      performedBy: user._id,
+      performedByRole: booking.cancelledByRole,
+      note: booking.cancellationReason,
+    })
+
+    // Notify customer
+    try {
+      await notificationServices.sendNotification({
+        recipient: booking.customer._id || booking.customer,
+        sender: user._id,
+        senderName: user.name,
+        senderPicture: user.profileImage,
+        title: 'Booking Cancelled by Professional',
+        message: `${user.name} has cancelled booking #${booking.bookingNumber} before payment.`,
+        type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
+        bookingId: booking._id,
+        bookingNumber: booking.bookingNumber,
+        actionUrl: `/bookings/${booking._id}`,
+      })
+    } catch (notifErr) {
+      logger.warn('[Booking Notification] Failed to notify customer of professional cancellation:', notifErr)
+    }
+
+    return {
+      message: 'Booking cancelled successfully. No payment was charged.',
+      booking,
+    }
+  }
+
   const appointmentDateStr = moment.utc(booking.bookingDate).format('YYYY-MM-DD')
   const appointmentDateTime = moment(
     `${appointmentDateStr} ${booking.startTime}`,
     'YYYY-MM-DD HH:mm'
   )
   const hoursUntilAppointment = appointmentDateTime.diff(moment(), 'hours', true)
-
-  const isInitialPaid = booking.initialPayment.status === PAYMENT_STAGE_STATUS.CAPTURED
-  const isBalancePaid =
-    booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED &&
-    (booking.balancePayment.amount || 0) > 0
 
   // Release promo code if applied and deposit was captured
   if (booking.promoCode && isInitialPaid) {
@@ -2860,6 +2980,7 @@ const acceptBooking = async (user: IUser, bookingId: string) => {
   }
 
   booking.status = BOOKING_STATUS.ACCEPTED
+  booking.initialPayment.dueDate = moment().add(1, 'hour').toDate()
   await booking.save()
 
   await recordBookingHistory({
@@ -2868,7 +2989,7 @@ const acceptBooking = async (user: IUser, bookingId: string) => {
     status: BOOKING_STATUS.ACCEPTED,
     milestone: BOOKING_TIMELINE_MILESTONE.ARTIST_ACCEPTED,
     title: 'Professional Accepted',
-    description: 'Professional accepted the booking request',
+    description: 'Professional accepted the booking request. 1-hour payment window started.',
     performedBy: user._id,
     performedByRole: (user.role as any) || 'artist',
   })
@@ -2881,7 +3002,7 @@ const acceptBooking = async (user: IUser, bookingId: string) => {
       senderName: user.name,
       senderPicture: user.profileImage,
       title: 'Booking Accepted',
-      message: `${user.name} has accepted your booking #${booking.bookingNumber}`,
+      message: `${user.name} has accepted your booking #${booking.bookingNumber}. Please complete the 20% deposit payment within 1 hour to secure your appointment.`,
       type: NOTIFICATION_TYPE.BOOKING_ACCEPTED,
       bookingId: booking._id,
       bookingNumber: booking.bookingNumber,
