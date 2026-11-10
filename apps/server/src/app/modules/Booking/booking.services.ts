@@ -62,6 +62,7 @@ export interface ICreateBookingInput {
   guestCount: number
   promoCode?: string
   usePlatformCredit?: boolean
+  isQuickBooking?: boolean
   paymentMethodId?: string
 }
 
@@ -575,7 +576,17 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     }
   }
 
-  const isQuickBooking = Boolean(availability?.isQuickBookingEnabled)
+  const wantsQuickBooking = Boolean(input.isQuickBooking)
+  const artistAllowsQuickBooking = Boolean(availability?.isQuickBookingEnabled)
+
+  if (wantsQuickBooking && !artistAllowsQuickBooking) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Quick Booking is not available for this professional. Please submit a standard booking request.'
+    )
+  }
+
+  const isQuickBooking = wantsQuickBooking && artistAllowsQuickBooking
 
   // 3. Check for double booking conflicts on the artist schedule
   const existingConflict = await Booking.findOne({
@@ -969,22 +980,24 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     })
   }
 
-  // Notify artist of incoming request
+  // Notify professional of incoming request or confirmed quick booking
   try {
     await notificationServices.sendNotification({
       recipient: booking.artist,
       sender: user._id,
       senderName: user.name,
       senderPicture: user.profileImage,
-      title: 'New Booking Request',
-      message: `${user.name} has requested a new booking #${booking.bookingNumber}`,
-      type: NOTIFICATION_TYPE.BOOKING_REQUESTED,
+      title: isQuickBooking ? 'New Quick Booking Confirmed' : 'New Booking Request',
+      message: isQuickBooking
+        ? `${user.name} has booked and confirmed #${booking.bookingNumber} via Quick Booking`
+        : `${user.name} has requested a new booking #${booking.bookingNumber}`,
+      type: isQuickBooking ? NOTIFICATION_TYPE.BOOKING_CONFIRMED : NOTIFICATION_TYPE.BOOKING_REQUESTED,
       bookingId: booking._id,
       bookingNumber: booking.bookingNumber,
       actionUrl: `/bookings/${booking._id}`,
     })
   } catch (notifErr) {
-    logger.warn('[Booking Notification] Failed to notify artist:', notifErr)
+    logger.warn('[Booking Notification] Failed to notify professional:', notifErr)
   }
 
   return {

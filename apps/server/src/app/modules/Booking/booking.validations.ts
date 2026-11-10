@@ -39,6 +39,7 @@ const createBookingSchema = z.object({
     guestCount: positiveNumber('Guest Count'), // Mandatory
     promoCode: optionalString('Promo Code'),
     usePlatformCredit: z.boolean().default(false),
+    isQuickBooking: z.boolean().optional().default(false),
     paymentMethodId: requiredString('Payment Method ID'),
   }),
 })
