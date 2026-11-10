@@ -38,7 +38,7 @@ const createBooking = catchAsync(async (req, res) => {
     statusCode: httpStatus.CREATED,
     message: isConfirmed
       ? 'Booking created and initial 20% payment processed successfully!'
-      : 'Booking request submitted successfully! Awaiting artist approval.',
+      : 'Booking request submitted successfully! Awaiting professional approval.',
     data: result,
   })
 })
