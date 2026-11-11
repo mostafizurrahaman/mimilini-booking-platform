@@ -26,6 +26,7 @@ import {
   User,
   WalletLedger,
   WALLET_SOURCE,
+  type IBooking,
   type IUser,
 } from '@repo/db'
 import { AppError } from '@repo/shared'
@@ -2971,6 +2972,50 @@ const getBookingInvoice = async (user: IUser, bookingId: string) => {
 }
 
 /**
+ * Ensures full payment (20% deposit + remaining 80% balance if > 0) is captured
+ * before transitioning into service delivery, completion, or payout release.
+ */
+const assertFullPaymentCaptured = (booking: IBooking, action: string) => {
+  if (booking.initialPayment?.status !== PAYMENT_STAGE_STATUS.CAPTURED) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Cannot ${action}: Initial 20% deposit payment has not been captured (current status: '${booking.initialPayment?.status || 'pending'}').`
+    )
+  }
+
+  const balanceAmount = booking.balancePayment?.amount || 0
+  if (balanceAmount > 0 && booking.balancePayment?.status !== PAYMENT_STAGE_STATUS.CAPTURED) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Cannot ${action}: Remaining 80% balance payment ($${balanceAmount} AUD) must be captured first (current status: '${booking.balancePayment?.status || 'pending'}').`
+    )
+  }
+}
+
+/**
+ * Ensures booking does not have refunded payments or a failed balance payment
+ * before allowing schedule modifications.
+ */
+const assertNotRefundedOrFailedPayment = (booking: IBooking, action: string) => {
+  if (
+    booking.initialPayment?.status === PAYMENT_STAGE_STATUS.REFUNDED ||
+    booking.balancePayment?.status === PAYMENT_STAGE_STATUS.REFUNDED
+  ) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Cannot ${action}: Payment for this booking has already been refunded.`
+    )
+  }
+
+  if (booking.balancePayment?.status === PAYMENT_STAGE_STATUS.FAILED) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Cannot ${action}: Remaining balance payment has failed. Please settle the balance payment first.`
+    )
+  }
+}
+
+/**
  * Artist accepts a requested booking
  */
 const acceptBooking = async (user: IUser, bookingId: string) => {
@@ -2989,6 +3034,16 @@ const acceptBooking = async (user: IUser, bookingId: string) => {
     throw new AppError(
       httpStatus.BAD_REQUEST,
       `Cannot accept booking with status '${booking.status}'`
+    )
+  }
+
+  if (
+    booking.initialPayment?.status === PAYMENT_STAGE_STATUS.CAPTURED ||
+    booking.initialPayment?.status === PAYMENT_STAGE_STATUS.REFUNDED
+  ) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Cannot accept booking with initial payment status '${booking.initialPayment.status}'`
     )
   }
 
@@ -3061,6 +3116,24 @@ const confirmBookingPayment = async (
     throw new AppError(
       httpStatus.BAD_REQUEST,
       'Initial deposit has already been paid for this booking.'
+    )
+  }
+
+  if (booking.initialPayment?.status === PAYMENT_STAGE_STATUS.REFUNDED) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Cannot confirm payment for a booking whose deposit has already been refunded.'
+    )
+  }
+
+  if (
+    booking.status === BOOKING_STATUS.ACCEPTED &&
+    booking.initialPayment?.dueDate &&
+    moment().isAfter(moment(booking.initialPayment.dueDate))
+  ) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'The 1-hour payment window for this booking has expired. Please submit a new booking request.'
     )
   }
 
@@ -3413,15 +3486,16 @@ const startService = async (user: IUser, bookingId: string) => {
 
   const canStart =
     booking.status === BOOKING_STATUS.CONFIRMED ||
-    (booking.status === BOOKING_STATUS.RESCHEDULED &&
-      booking.initialPayment?.status === PAYMENT_STAGE_STATUS.CAPTURED)
+    booking.status === BOOKING_STATUS.RESCHEDULED
 
   if (!canStart) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      `Cannot start service for booking with status '${booking.status}'. Booking must be confirmed and deposit paid.`
+      `Cannot start service for booking with status '${booking.status}'. Booking must be confirmed.`
     )
   }
+
+  assertFullPaymentCaptured(booking, 'start service')
 
   booking.status = BOOKING_STATUS.IN_PROGRESS
   await booking.save()
@@ -3481,8 +3555,7 @@ const completeBooking = async (
   const canComplete =
     booking.status === BOOKING_STATUS.IN_PROGRESS ||
     booking.status === BOOKING_STATUS.CONFIRMED ||
-    (booking.status === BOOKING_STATUS.RESCHEDULED &&
-      booking.initialPayment?.status === PAYMENT_STAGE_STATUS.CAPTURED)
+    booking.status === BOOKING_STATUS.RESCHEDULED
 
   if (!canComplete) {
     throw new AppError(
@@ -3490,6 +3563,8 @@ const completeBooking = async (
       `Cannot complete booking with status '${booking.status}'. Service must be confirmed or in progress.`
     )
   }
+
+  assertFullPaymentCaptured(booking, 'complete booking')
 
   let proofPhotoUrls: string[] = []
   if (files && files.length > 0) {
@@ -3594,6 +3669,8 @@ const customerSign = async (
       `Cannot sign a booking with status '${booking.status}'. Service must be in progress or completed.`
     )
   }
+
+  assertFullPaymentCaptured(booking, 'sign and release payout')
 
   if (!booking.completionDetails) {
     booking.completionDetails = {
@@ -3763,6 +3840,8 @@ const requestReschedule = async (
     )
   }
 
+  assertNotRefundedOrFailedPayment(booking, 'reschedule booking')
+
   const currentApptDateStr = moment.utc(booking.bookingDate).format('YYYY-MM-DD')
   const currentApptDateTime = moment(
     `${currentApptDateStr} ${booking.startTime}`,
@@ -3773,6 +3852,18 @@ const requestReschedule = async (
       httpStatus.BAD_REQUEST,
       'Cannot reschedule an appointment that has already passed or started'
     )
+  }
+
+  if (isCustomer && !isAdmin) {
+    assertFullPaymentCaptured(booking, 'request reschedule')
+
+    const hoursUntilAppointment = currentApptDateTime.diff(moment(), 'hours', true)
+    if (hoursUntilAppointment < 2) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'Customers cannot request a reschedule within 2 hours of the scheduled appointment time.'
+      )
+    }
   }
 
   const requestedDateMoment = moment(payload.newDate, 'YYYY-MM-DD').startOf('day')
@@ -3795,6 +3886,11 @@ const requestReschedule = async (
   }
   const normalizedNewStartTime = startMoment.format('HH:mm')
   const newEndTime = startMoment.clone().add(booking.durationMinutes, 'minutes').format('HH:mm')
+
+  const newApptDateTime = moment(`${payload.newDate} ${normalizedNewStartTime}`, 'YYYY-MM-DD HH:mm')
+  if (newApptDateTime.isBefore(moment())) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Rescheduled date and time cannot be in the past')
+  }
 
   // 1. Cannot reschedule to the exact same appointment date and time as currently scheduled
   const currentScheduledDate = moment(booking.bookingDate).format('YYYY-MM-DD')
@@ -4019,6 +4115,21 @@ const respondReschedule = async (
     throw new AppError(httpStatus.BAD_REQUEST, 'No pending reschedule request on this booking')
   }
 
+  const allowedRescheduleStatuses = [
+    BOOKING_STATUS.REQUESTED,
+    BOOKING_STATUS.ACCEPTED,
+    BOOKING_STATUS.CONFIRMED,
+    BOOKING_STATUS.RESCHEDULED,
+  ]
+  if (!allowedRescheduleStatuses.includes(booking.status as any)) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Cannot respond to reschedule request for a booking with status '${booking.status}'`
+    )
+  }
+
+  assertNotRefundedOrFailedPayment(booking, 'respond to reschedule')
+
   const isCustomer = booking.customer.toString() === user._id.toString()
   const isArtist = booking.artist.toString() === user._id.toString()
   const isAdmin = user.role === 'admin' || user.role === 'super_admin'
@@ -4228,13 +4339,19 @@ const reportCustomerNoShow = async (
   const canReportNoShow =
     booking.status === BOOKING_STATUS.CONFIRMED ||
     booking.status === BOOKING_STATUS.IN_PROGRESS ||
-    (booking.status === BOOKING_STATUS.RESCHEDULED &&
-      booking.initialPayment?.status === PAYMENT_STAGE_STATUS.CAPTURED)
+    booking.status === BOOKING_STATUS.RESCHEDULED
 
   if (!canReportNoShow) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
       `Cannot report no-show for a booking in '${booking.status}' status`
+    )
+  }
+
+  if (booking.initialPayment?.status !== PAYMENT_STAGE_STATUS.CAPTURED) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Cannot report no-show: Initial deposit payment has not been captured.'
     )
   }
 
@@ -4348,6 +4465,13 @@ const verifyCustomerNoShow = async (
     throw new AppError(httpStatus.BAD_REQUEST, 'No no-show details found for this booking')
   }
 
+  if (booking.initialPayment?.status !== PAYMENT_STAGE_STATUS.CAPTURED) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Cannot verify no-show: Initial deposit payment has not been captured.'
+    )
+  }
+
   booking.noShowDetails.verifiedBy = adminUser._id
   booking.noShowDetails.verifiedAt = new Date()
   booking.noShowDetails.isApproved = payload.isApproved
@@ -4359,11 +4483,20 @@ const verifyCustomerNoShow = async (
     // Release 100% protected net payout to artist Stripe Connected Account!
     const artistAccount = await Account.findOne({ user: booking.artist._id })
     const netPayout = booking.artistNetPayout || 0
+    const isBalanceSettled =
+      (booking.balancePayment?.amount || 0) === 0 ||
+      booking.balancePayment?.status === PAYMENT_STAGE_STATUS.CAPTURED
+
     let isTransferSuccessful = false
     let stripeTransferId: string | undefined
     let transferFailureReason: string | undefined
 
-    if (artistAccount?.account && netPayout > 0) {
+    if (!isBalanceSettled && netPayout > 0) {
+      transferFailureReason = 'Cannot release full payout: Remaining 80% balance payment has not been captured yet'
+      logger.warn(
+        `[No-Show Payout Blocked] Booking ${booking.bookingNumber} approved as no-show, but payout deferred until 80% balance is captured.`
+      )
+    } else if (artistAccount?.account && netPayout > 0) {
       try {
         const transfer = await stripe.transfers.create({
           amount: Math.round(netPayout * 100),
