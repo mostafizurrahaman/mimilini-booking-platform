@@ -13,6 +13,7 @@ import {
 } from '@repo/db'
 import { logger } from '@app/libs/logger'
 import { stripe } from '@app/libs/stripe'
+import { emitBookingStatusUpdate } from '../modules/Chat/chat.socket'
 import { bookingServices } from '../modules/Booking/booking.services'
 import { walletServices } from '../modules/Wallet/wallet.services'
 import { notificationServices } from '../modules/Notification/notification.services'
@@ -170,6 +171,8 @@ export const process24HourBalancePayments = async () => {
             logger.warn('[Booking Notification] Failed to notify parties of 24h balance auto-charge:', notifErr)
           }
 
+          emitBookingStatusUpdate(booking)
+
           logger.info(
             `[Cron: 24h Balance Auto-Charge] Succeeded for booking ${booking.bookingNumber}`
           )
@@ -178,6 +181,8 @@ export const process24HourBalancePayments = async () => {
         booking.balancePayment.status = PAYMENT_STAGE_STATUS.FAILED
         booking.balancePayment.rectificationDeadline = moment().add(2, 'hours').toDate()
         await booking.save()
+
+        emitBookingStatusUpdate(booking)
 
         const transferGroup = booking.bookingGroupId || `GRP-${booking.bookingNumber}`
         await PaymentTransaction.create({
@@ -224,7 +229,7 @@ export const process24HourBalancePayments = async () => {
         }
 
         logger.error(
-          `[Cron: URGENT 24h Non-Payment Notice] Booking ${booking.bookingNumber} auto-charge failed (${chargeErr?.message}). 2-hour rectification window open until ${booking.balancePayment.rectificationDeadline.toISOString()}. Non-payment will cancel booking and refund deposit minus Stripe processing fee.`
+          `[Cron: URGENT 24h Non-Payment Notice] Booking ${booking.bookingNumber} auto-charge failed (${chargeErr?.message}). 2-hour rectification window open until ${booking.balancePayment.rectificationDeadline.toISOString()}. Non-payment will cancel booking and refund deposit minus Platform processing fee.`
         )
       }
     }
@@ -237,7 +242,7 @@ export const process24HourBalancePayments = async () => {
  * 2-Hour Rectification Expiry Job:
  * If customer does not rectify failed 80% balance payment within 2 hours:
  * - Booking cancelled (status: CANCELLED_DUE_TO_NONPAYMENT)
- * - 20% deposit refunded to customer's platform balance (minus Stripe processing fee) as Platform Credit
+ * - 20% deposit refunded to customer's platform balance (minus Platform processing fee) as Platform Credit
  * - Any original platform credit applied is restored to wallet
  * - Artist slot released
  */
@@ -269,7 +274,7 @@ export const processExpiredRectificationCancellations = async () => {
           source: WALLET_SOURCE.CANCELLATION_CREDIT,
           bookingId: booking._id,
           bookingGroupId: booking.bookingGroupId,
-          description: `Booking #${booking.bookingNumber} non-payment cancellation credit (>24h policy, minus Stripe processing fee $${stripeFee})`,
+          description: `Booking #${booking.bookingNumber} non-payment cancellation credit (>24h policy, minus Platform processing fee $${stripeFee})`,
         })
       }
 
@@ -329,6 +334,8 @@ export const processExpiredRectificationCancellations = async () => {
       } catch (notifErr) {
         logger.warn('[Booking Notification] Failed to notify parties of rectification expiry:', notifErr)
       }
+
+      emitBookingStatusUpdate(booking)
 
       logger.warn(
         `[Cron: Policy Enforced] Booking #${booking.bookingNumber} cancelled due to non-payment. 20% deposit ($${depositPaid}) minus Stripe processing fee ($${stripeFee}) credited to wallet as $${refundCreditAmount}. Slot released.`
@@ -435,6 +442,8 @@ export const processExpiredInitialPaymentBookings = async () => {
       } catch (notifErr) {
         logger.warn('[Booking Notification] Failed to notify artist of payment expiry:', notifErr)
       }
+
+      emitBookingStatusUpdate(booking)
 
       logger.info(
         `[Cron: Initial Payment Expiry] Booking #${booking.bookingNumber} auto-cancelled due to 1-hour payment timeout. Slot released.`

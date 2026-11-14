@@ -1,4 +1,5 @@
 import { notificationServices } from '../Notification/notification.services'
+import { emitBookingStatusUpdate } from '../Chat/chat.socket'
 import {
   Account,
   Address,
@@ -962,8 +963,10 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     bookingNumber: booking.bookingNumber,
     status: booking.status,
     milestone: BOOKING_TIMELINE_MILESTONE.BOOKING_CREATED,
-    title: 'Booking Created',
-    description: 'Booking was submitted by the customer',
+    title: 'Booking request submitted',
+    description: 'Booking request submitted',
+    customerTitle: 'Booking request submitted',
+    customerDescription: 'Booking request submitted',
     performedBy: user._id,
     performedByRole: 'customer',
   })
@@ -974,8 +977,10 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
       bookingNumber: booking.bookingNumber,
       status: booking.status,
       milestone: BOOKING_TIMELINE_MILESTONE.PAYMENT_COMPLETED,
-      title: 'Payment Completed',
-      description: `Initial 20% deposit of $${breakdown.initialDepositAmount} AUD captured successfully`,
+      title: 'Deposit Paid',
+      description: 'You paid 20% deposit',
+      customerTitle: 'Deposit Paid',
+      customerDescription: 'You paid 20% deposit',
       performedBy: user._id,
       performedByRole: 'customer',
       metadata: { stripePaymentIntentId },
@@ -1018,6 +1023,8 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
   } catch (notifErr) {
     logger.warn('[Booking Notification] Failed to notify customer of booking creation:', notifErr)
   }
+
+  emitBookingStatusUpdate(booking)
 
   return {
     booking,
@@ -1205,8 +1212,8 @@ const customerCancelBooking = async (
       })
       if (!alreadyCredited) {
         const description = isBalancePaid
-          ? `Booking #${booking.bookingNumber} cancellation credit (>24h policy, 100% payment $${totalPaid} minus Stripe processing fee $${totalFee})`
-          : `Booking #${booking.bookingNumber} cancellation credit (>24h policy, 20% deposit $${depositPaid} minus Stripe processing fee $${initialFee})`
+          ? `Booking #${booking.bookingNumber} cancellation credit (>24h policy, 100% payment $${totalPaid} minus Platform processing fee $${totalFee})`
+          : `Booking #${booking.bookingNumber} cancellation credit (>24h policy, 20% deposit $${depositPaid} minus Platform processing fee $${initialFee})`
 
         await walletServices.creditUserWallet({
           userId: booking.customer._id,
@@ -1253,11 +1260,11 @@ const customerCancelBooking = async (
 
     let message = 'Booking cancelled successfully. No payment was charged.'
     if (isBalancePaid && totalPaid > 0) {
-      message = `Booking cancelled successfully. Your 100% payment ($${totalPaid}) minus Stripe processing fee ($${totalFee}) has been credited to your wallet as $${refundCreditAmount} Platform Credit (valid 36 months).`
+      message = `Booking cancelled successfully (more than 24 hours in advance). Your 100% payment ($${totalPaid}) minus Platform processing fee ($${totalFee}) has been credited to your wallet as $${refundCreditAmount} Platform Credit (valid 36 months).`
     } else if (isInitialPaid && depositPaid > 0) {
-      message = `Booking cancelled successfully. Your 20% deposit ($${depositPaid}) minus Stripe processing fee ($${initialFee}) has been credited to your wallet as $${refundCreditAmount} Platform Credit (valid 36 months).`
+      message = `Booking cancelled successfully (more than 24 hours in advance). Your 20% deposit ($${depositPaid}) minus Platform processing fee ($${initialFee}) has been credited to your wallet as $${refundCreditAmount} Platform Credit (valid 36 months).`
     } else if (booking.platformCreditApplied > 0) {
-      message = `Booking cancelled successfully. Your applied Platform Credit ($${booking.platformCreditApplied}) has been restored to your wallet.`
+      message = `Booking cancelled successfully (more than 24 hours in advance). Your applied Platform Credit ($${booking.platformCreditApplied}) has been restored to your wallet.`
     }
 
     await recordBookingHistory({
@@ -1299,6 +1306,8 @@ const customerCancelBooking = async (
     } catch (notifErr) {
       logger.warn('[Booking Notification] Failed to notify parties of customer cancellation:', notifErr)
     }
+
+    emitBookingStatusUpdate(booking)
 
     return {
       message,
@@ -1421,9 +1430,9 @@ const customerCancelBooking = async (
   await booking.save()
 
   const lateMessage = isBalancePaid
-    ? `Booking cancelled under Late Cancellation policy (<24h). Platform retained the 20% deposit. You received $${customerCreditAmount} Platform Credit (50% of professional net payout).`
+    ? `Booking cancelled under Late Cancellation policy (within 24 hours of appointment). Platform retained the 20% deposit. You received $${customerCreditAmount} Platform Credit (50% of professional net payout).`
     : isInitialPaid
-      ? 'Booking cancelled under Late Cancellation policy (<24h). The 20% deposit is non-refundable and forfeited.'
+      ? 'Booking cancelled under Late Cancellation policy (within 24 hours of appointment). The 20% deposit is non-refundable and forfeited.'
       : 'Booking cancelled successfully. No payment was charged.'
 
   await recordBookingHistory({
@@ -1446,7 +1455,7 @@ const customerCancelBooking = async (
         senderName: user.name,
         senderPicture: user.profileImage,
         title: 'Booking Cancelled by Customer',
-        message: `${user.name} has cancelled booking #${booking.bookingNumber} (<24h cancellation).`,
+        message: `${user.name} has cancelled booking #${booking.bookingNumber} within 24 hours of appointment.${isBalancePaid ? ` You received 50% compensation payout ($${artistShareAmount} AUD).` : ''}`,
         type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
         bookingId: booking._id,
         bookingNumber: booking.bookingNumber,
@@ -1455,7 +1464,7 @@ const customerCancelBooking = async (
       notificationServices.sendNotification({
         recipient: (booking.customer as any)._id || booking.customer,
         title: 'Booking Cancelled (Late Cancellation)',
-        message: `Your booking #${booking.bookingNumber} was cancelled under the <24h late cancellation policy. ${lateMessage}`,
+        message: `Your booking #${booking.bookingNumber} was cancelled under the late cancellation policy (within 24 hours of appointment). ${lateMessage}`,
         type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
         bookingId: booking._id,
         bookingNumber: booking.bookingNumber,
@@ -1465,6 +1474,8 @@ const customerCancelBooking = async (
   } catch (notifErr) {
     logger.warn('[Booking Notification] Failed to notify parties of late cancellation:', notifErr)
   }
+
+  emitBookingStatusUpdate(booking)
 
   return {
     message: lateMessage,
@@ -1608,7 +1619,7 @@ const artistCancelBooking = async (
         source: WALLET_SOURCE.CANCELLATION_CREDIT,
         bookingId: booking._id,
         bookingGroupId: booking.bookingGroupId,
-        description: `Professional cancelled booking #${booking.bookingNumber} - Platform credit issued ($${totalPaid} minus $${totalTransactionFee} transaction fee, valid 36 months)`,
+        description: `Professional cancelled booking #${booking.bookingNumber} - Platform credit issued ($${totalPaid} minus $${totalTransactionFee} Platform processing fee, valid 36 months)`,
       })
     }
   }
@@ -1709,14 +1720,23 @@ const artistCancelBooking = async (
 
   const refundSummary =
     totalPaid > 0
-      ? `Customer received $${refundCreditAmount} Platform Credit ($${totalPaid} minus $${totalTransactionFee} transaction fee).`
+      ? `Customer received $${refundCreditAmount} Platform Credit ($${totalPaid} minus $${totalTransactionFee} Platform processing fee).`
       : 'No payment had been charged to the customer.'
 
+  let timeframeLabel = 'more than 14 days in advance'
+  if (hoursUntilAppointment <= 48) {
+    timeframeLabel = 'within 48 hours of appointment'
+  } else if (hoursUntilAppointment < 7 * 24) {
+    timeframeLabel = 'between 48 hours and 7 days of appointment'
+  } else if (hoursUntilAppointment <= 14 * 24) {
+    timeframeLabel = 'between 7 and 13 days of appointment'
+  }
+
   const artistCancelMessage = isSuspended
-    ? `Booking cancelled. ${refundSummary} Your account has been SUSPENDED due to last-moment cancellation (<48h). A penalty of $${penaltyIncurred} AUD must be paid to reactivate your account.`
+    ? `Booking cancelled successfully. Your account has been SUSPENDED due to last-moment cancellation (${timeframeLabel}). A penalty of $${penaltyIncurred} AUD must be paid to reactivate your account.`
     : penaltyIncurred > 0
-      ? `Booking cancelled. ${refundSummary} A penalty of $${penaltyIncurred} AUD was issued and your profile is hidden from customer search until paid.`
-      : `Booking cancelled. ${refundSummary}`
+      ? `Booking cancelled successfully. A penalty of $${penaltyIncurred} AUD was issued for cancellation ${timeframeLabel}, and your profile is hidden from customer search until paid.`
+      : `Booking cancelled successfully (${timeframeLabel} - zero penalty).`
 
   await recordBookingHistory({
     booking: booking._id,
@@ -1738,7 +1758,7 @@ const artistCancelBooking = async (
         senderName: user.name,
         senderPicture: user.profileImage,
         title: 'Booking Cancelled by Professional',
-        message: `${user.name} has cancelled booking #${booking.bookingNumber}. Platform credit has been issued.`,
+        message: `${user.name} has cancelled booking #${booking.bookingNumber}.${refundCreditAmount > 0 ? ` A full refund of $${refundCreditAmount} Platform Credit has been credited to your wallet.` : ' No payment was charged.'}`,
         type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
         bookingId: booking._id,
         bookingNumber: booking.bookingNumber,
@@ -1757,6 +1777,8 @@ const artistCancelBooking = async (
   } catch (notifErr) {
     logger.warn('[Booking Notification] Failed to notify parties of professional cancellation:', notifErr)
   }
+
+  emitBookingStatusUpdate(booking)
 
   return {
     message: artistCancelMessage,
@@ -1899,6 +1921,8 @@ const cancelBooking = async (user: IUser, bookingId: string, cancellationReason?
   } catch (notifErr) {
     logger.warn('[Booking Notification] Failed to notify parties of admin cancellation:', notifErr)
   }
+
+  emitBookingStatusUpdate(booking)
 
   return { message: 'Booking cancelled by admin.', booking }
 }
@@ -2295,6 +2319,8 @@ const payBalance = async (user: IUser, bookingId: string, paymentMethodId?: stri
       } catch (notifErr) {
         logger.warn('[Booking Notification] Failed to notify parties of balance payment:', notifErr)
       }
+
+      emitBookingStatusUpdate(booking)
 
       return {
         success: true,
@@ -3361,8 +3387,10 @@ const executeInitialDepositPayment = async ({
     bookingNumber: booking.bookingNumber,
     status: BOOKING_STATUS.CONFIRMED,
     milestone: BOOKING_TIMELINE_MILESTONE.PAYMENT_COMPLETED,
-    title: 'Deposit Paid & Confirmed',
-    description: `Customer paid 20% deposit ($${breakdown.initialDepositAmount} AUD)`,
+    title: 'Deposit Paid',
+    description: 'You paid 20% deposit',
+    customerTitle: 'Deposit Paid',
+    customerDescription: 'You paid 20% deposit',
     performedBy: customerUser._id,
     performedByRole: 'customer',
   })
@@ -3525,6 +3553,8 @@ const acceptBooking = async (user: IUser, bookingId: string) => {
         logger.warn('[Booking Notification] Failed to notify parties of confirmed booking:', notifErr)
       }
 
+      emitBookingStatusUpdate(depositResult.booking)
+
       return depositResult.booking
     }
 
@@ -3579,6 +3609,8 @@ const acceptBooking = async (user: IUser, bookingId: string) => {
     } catch (notifErr) {
       logger.warn('[Booking Notification] Failed to notify parties of payment failure:', notifErr)
     }
+
+    emitBookingStatusUpdate(booking)
 
     return booking
   })()
@@ -3687,6 +3719,8 @@ const confirmBookingPayment = async (
     logger.warn('[Booking Notification] Failed to notify parties of confirmed booking payment:', notifErr)
   }
 
+  emitBookingStatusUpdate(depositResult.booking)
+
   return {
     booking: depositResult.booking,
     clientSecret: depositResult.clientSecret,
@@ -3791,6 +3825,8 @@ const declineBooking = async (user: IUser, bookingId: string, reason?: string) =
   } catch (notifErr) {
     logger.warn('[Booking Notification] Failed to notify customer:', notifErr)
   }
+
+  emitBookingStatusUpdate(booking)
 
   return booking
 }
@@ -3897,6 +3933,8 @@ const completeBooking = async (
   } catch (notifErr) {
     logger.warn('[Booking Notification] Failed to notify customer:', notifErr)
   }
+
+  emitBookingStatusUpdate(booking)
 
   return booking
 }
@@ -4069,6 +4107,8 @@ const customerSign = async (
       logger.warn('[Booking Notification] Failed to notify parties of customer signature:', notifErr)
     }
   }
+
+  emitBookingStatusUpdate(booking)
 
   return booking
 }
@@ -4363,6 +4403,8 @@ const requestReschedule = async (
     logger.warn('[Booking Notification] Failed to notify opponent of reschedule request:', notifErr)
   }
 
+  emitBookingStatusUpdate(booking)
+
   return booking
 }
 
@@ -4499,6 +4541,8 @@ const respondReschedule = async (
   } catch (notifErr) {
     logger.warn('[Booking Notification] Failed to notify parties of reschedule decision:', notifErr)
   }
+
+  emitBookingStatusUpdate(booking)
 
   return booking
 }
@@ -4945,8 +4989,8 @@ const getTimelineRoleMessages = (params: {
   switch (params.milestone) {
     case BOOKING_TIMELINE_MILESTONE.BOOKING_CREATED:
       return {
-        customerTitle: 'Booking Request Sent',
-        customerDescription: `You sent a booking request to ${artistName}`,
+        customerTitle: 'Booking request submitted',
+        customerDescription: 'Booking request submitted',
         artistTitle: 'New Booking Request',
         artistDescription: `${customerName} sent you a booking request`,
       }
@@ -4976,9 +5020,9 @@ const getTimelineRoleMessages = (params: {
 
       return {
         customerTitle: 'Deposit Paid',
-        customerDescription: desc || 'You paid the initial deposit; booking is confirmed',
+        customerDescription: 'You paid 20% deposit',
         artistTitle: 'Deposit Received',
-        artistDescription: `${customerName} paid the initial deposit; booking is confirmed`,
+        artistDescription: `${customerName} paid the 20% deposit`,
       }
     }
 
@@ -5004,10 +5048,13 @@ const getTimelineRoleMessages = (params: {
           desc && !desc.toLowerCase().startsWith('customer cancelled')
             ? desc
             : 'You cancelled this booking request'
-        const artistCleanDesc =
-          desc && !desc.toLowerCase().startsWith('customer cancelled')
-            ? `${customerName} cancelled this booking (${desc})`
-            : `${customerName} cancelled this booking`
+        const isLate =
+          t.toLowerCase().includes('late') ||
+          desc.toLowerCase().includes('within 24 hours') ||
+          desc.toLowerCase().includes('<24h')
+        const artistCleanDesc = isLate
+          ? `${customerName} cancelled this booking within 24 hours of appointment`
+          : `${customerName} cancelled this booking (>24h policy)`
         return {
           customerTitle: 'You Cancelled Booking',
           customerDescription: cleanDesc,
@@ -5020,10 +5067,7 @@ const getTimelineRoleMessages = (params: {
           desc && !desc.toLowerCase().startsWith('professional cancelled')
             ? desc
             : 'You cancelled this booking'
-        const customerCleanDesc =
-          desc && !desc.toLowerCase().startsWith('professional cancelled')
-            ? `${artistName} cancelled this booking (${desc})`
-            : `${artistName} cancelled this booking`
+        const customerCleanDesc = `${artistName} cancelled this booking. Full refund/credit issued to your wallet.`
         return {
           customerTitle: 'Booking Cancelled by Professional',
           customerDescription: customerCleanDesc,
@@ -5210,8 +5254,10 @@ const getBookingTimelineFromHistory = async (booking: any, viewer?: any) => {
       bookingNumber: booking.bookingNumber,
       status: BOOKING_STATUS.REQUESTED,
       milestone: BOOKING_TIMELINE_MILESTONE.BOOKING_CREATED,
-      title: 'Booking Created',
-      description: 'Booking was submitted by the customer',
+      title: 'Booking request submitted',
+      description: 'Booking request submitted',
+      customerTitle: 'Booking request submitted',
+      customerDescription: 'Booking request submitted',
       performedBy: booking.customer,
       performedByRole: 'customer',
       createdAt: booking.createdAt,
@@ -5242,16 +5288,20 @@ const getBookingTimelineFromHistory = async (booking: any, viewer?: any) => {
       booking.initialPayment?.status === PAYMENT_STAGE_STATUS.CAPTURED ||
       booking.balancePayment?.status === PAYMENT_STAGE_STATUS.CAPTURED
     ) {
+      const isBalanceCaptured = booking.balancePayment?.status === PAYMENT_STAGE_STATUS.CAPTURED
       initialHistories.push({
         booking: booking._id,
         bookingNumber: booking.bookingNumber,
         status: booking.status,
         milestone: BOOKING_TIMELINE_MILESTONE.PAYMENT_COMPLETED,
-        title: 'Payment Completed',
-        description:
-          booking.balancePayment?.status === PAYMENT_STAGE_STATUS.CAPTURED
-            ? 'Remaining 80% balance payment captured'
-            : '20% deposit captured, balance payment pending',
+        title: isBalanceCaptured ? 'Balance Payment Paid' : 'Deposit Paid',
+        description: isBalanceCaptured
+          ? 'Remaining 80% balance payment captured'
+          : 'You paid 20% deposit',
+        customerTitle: isBalanceCaptured ? 'Balance Payment Paid' : 'Deposit Paid',
+        customerDescription: isBalanceCaptured
+          ? 'You paid the remaining 80% balance payment'
+          : 'You paid 20% deposit',
         performedBy: booking.customer,
         performedByRole: 'customer',
         createdAt:
@@ -5339,12 +5389,38 @@ const getBookingTimelineFromHistory = async (booking: any, viewer?: any) => {
       note: item.note,
     })
 
-    const customerTitle = item.customerTitle || roleMsgs.customerTitle
-    const customerDescription = item.customerDescription || roleMsgs.customerDescription
+    let customerTitle = roleMsgs.customerTitle
+    let customerDescription = roleMsgs.customerDescription
+
+    if (item.milestone === BOOKING_TIMELINE_MILESTONE.BOOKING_CREATED) {
+      customerTitle = 'Booking request submitted'
+      customerDescription = 'Booking request submitted'
+    } else if (item.milestone === BOOKING_TIMELINE_MILESTONE.PAYMENT_COMPLETED) {
+      const isBalance =
+        (item.description || '').toLowerCase().includes('balance') ||
+        (item.description || '').toLowerCase().includes('80%') ||
+        (item.title || '').toLowerCase().includes('balance')
+
+      if (!isBalance) {
+        customerTitle = 'Deposit Paid'
+        customerDescription = 'You paid 20% deposit'
+      } else {
+        customerTitle = item.customerTitle || roleMsgs.customerTitle
+        customerDescription = item.customerDescription || roleMsgs.customerDescription
+      }
+    } else {
+      customerTitle = item.customerTitle || roleMsgs.customerTitle
+      customerDescription = item.customerDescription || roleMsgs.customerDescription
+    }
+
     const artistTitle = item.artistTitle || roleMsgs.artistTitle
     const artistDescription = item.artistDescription || roleMsgs.artistDescription
-    const systemTitle = item.title
-    const systemDescription = item.description
+    const systemTitle =
+      item.title === 'Booking Created' ? 'Booking request submitted' : item.title
+    const systemDescription =
+      item.description === 'Booking was submitted by the customer'
+        ? 'Booking request submitted'
+        : item.description
 
     let displayTitle = systemTitle
     let displayDescription = systemDescription

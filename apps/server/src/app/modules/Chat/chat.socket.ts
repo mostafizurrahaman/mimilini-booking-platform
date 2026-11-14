@@ -157,6 +157,35 @@ export const emitMessageDeletedRealtime = (
   }
 }
 
+export const emitBookingStatusUpdate = (
+  booking: any,
+  meta?: Record<string, unknown>
+) => {
+  if (!io) return
+  try {
+    const bookingId = String(booking._id || booking.id)
+    const customerId = String(booking.customer?._id || booking.customer)
+    const artistId = String(booking.artist?._id || booking.artist)
+
+    const payload = {
+      bookingId,
+      bookingNumber: booking.bookingNumber,
+      status: booking.status,
+      initialPaymentStatus: booking.initialPayment?.status,
+      balancePaymentStatus: booking.balancePayment?.status,
+      updatedAt: booking.updatedAt || new Date(),
+      ...(meta || {}),
+    }
+
+    io.to(`booking:${bookingId}`).emit('booking:status_update', payload)
+    io.to(`user:${customerId}`).emit('booking:status_update', payload)
+    io.to(`user:${artistId}`).emit('booking:status_update', payload)
+    io.to('role:admin').emit('booking:status_update', payload)
+  } catch (err) {
+    logger.warn('[Socket Booking Status] Failed to emit booking update:', err)
+  }
+}
+
 export const initSocketServer = (httpServer: HttpServer): SocketIOServer => {
   io = new SocketIOServer(httpServer, {
     cors: {
@@ -331,6 +360,51 @@ export const initSocketServer = (httpServer: HttpServer): SocketIOServer => {
         if (typeof ack === 'function') ack(response)
       } catch (error) {
         handleSocketError('chat:leave', error, ack)
+      }
+    })
+
+    /**
+     * Join a specific booking room for real-time status updates
+     * Event: booking:join
+     * Payload: { "bookingId": "..." }
+     */
+    socket.on('booking:join', async (rawPayload, ack) => {
+      try {
+        const payload = parsePayload<{ bookingId?: string }>(rawPayload)
+        if (!payload.bookingId) {
+          throw new Error('bookingId is required to join a booking room')
+        }
+        const roomName = `booking:${String(payload.bookingId)}`
+        await socket.join(roomName)
+        const response = {
+          success: true,
+          message: 'Joined booking room successfully',
+          bookingId: String(payload.bookingId),
+          room: roomName,
+        }
+        socket.emit('booking:joined', response)
+        if (typeof ack === 'function') ack(response)
+      } catch (error) {
+        handleSocketError('booking:join', error, ack)
+      }
+    })
+
+    /**
+     * Leave a specific booking room
+     * Event: booking:leave
+     * Payload: { "bookingId": "..." }
+     */
+    socket.on('booking:leave', async (rawPayload, ack) => {
+      try {
+        const payload = parsePayload<{ bookingId?: string }>(rawPayload)
+        if (payload.bookingId) {
+          await socket.leave(`booking:${String(payload.bookingId)}`)
+        }
+        if (typeof ack === 'function') {
+          ack({ success: true, message: 'Left booking room successfully' })
+        }
+      } catch {
+        // safe fallback
       }
     })
 
