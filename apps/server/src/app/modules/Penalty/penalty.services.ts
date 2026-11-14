@@ -13,6 +13,19 @@ import { stripe } from '@app/libs/stripe'
 import configs from '@app/configs'
 import { notificationServices } from '../Notification/notification.services'
 
+export const formatTimeframeTier = (tier?: string): string => {
+  switch (tier) {
+    case 'sevenTo13Days':
+      return '7 to 13 Days'
+    case 'within48Hours':
+      return 'Within 48 Hours'
+    case 'moreThan14Days':
+      return 'More than 14 Days'
+    default:
+      return tier || ''
+  }
+}
+
 /**
  * Get penalties for the logged-in artist
  */
@@ -36,8 +49,15 @@ const getMyPenalties = async (user: IUser, query: { page?: number; limit?: numbe
     status: PENALTY_STATUS.PENDING,
   })
 
+  const formattedPenalties = penalties.map((p: any) => ({
+    ...p,
+    timeframeTier: formatTimeframeTier(p.timeframeTier),
+    timeframeTierRaw: p.timeframeTier,
+    timeframeTierLabel: formatTimeframeTier(p.timeframeTier),
+  }))
+
   return {
-    penalties,
+    penalties: formattedPenalties,
     hasPendingPenalties: pendingCount > 0,
     meta: {
       page,
@@ -77,8 +97,15 @@ const getAllPenalties = async (query: {
     Penalty.countDocuments(filter),
   ])
 
+  const formattedPenalties = penalties.map((p: any) => ({
+    ...p,
+    timeframeTier: formatTimeframeTier(p.timeframeTier),
+    timeframeTierRaw: p.timeframeTier,
+    timeframeTierLabel: formatTimeframeTier(p.timeframeTier),
+  }))
+
   return {
-    penalties,
+    penalties: formattedPenalties,
     meta: {
       page,
       limit,
@@ -117,7 +144,7 @@ const createPenaltyCheckoutSession = async (user: IUser, penaltyId: string) => {
           currency: 'aud',
           product_data: {
             name: `Cancellation Penalty Fee - Booking #${penalty.bookingNumber}`,
-            description: `GST Inclusive (10% GST included) | Tier: ${penalty.budgetTier.toUpperCase()} | Timeframe: ${penalty.timeframeTier}`,
+            description: `GST Inclusive (10% GST included) | Tier: ${penalty.budgetTier.toUpperCase()} | Timeframe: ${formatTimeframeTier(penalty.timeframeTier)}`,
           },
           unit_amount: Math.round(penalty.penaltyAmount * 100),
         },
@@ -151,7 +178,12 @@ const createPenaltyCheckoutSession = async (user: IUser, penaltyId: string) => {
   return {
     checkoutUrl: session.url,
     sessionId: session.id,
-    penalty,
+    penalty: {
+      ...penalty.toObject(),
+      timeframeTier: formatTimeframeTier(penalty.timeframeTier),
+      timeframeTierRaw: penalty.timeframeTier,
+      timeframeTierLabel: formatTimeframeTier(penalty.timeframeTier),
+    },
   }
 }
 
