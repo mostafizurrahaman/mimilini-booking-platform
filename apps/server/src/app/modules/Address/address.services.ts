@@ -1,4 +1,11 @@
-import { Address, addressSearchableFields, addressSortableFields, type IUser } from '@repo/db'
+import {
+  Address,
+  addressSearchableFields,
+  addressSortableFields,
+  Booking,
+  BOOKING_STATUS,
+  type IUser,
+} from '@repo/db'
 import httpStatus from 'http-status'
 import { AppError } from '@repo/shared'
 import mongoose, { type PipelineStage, Types } from 'mongoose'
@@ -291,7 +298,24 @@ const deleteAddressById = async (user: IUser, id: string) => {
     throw new AppError(httpStatus.NOT_FOUND, 'Address not found')
   }
 
-  // Todo: Has any associated active booking with this Address:
+  const hasActiveBooking = await Booking.exists({
+    address: id,
+    status: {
+      $nin: [
+        BOOKING_STATUS.COMPLETED,
+        BOOKING_STATUS.CANCELLED,
+        BOOKING_STATUS.DECLINED,
+        BOOKING_STATUS.NO_SHOW,
+      ],
+    },
+  })
+
+  if (hasActiveBooking) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Cannot delete address because it is associated with an active booking.'
+    )
+  }
 
   const mongoSession = await mongoose.startSession()
 

@@ -8,6 +8,7 @@ import {
   CHAT_FILTER_TYPE,
   CHAT_MESSAGE_TYPE,
   CHAT_TYPE,
+  NOTIFICATION_TYPE,
   User,
   type IChatDoc,
   type IUser,
@@ -19,12 +20,13 @@ import httpStatus from 'http-status'
 import { Types } from 'mongoose'
 import { uploadMultipleFileToS3 } from 'packages/media-hub/src'
 import { AWS_FOLDER_NAMES } from '@app/libs/files_folder'
+import { logger } from '@app/libs/logger'
+import { notificationServices } from '../Notification/notification.services'
 
 const ACTIVE_BOOKING_STATUSES = [
   BOOKING_STATUS.REQUESTED,
   BOOKING_STATUS.ACCEPTED,
   BOOKING_STATUS.CONFIRMED,
-  BOOKING_STATUS.IN_PROGRESS,
   BOOKING_STATUS.RESCHEDULED,
 ]
 
@@ -460,6 +462,33 @@ const sendMessage = async (
   }
 
   await chat.save()
+
+  // In-app notification for recipient
+  try {
+    const recipientId =
+      chat.chatType === CHAT_TYPE.NORMAL
+        ? String(chat.customer) === String(senderId)
+          ? chat.artist
+          : chat.customer
+        : !isAdminRole(user.role)
+          ? chat.assignedAdmin || undefined
+          : chat.supportUser || undefined
+
+    if (recipientId) {
+      await notificationServices.sendNotification({
+        recipient: recipientId,
+        sender: user._id,
+        senderName: user.name,
+        senderPicture: user.profileImage,
+        title: `New message from ${user.name}`,
+        message: cleanText || (cleanImages.length > 0 ? 'Sent an image' : 'Sent an attachment'),
+        type: NOTIFICATION_TYPE.CHAT_MESSAGE,
+        actionUrl: `/chat?chatId=${chat._id}`,
+      })
+    }
+  } catch (notifErr) {
+    logger.warn('[Chat Notification] Failed to send chat notification:', notifErr)
+  }
 
   const savedMessage = chat.messages[chat.messages.length - 1]
   const enrichedChat = await formatConversationForUser(chat, user)

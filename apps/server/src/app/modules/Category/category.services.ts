@@ -1,4 +1,11 @@
-import { Category, categorySearchableFields, categorySortableFields, type IUser } from '@repo/db'
+import {
+  ArtistServices,
+  BeautyPreferences,
+  Category,
+  categorySearchableFields,
+  categorySortableFields,
+  type IUser,
+} from '@repo/db'
 import httpStatus from 'http-status'
 import { AppError } from '@repo/shared'
 import type { PipelineStage } from 'mongoose'
@@ -184,15 +191,34 @@ const getCategoryById = async (id: string) => {
 }
 
 const deleteCategoryById = async (id: string) => {
-  const result = await Category.findOneAndDelete({ _id: id })
+  const category = await Category.findById(id)
 
-  // Todo: Has to check is this category used any where else:
-
-  if (!result) {
+  if (!category) {
     throw new AppError(httpStatus.NOT_FOUND, 'Category not found')
   }
 
-  return result
+  const [usedInService, usedInPreferences] = await Promise.all([
+    ArtistServices.exists({ category: id }),
+    BeautyPreferences.exists({ category: id }),
+  ])
+
+  if (usedInService) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Cannot delete category because it is used by one or more artist services.'
+    )
+  }
+
+  if (usedInPreferences) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Cannot delete category because it is selected in customer beauty preferences.'
+    )
+  }
+
+  await category.deleteOne()
+
+  return category
 }
 
 export const categoryServices = {

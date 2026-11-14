@@ -85,7 +85,7 @@ router.patch(
 router.get(
   '/:id/timeline',
   auth(AuthRoles.CUSTOMER, AuthRoles.ARTIST, AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
-  bookingControllers.getBookingTimelineAdmin
+  bookingControllers.getBookingTimeline
 )
 
 router.patch(
@@ -99,12 +99,6 @@ router.patch(
   auth(AuthRoles.ARTIST, AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
   validateRequest(bookingValidations.declineBookingSchema),
   bookingControllers.declineBooking
-)
-
-router.patch(
-  '/:id/start-service',
-  auth(AuthRoles.ARTIST, AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
-  bookingControllers.startService
 )
 
 router.post(

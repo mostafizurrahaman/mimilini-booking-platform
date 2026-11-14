@@ -20,6 +20,7 @@ import type {
 } from './availability.validations'
 import moment from 'moment-timezone'
 import {
+  findScheduleUpdateBookingConflict,
   getBreakTimesValidationError,
   normalizeBreakTimes,
   normalizeWorkingDay,
@@ -149,18 +150,8 @@ const updateAvailability = async (user: IUser, payload: TUpdateAvailabilityPaylo
   if (weeklySchedule) {
     const newWeeklySchedule = weeklySchedule
     const existingWeeklySchedule = existingScheduled.weeklySchedule as IWeeklySchedule
-    /*
-     * TODO:
-     * 1. When working hours are reduced (startTime/endTime changed to a smaller
-     *    available time range), check whether any existing/future booking falls
-     *    within the removed/skipped time. If a booking exists in that period,
-     *    prevent the schedule update.
-     *
-     * 2. When break time is increased or moved, calculate the newly unavailable
-     *    break period and check whether any existing/future booking overlaps
-     *    with that period. If a booking exists during the newly added break time,
-     *    prevent the schedule update.
-     */
+    const proposedDays: Partial<Record<TDay, ReturnType<typeof normalizeWorkingDay>>> = {}
+
     for (const [day, schedule] of Object.entries(newWeeklySchedule)) {
       if (!schedule) continue
 
@@ -169,7 +160,7 @@ const updateAvailability = async (user: IUser, payload: TUpdateAvailabilityPaylo
       const isWorkingDay = schedule.isWorkingDay ?? existingDay?.isWorkingDay ?? false
 
       if (!isWorkingDay) {
-        existingWeeklySchedule[dayKey] = normalizeWorkingDay({
+        proposedDays[dayKey] = normalizeWorkingDay({
           isWorkingDay: false,
         })
         continue
@@ -204,7 +195,7 @@ const updateAvailability = async (user: IUser, payload: TUpdateAvailabilityPaylo
         throw new AppError(httpStatus.BAD_REQUEST, breakTimesError)
       }
 
-      existingWeeklySchedule[dayKey] = normalizeWorkingDay({
+      proposedDays[dayKey] = normalizeWorkingDay({
         isWorkingDay: true,
         startTime,
         endTime,
@@ -212,6 +203,40 @@ const updateAvailability = async (user: IUser, payload: TUpdateAvailabilityPaylo
       })
     }
 
+    // Prevent schedule reductions/breaks that conflict with active upcoming bookings
+    const queryFromDate = moment
+      .tz(existingScheduled.timezone)
+      .startOf('day')
+      .subtract(1, 'day')
+      .toDate()
+
+    const activeBookings = await Booking.find({
+      artist: user?._id,
+      bookingDate: { $gte: queryFromDate },
+      status: {
+        $nin: [
+          BOOKING_STATUS.CANCELLED,
+          BOOKING_STATUS.DECLINED,
+          BOOKING_STATUS.COMPLETED,
+          BOOKING_STATUS.NO_SHOW,
+        ],
+      },
+    })
+      .select('bookingNumber bookingDate startTime endTime')
+      .lean()
+
+    const conflictMessage = findScheduleUpdateBookingConflict(
+      existingWeeklySchedule,
+      proposedDays,
+      activeBookings,
+      existingScheduled.timezone
+    )
+
+    if (conflictMessage) {
+      throw new AppError(httpStatus.CONFLICT, conflictMessage)
+    }
+
+    Object.assign(existingWeeklySchedule, proposedDays)
     existingScheduled.markModified('weeklySchedule')
   }
 

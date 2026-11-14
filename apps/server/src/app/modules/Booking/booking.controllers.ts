@@ -184,10 +184,14 @@ const acceptBooking = catchAsync(async (req, res) => {
   const user = await getUserFromRequest(req)
   const result = await bookingServices.acceptBooking(user, req.params.id as string)
 
+  const isConfirmed = result?.status === BOOKING_STATUS.CONFIRMED
+
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'Booking accepted successfully!',
+    message: isConfirmed
+      ? 'Booking accepted and deposit charged successfully!'
+      : 'Booking accepted, awaiting customer payment.',
     data: result,
   })
 })
@@ -220,18 +224,6 @@ const declineBooking = catchAsync(async (req, res) => {
     success: true,
     statusCode: httpStatus.OK,
     message: 'Booking declined successfully!',
-    data: result,
-  })
-})
-
-const startService = catchAsync(async (req, res) => {
-  const user = await getUserFromRequest(req)
-  const result = await bookingServices.startService(user, req.params.id as string)
-
-  sendResponse(res, {
-    success: true,
-    statusCode: httpStatus.OK,
-    message: 'Service marked as started and in progress!',
     data: result,
   })
 })
@@ -387,8 +379,21 @@ const getBookingDetailsAdmin = catchAsync(async (req, res) => {
   })
 })
 
+const getBookingTimeline = catchAsync(async (req, res) => {
+  const user = await getUserFromRequest(req)
+  const result = await bookingServices.getBookingTimeline(req.params.id as string, user)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: 'Booking timeline retrieved successfully!',
+    data: result,
+  })
+})
+
 const getBookingTimelineAdmin = catchAsync(async (req, res) => {
-  const result = await bookingServices.getBookingTimelineAdmin(req.params.id as string)
+  const user = await getUserFromRequest(req)
+  const result = await bookingServices.getBookingTimelineAdmin(req.params.id as string, user)
 
   sendResponse(res, {
     success: true,
@@ -428,7 +433,6 @@ export const bookingControllers = {
   acceptBooking,
   confirmBookingPayment,
   declineBooking,
-  startService,
   completeBooking,
   customerSign,
   requestReschedule,
@@ -439,6 +443,7 @@ export const bookingControllers = {
   getAllBookingsAdmin,
   getRecentBookingsAdmin,
   getBookingDetailsAdmin,
+  getBookingTimeline,
   getBookingTimelineAdmin,
   updateAdminBookingNotes,
 }

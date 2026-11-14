@@ -48,6 +48,7 @@ export interface IBooking {
   // Status Lifecycle:
   status: TBookingStatus
   isQuickBooking: boolean
+  usePlatformCredit?: boolean
 
   // Financial Breakdown (AUD):
   servicePrice: number

@@ -1,4 +1,12 @@
-import { PaymentMethod, paymentMethodSearchableFields, paymentMethodSortableFields, type IUserDoc } from '@repo/db'
+import {
+  Booking,
+  BOOKING_STATUS,
+  PAYMENT_STAGE_STATUS,
+  PaymentMethod,
+  paymentMethodSearchableFields,
+  paymentMethodSortableFields,
+  type IUserDoc,
+} from '@repo/db'
 import httpStatus from 'http-status'
 import { AppError, formatDate } from '@repo/shared'
 import mongoose, {  type PipelineStage } from 'mongoose'
@@ -219,7 +227,34 @@ const deletePaymentMethodById = async (user: IUserDoc, id: string) => {
     throw new AppError(httpStatus.NOT_FOUND, 'PaymentMethod not found')
   }
 
-  // TODO: Check any pending booking exists with this CARD Which balance payment is pending:
+  if (result.stripePaymentMethodId) {
+    const hasPendingBooking = await Booking.exists({
+      customer: user?._id,
+      stripePaymentMethodId: result.stripePaymentMethodId,
+      status: {
+        $nin: [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.DECLINED, BOOKING_STATUS.NO_SHOW],
+      },
+      $or: [
+        {
+          'initialPayment.status': {
+            $in: [PAYMENT_STAGE_STATUS.PENDING, PAYMENT_STAGE_STATUS.FAILED],
+          },
+        },
+        {
+          'balancePayment.status': {
+            $in: [PAYMENT_STAGE_STATUS.PENDING, PAYMENT_STAGE_STATUS.FAILED],
+          },
+        },
+      ],
+    })
+
+    if (hasPendingBooking) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'Cannot delete payment method because it is linked to a booking with a pending or failed payment.'
+      )
+    }
+  }
 
   const mongoSession = await mongoose.startSession()
 

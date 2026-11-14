@@ -34,9 +34,9 @@ router.get(
   categoryControllers.getCategoryById
 )
 
-//  TODO: Later we will handle it.
 router.delete(
   '/:id',
+  auth(AuthRoles.ADMIN, AuthRoles.SUPER_ADMIN),
   validateRequest(categoryValidations.deleteCategoryByIdSchema),
   categoryControllers.deleteCategoryById
 )
