@@ -12,6 +12,10 @@ export interface IBookingHistory {
   milestone: TBookingTimelineMilestone | string
   title: string
   description?: string | null | undefined
+  customerTitle?: string | null | undefined
+  customerDescription?: string | null | undefined
+  artistTitle?: string | null | undefined
+  artistDescription?: string | null | undefined
   performedBy?: Types.ObjectId | null | undefined
   performedByRole?: TBookingHistoryRole
   note?: string | null | undefined

@@ -126,6 +126,7 @@ router.post(
 // 14. Logout:
 router.post(
   '/logout',
+  auth(),
   validateRequest(AuthValidations.logoutSchema),
   AuthController.logout
 )

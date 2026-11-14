@@ -881,6 +881,7 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     guestCount,
     status: bookingStatus,
     isQuickBooking,
+    usePlatformCredit: Boolean(input.usePlatformCredit),
     servicePrice: breakdown.servicePrice,
     travelFee: breakdown.travelFee,
     parkingFee: breakdown.parkingFee,
@@ -1001,6 +1002,23 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     logger.warn('[Booking Notification] Failed to notify professional:', notifErr)
   }
 
+  // Notify customer of created booking
+  try {
+    await notificationServices.sendNotification({
+      recipient: user._id,
+      title: isQuickBooking ? 'Booking Confirmed' : 'Booking Request Sent',
+      message: isQuickBooking
+        ? `Your quick booking #${booking.bookingNumber} is confirmed! Initial deposit ($${breakdown.initialDepositAmount} AUD) was charged.`
+        : `Your booking request #${booking.bookingNumber} has been sent to the professional. You will be notified once they accept.`,
+      type: isQuickBooking ? NOTIFICATION_TYPE.BOOKING_CONFIRMED : NOTIFICATION_TYPE.BOOKING_REQUESTED,
+      bookingId: booking._id,
+      bookingNumber: booking.bookingNumber,
+      actionUrl: `/bookings/${booking._id}`,
+    })
+  } catch (notifErr) {
+    logger.warn('[Booking Notification] Failed to notify customer of booking creation:', notifErr)
+  }
+
   return {
     booking,
     clientSecret,
@@ -1081,13 +1099,6 @@ const customerCancelBooking = async (
     throw new AppError(
       httpStatus.BAD_REQUEST,
       `Cannot cancel booking that is already '${booking.status}'`
-    )
-  }
-
-  if (booking.status === BOOKING_STATUS.IN_PROGRESS) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      'Cannot cancel a booking that is currently in progress. Please contact the professional or support.'
     )
   }
 
@@ -1262,20 +1273,31 @@ const customerCancelBooking = async (
     })
 
     try {
-      await notificationServices.sendNotification({
-        recipient: (booking.artist as any)._id || booking.artist,
-        sender: user._id,
-        senderName: user.name,
-        senderPicture: user.profileImage,
-        title: 'Booking Cancelled by Customer',
-        message: `${user.name} has cancelled booking #${booking.bookingNumber}.`,
-        type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
-        bookingId: booking._id,
-        bookingNumber: booking.bookingNumber,
-        actionUrl: `/bookings/${booking._id}`,
-      })
+      await Promise.all([
+        notificationServices.sendNotification({
+          recipient: (booking.artist as any)._id || booking.artist,
+          sender: user._id,
+          senderName: user.name,
+          senderPicture: user.profileImage,
+          title: 'Booking Cancelled by Customer',
+          message: `${user.name} has cancelled booking #${booking.bookingNumber}.`,
+          type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
+          bookingId: booking._id,
+          bookingNumber: booking.bookingNumber,
+          actionUrl: `/bookings/${booking._id}`,
+        }),
+        notificationServices.sendNotification({
+          recipient: (booking.customer as any)._id || booking.customer,
+          title: 'Booking Cancelled',
+          message: `Your booking #${booking.bookingNumber} was cancelled. ${message}`,
+          type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
+          bookingId: booking._id,
+          bookingNumber: booking.bookingNumber,
+          actionUrl: `/bookings/${booking._id}`,
+        }),
+      ])
     } catch (notifErr) {
-      logger.warn('[Booking Notification] Failed to notify artist of customer cancellation:', notifErr)
+      logger.warn('[Booking Notification] Failed to notify parties of customer cancellation:', notifErr)
     }
 
     return {
@@ -1417,20 +1439,31 @@ const customerCancelBooking = async (
   })
 
   try {
-    await notificationServices.sendNotification({
-      recipient: (booking.artist as any)._id || booking.artist,
-      sender: user._id,
-      senderName: user.name,
-      senderPicture: user.profileImage,
-      title: 'Booking Cancelled by Customer',
-      message: `${user.name} has cancelled booking #${booking.bookingNumber} (<24h cancellation).`,
-      type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
-      bookingId: booking._id,
-      bookingNumber: booking.bookingNumber,
-      actionUrl: `/bookings/${booking._id}`,
-    })
+    await Promise.all([
+      notificationServices.sendNotification({
+        recipient: (booking.artist as any)._id || booking.artist,
+        sender: user._id,
+        senderName: user.name,
+        senderPicture: user.profileImage,
+        title: 'Booking Cancelled by Customer',
+        message: `${user.name} has cancelled booking #${booking.bookingNumber} (<24h cancellation).`,
+        type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
+        bookingId: booking._id,
+        bookingNumber: booking.bookingNumber,
+        actionUrl: `/bookings/${booking._id}`,
+      }),
+      notificationServices.sendNotification({
+        recipient: (booking.customer as any)._id || booking.customer,
+        title: 'Booking Cancelled (Late Cancellation)',
+        message: `Your booking #${booking.bookingNumber} was cancelled under the <24h late cancellation policy. ${lateMessage}`,
+        type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
+        bookingId: booking._id,
+        bookingNumber: booking.bookingNumber,
+        actionUrl: `/bookings/${booking._id}`,
+      }),
+    ])
   } catch (notifErr) {
-    logger.warn('[Booking Notification] Failed to notify artist of late cancellation:', notifErr)
+    logger.warn('[Booking Notification] Failed to notify parties of late cancellation:', notifErr)
   }
 
   return {
@@ -1467,13 +1500,6 @@ const artistCancelBooking = async (
     throw new AppError(
       httpStatus.BAD_REQUEST,
       `Cannot cancel booking that is already '${booking.status}'`
-    )
-  }
-
-  if (booking.status === BOOKING_STATUS.IN_PROGRESS) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      'Cannot cancel a booking that is currently in progress. Please contact the professional or support.'
     )
   }
 
@@ -1705,20 +1731,31 @@ const artistCancelBooking = async (
   })
 
   try {
-    await notificationServices.sendNotification({
-      recipient: (booking.customer as any)._id || booking.customer,
-      sender: user._id,
-      senderName: user.name,
-      senderPicture: user.profileImage,
-      title: 'Booking Cancelled by Professional',
-      message: `${user.name} has cancelled booking #${booking.bookingNumber}. Platform credit has been issued.`,
-      type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
-      bookingId: booking._id,
-      bookingNumber: booking.bookingNumber,
-      actionUrl: `/bookings/${booking._id}`,
-    })
+    await Promise.all([
+      notificationServices.sendNotification({
+        recipient: (booking.customer as any)._id || booking.customer,
+        sender: user._id,
+        senderName: user.name,
+        senderPicture: user.profileImage,
+        title: 'Booking Cancelled by Professional',
+        message: `${user.name} has cancelled booking #${booking.bookingNumber}. Platform credit has been issued.`,
+        type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
+        bookingId: booking._id,
+        bookingNumber: booking.bookingNumber,
+        actionUrl: `/bookings/${booking._id}`,
+      }),
+      notificationServices.sendNotification({
+        recipient: (booking.artist as any)._id || booking.artist,
+        title: penaltyIncurred > 0 ? 'Booking Cancelled (Penalty Incurred)' : 'Booking Cancelled',
+        message: `Booking #${booking.bookingNumber} was cancelled. ${artistCancelMessage}`,
+        type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
+        bookingId: booking._id,
+        bookingNumber: booking.bookingNumber,
+        actionUrl: `/bookings/${booking._id}`,
+      }),
+    ])
   } catch (notifErr) {
-    logger.warn('[Booking Notification] Failed to notify customer:', notifErr)
+    logger.warn('[Booking Notification] Failed to notify parties of professional cancellation:', notifErr)
   }
 
   return {
@@ -1758,13 +1795,6 @@ const cancelBooking = async (user: IUser, bookingId: string, cancellationReason?
     )
   }
 
-  if (!isAdmin && booking.status === BOOKING_STATUS.IN_PROGRESS) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      'Cannot cancel a booking that is currently in progress. Please contact support.'
-    )
-  }
-
   if (isCustomer) {
     return customerCancelBooking(user, bookingId, cancellationReason)
   }
@@ -1782,11 +1812,51 @@ const cancelBooking = async (user: IUser, bookingId: string, cancellationReason?
     await voidOrCreditNoteInvoice(booking.artistStripeInvoiceId, booking.bookingNumber)
   }
 
+  // Calculate customer payments to refund / credit
+  const isInitialPaid = booking.initialPayment?.status === PAYMENT_STAGE_STATUS.CAPTURED
+  const isBalancePaid = booking.balancePayment?.status === PAYMENT_STAGE_STATUS.CAPTURED
+  const depositPaid = isInitialPaid ? (booking.initialPayment.amount || 0) : 0
+  const balancePaid = isBalancePaid ? (booking.balancePayment.amount || 0) : 0
+  const totalPaid = round2(depositPaid + balancePaid)
+
+  let customerCreditAmount = 0
+  if (totalPaid > 0) {
+    customerCreditAmount = totalPaid
+    await walletServices.creditUserWallet({
+      userId: (booking.customer as any)._id || booking.customer,
+      amount: customerCreditAmount,
+      source: WALLET_SOURCE.CANCELLATION_CREDIT,
+      bookingId: booking._id,
+      bookingGroupId: booking.bookingGroupId,
+      description: `Admin cancelled booking #${booking.bookingNumber} - Platform credit issued ($${customerCreditAmount} AUD)`,
+    })
+  }
+
+  // Restore platform credit if customer originally used credit
+  if (booking.platformCreditApplied > 0) {
+    await walletServices.creditUserWallet({
+      userId: (booking.customer as any)._id || booking.customer,
+      amount: booking.platformCreditApplied,
+      source: WALLET_SOURCE.BOOKING_ROLLBACK,
+      bookingId: booking._id,
+      bookingGroupId: booking.bookingGroupId,
+      description: `Admin cancelled booking #${booking.bookingNumber} - platform credit restored`,
+    })
+  }
+
+  if (isInitialPaid) {
+    booking.initialPayment.status = PAYMENT_STAGE_STATUS.REFUNDED
+  }
+  if (isBalancePaid) {
+    booking.balancePayment.status = PAYMENT_STAGE_STATUS.REFUNDED
+  }
+
   booking.status = BOOKING_STATUS.CANCELLED
   booking.cancelledBy = user._id
   booking.cancelledByRole = 'admin'
   booking.cancellationReason = cancellationReason || 'Cancelled by admin'
   booking.cancelledAt = new Date()
+  booking.platformCreditIssued = customerCreditAmount
   await booking.save()
 
   await recordBookingHistory({
@@ -1879,7 +1949,7 @@ const getMyBookings = async (
       case 'upcoming':
         filter.bookingDate = { $gte: todayStart }
         filter.status = {
-          $in: [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.IN_PROGRESS, BOOKING_STATUS.RESCHEDULED],
+          $in: [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.RESCHEDULED],
         }
         break
       case 'pending':
@@ -2011,6 +2081,7 @@ const getBookingById = async (user: IUser, bookingId: string) => {
     bookingObj.artist.reviewsCount = reviewsCount
   }
   bookingObj.review = bookingReview || null
+  bookingObj.timeline = await getBookingTimelineFromHistory(booking, user)
 
   return bookingObj
 }
@@ -2042,7 +2113,6 @@ const payBalance = async (user: IUser, bookingId: string, paymentMethodId?: stri
   const validBalancePayStatuses = [
     BOOKING_STATUS.CONFIRMED,
     BOOKING_STATUS.RESCHEDULED,
-    BOOKING_STATUS.IN_PROGRESS,
     BOOKING_STATUS.COMPLETED,
   ]
   if (!validBalancePayStatuses.includes(booking.status as any)) {
@@ -2199,20 +2269,31 @@ const payBalance = async (user: IUser, bookingId: string, paymentMethodId?: stri
       })
 
       try {
-        await notificationServices.sendNotification({
-          recipient: (booking.artist as any)._id || booking.artist,
-          sender: user._id,
-          senderName: user.name,
-          senderPicture: user.profileImage,
-          title: 'Balance Payment Completed',
-          message: `${user.name} has paid the remaining balance ($${booking.balancePayment.amount} AUD) for booking #${booking.bookingNumber}.`,
-          type: NOTIFICATION_TYPE.PAYMENT_SUCCESS,
-          bookingId: booking._id,
-          bookingNumber: booking.bookingNumber,
-          actionUrl: `/bookings/${booking._id}`,
-        })
+        await Promise.all([
+          notificationServices.sendNotification({
+            recipient: (booking.artist as any)._id || booking.artist,
+            sender: user._id,
+            senderName: user.name,
+            senderPicture: user.profileImage,
+            title: 'Balance Payment Completed',
+            message: `${user.name} has paid the remaining balance ($${booking.balancePayment.amount} AUD) for booking #${booking.bookingNumber}.`,
+            type: NOTIFICATION_TYPE.PAYMENT_SUCCESS,
+            bookingId: booking._id,
+            bookingNumber: booking.bookingNumber,
+            actionUrl: `/bookings/${booking._id}`,
+          }),
+          notificationServices.sendNotification({
+            recipient: (booking.customer as any)._id || booking.customer,
+            title: 'Balance Payment Successful',
+            message: `You have paid the remaining balance ($${booking.balancePayment.amount} AUD) for booking #${booking.bookingNumber}. Your appointment is confirmed!`,
+            type: NOTIFICATION_TYPE.PAYMENT_SUCCESS,
+            bookingId: booking._id,
+            bookingNumber: booking.bookingNumber,
+            actionUrl: `/bookings/${booking._id}`,
+          }),
+        ])
       } catch (notifErr) {
-        logger.warn('[Booking Notification] Failed to notify artist of balance payment:', notifErr)
+        logger.warn('[Booking Notification] Failed to notify parties of balance payment:', notifErr)
       }
 
       return {
@@ -2239,6 +2320,7 @@ const payBalance = async (user: IUser, bookingId: string, paymentMethodId?: stri
 
 const customerInvoiceLocks = new Map<string, Promise<any>>()
 const artistRctiLocks = new Map<string, Promise<any>>()
+const acceptBookingLocks = new Map<string, Promise<any>>()
 
 /**
  * Sync Stripe customer balance to the exact desired credit (in cents) so that
@@ -3016,71 +3098,497 @@ const assertNotRefundedOrFailedPayment = (booking: IBooking, action: string) => 
 }
 
 /**
- * Artist accepts a requested booking
+ * Shared helper to execute initial deposit payment (20%) for a booking.
+ * Used during auto-charge on artist acceptance and manual customer payment confirmation retry.
  */
-const acceptBooking = async (user: IUser, bookingId: string) => {
-  const booking = await Booking.findById(bookingId)
-  if (!booking) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
+const executeInitialDepositPayment = async ({
+  booking,
+  customerUser,
+  paymentMethodId,
+  usePlatformCredit,
+}: {
+  booking: any
+  customerUser: IUser
+  paymentMethodId?: string | undefined
+  usePlatformCredit?: boolean | undefined
+}): Promise<{
+  success: boolean
+  booking?: any
+  clientSecret?: string | undefined
+  breakdown?: any
+  error?: string | undefined
+}> => {
+  if (!booking.populated('service')) {
+    await booking.populate('service')
   }
 
-  const isArtist = booking.artist.toString() === user._id.toString()
-  const isAdmin = user.role === 'admin' || user.role === 'super_admin'
-  if (!isArtist && !isAdmin) {
-    throw new AppError(httpStatus.FORBIDDEN, 'Only the assigned professional can accept this booking')
-  }
+  const artistId = (booking.artist as any)?._id || booking.artist
+  const artistProfile = await ArtistProfile.findOne({ user: artistId })
+  const promoDoc = booking.promoCode ? await PromoCode.findById(booking.promoCode) : null
+  const wallet = await walletServices.getMyWallet(customerUser._id)
+  const platformSettings = await PlatformSettings.getSettings()
+  const platformCommissionPercent = platformSettings?.platformPercentage ?? 20
+  const gstPercent = platformSettings?.gstPercentage ?? 10
+  const stripeGstTaxRateId = booking.stripeGstTaxRateId || platformSettings?.stripeGstTaxRateId
 
-  if (booking.status !== BOOKING_STATUS.REQUESTED) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      `Cannot accept booking with status '${booking.status}'`
+  const useCredit =
+    usePlatformCredit !== undefined
+      ? Boolean(usePlatformCredit)
+      : Boolean(booking.usePlatformCredit || booking.platformCreditApplied > 0)
+
+  const breakdown = calculateBookingBreakdown({
+    servicePrice: booking.servicePrice,
+    travelFee: booking.travelFee,
+    parkingFee: booking.parkingFee,
+    isArtistGstRegistered: artistProfile?.isGstRegistered ?? false,
+    promoCode: promoDoc,
+    usePlatformCredit: useCredit,
+    availableWalletCredit: wallet.balance,
+    platformCommissionPercent,
+    gstPercent,
+  })
+
+  // 1. Resolve Stripe Customer
+  if (breakdown.initialDepositAmount > 0 && !customerUser.stripeCustomerId) {
+    return {
+      success: false,
+      error: 'Stripe customer not found. Please setup a payment method first.',
+    }
+  }
+  const stripeCustomerId = customerUser.stripeCustomerId
+
+  // 2. Resolve Payment Method
+  let effectivePaymentMethodId: string | undefined
+  if (paymentMethodId) {
+    const existingCard = await PaymentMethod.findOne(
+      mongoose.isValidObjectId(paymentMethodId)
+        ? { _id: paymentMethodId }
+        : { stripePaymentMethodId: paymentMethodId }
     )
+    if (!existingCard) {
+      return {
+        success: false,
+        error: 'Payment method is not listed in the database. Please provide a valid saved payment method.',
+      }
+    }
+    if (existingCard.user.toString() !== customerUser._id.toString()) {
+      return {
+        success: false,
+        error: 'Selected payment method is not listed under customer account.',
+      }
+    }
+    effectivePaymentMethodId = existingCard.stripePaymentMethodId
+  } else if (booking.stripePaymentMethodId) {
+    const bookedCard = await PaymentMethod.findOne({
+      stripePaymentMethodId: booking.stripePaymentMethodId,
+      user: customerUser._id,
+    })
+    if (bookedCard) {
+      effectivePaymentMethodId = bookedCard.stripePaymentMethodId
+    }
   }
 
-  if (
-    booking.initialPayment?.status === PAYMENT_STAGE_STATUS.CAPTURED ||
-    booking.initialPayment?.status === PAYMENT_STAGE_STATUS.REFUNDED
-  ) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      `Cannot accept booking with initial payment status '${booking.initialPayment.status}'`
-    )
+  if (breakdown.initialDepositAmount > 0 && !effectivePaymentMethodId) {
+    const defaultCard = await PaymentMethod.findOne({ user: customerUser._id, isDefault: true })
+    if (defaultCard) {
+      effectivePaymentMethodId = defaultCard.stripePaymentMethodId
+    }
   }
 
-  booking.status = BOOKING_STATUS.ACCEPTED
-  booking.initialPayment.dueDate = moment().add(1, 'hour').toDate()
+  if (breakdown.initialDepositAmount > 0 && !effectivePaymentMethodId) {
+    return {
+      success: false,
+      error: 'Payment method required to pay initial booking deposit.',
+    }
+  }
+
+  // 3. Debit wallet credit if applied
+  if (breakdown.platformCreditApplied > 0) {
+    await walletServices.debitUserWallet({
+      userId: customerUser._id,
+      amount: breakdown.platformCreditApplied,
+      source: WALLET_SOURCE.BOOKING_PAYMENT,
+      bookingId: booking._id,
+      bookingGroupId: booking.bookingGroupId || undefined,
+      description: `Platform credit applied to confirmed booking #${booking.bookingNumber}`,
+    })
+  }
+
+  // 4. Charge 20% Deposit via Stripe
+  let stripePaymentIntentId: string | undefined
+  let clientSecret: string | undefined
+  let initialStatus: 'pending' | 'captured' = 'pending'
+
+  if (breakdown.initialDepositAmount > 0 && effectivePaymentMethodId) {
+    try {
+      const piParams: Stripe.PaymentIntentCreateParams = {
+        amount: Math.round(breakdown.initialDepositAmount * 100),
+        currency: 'aud',
+        customer: stripeCustomerId!,
+        payment_method: effectivePaymentMethodId,
+        confirm: true,
+        off_session: true,
+        automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
+        ...(booking.bookingGroupId ? { transfer_group: booking.bookingGroupId } : {}),
+        metadata: {
+          bookingNumber: booking.bookingNumber,
+          bookingGroupId: booking.bookingGroupId || '',
+          userId: customerUser._id.toString(),
+          artistId: artistId.toString(),
+          type: PAYMENT_TRANSACTION_TYPE.INITIAL_20,
+          gstPercentage: gstPercent.toString(),
+          gstAmount: breakdown.serviceGst.toString(),
+          stripeGstTaxRateId: stripeGstTaxRateId || '',
+        },
+      }
+
+      const paymentIntent = await stripe.paymentIntents.create(piParams)
+      stripePaymentIntentId = paymentIntent.id
+      clientSecret = paymentIntent.client_secret || undefined
+
+      if (paymentIntent.status === 'succeeded') {
+        initialStatus = 'captured'
+      } else {
+        if (breakdown.platformCreditApplied > 0) {
+          await walletServices.rollbackDebit(
+            customerUser._id,
+            breakdown.platformCreditApplied,
+            booking._id,
+            'Initial deposit payment failed - credit reversed'
+          )
+        }
+        return {
+          success: false,
+          error: `Payment requires authentication or additional action (status: ${paymentIntent.status})`,
+        }
+      }
+    } catch (paymentErr: any) {
+      if (breakdown.platformCreditApplied > 0) {
+        await walletServices.rollbackDebit(
+          customerUser._id,
+          breakdown.platformCreditApplied,
+          booking._id,
+          'Initial deposit payment failed - credit reversed'
+        )
+      }
+      return {
+        success: false,
+        error: paymentErr?.message || paymentErr?.raw?.message || 'Payment declined by card issuer',
+      }
+    }
+  } else {
+    // 100% covered by wallet / promo
+    initialStatus = 'captured'
+  }
+
+  if (initialStatus !== 'captured') {
+    if (breakdown.platformCreditApplied > 0) {
+      await walletServices.rollbackDebit(
+        customerUser._id,
+        breakdown.platformCreditApplied,
+        booking._id,
+        'Initial deposit payment failed - credit reversed'
+      )
+    }
+    return {
+      success: false,
+      error: 'Deposit payment could not be captured.',
+    }
+  }
+
+  // 5. Increment promo code usage if applied
+  if (promoDoc && breakdown.discountAmount > 0) {
+    await PromoCode.findByIdAndUpdate(promoDoc._id, { $inc: { usageCount: 1 } })
+  }
+
+  // 6. Update Booking
+  booking.status = BOOKING_STATUS.CONFIRMED
+  booking.platformCreditApplied = breakdown.platformCreditApplied
+  booking.totalBookingPrice = breakdown.totalBookingPrice
+  booking.initialPayment.amount = breakdown.initialDepositAmount
+  booking.initialPayment.status = PAYMENT_STAGE_STATUS.CAPTURED
+  booking.initialPayment.stripePaymentIntentId = stripePaymentIntentId || null
+  booking.initialPayment.paidAt = new Date()
+  booking.balancePayment.amount = breakdown.balanceDueAmount
+  if (breakdown.balanceDueAmount === 0) {
+    booking.balancePayment.status = PAYMENT_STAGE_STATUS.CAPTURED
+    booking.balancePayment.paidAt = new Date()
+  }
+  if (stripeCustomerId) {
+    booking.stripeCustomerId = stripeCustomerId
+  }
+  if (effectivePaymentMethodId) {
+    booking.stripePaymentMethodId = effectivePaymentMethodId
+  }
+  booking.platformCommissionPercentage = breakdown.platformCommissionPercentage
+  booking.platformCommissionAmount = breakdown.platformCommissionAmount
+  booking.platformCommissionGst = breakdown.platformCommissionGst
+  booking.stripeInitialFee = breakdown.stripeInitialFee
+  booking.stripeBalanceFee = breakdown.stripeBalanceFee
+  booking.artistNetPayout = breakdown.artistNetPayout
+
   await booking.save()
+
+  // 7. Issue Stripe Tax Invoice ONLY after payment succeeds
+  await issueCustomerStripeInvoice(booking)
+
+  // 8. Create PaymentTransaction audit record
+  const txnPayload: any = {
+    transactionId: `TXN-${booking.bookingNumber}-01`,
+    booking: booking._id,
+    bookingGroupId: booking.bookingGroupId,
+    user: customerUser._id,
+    artist: artistId,
+    type: PAYMENT_TRANSACTION_TYPE.INITIAL_20,
+    gateway:
+      breakdown.platformCreditApplied > 0 ? PAYMENT_GATEWAY.MIXED : PAYMENT_GATEWAY.STRIPE_CONNECT,
+    status: PAYMENT_STATUS.SUCCEEDED,
+    currency: 'AUD',
+    amount: breakdown.initialDepositAmount,
+    platformCreditUsed: breakdown.platformCreditApplied,
+    marketplaceFee: breakdown.platformCommissionAmount,
+    marketplaceFeeGst: breakdown.platformCommissionGst,
+    stripeFeeBorne: breakdown.stripeInitialFee,
+    artistNetShare: 0,
+  }
+  if (stripePaymentIntentId) {
+    txnPayload.stripePaymentIntentId = stripePaymentIntentId
+  }
+  await PaymentTransaction.create(txnPayload)
 
   await recordBookingHistory({
     booking: booking._id,
     bookingNumber: booking.bookingNumber,
-    status: BOOKING_STATUS.ACCEPTED,
-    milestone: BOOKING_TIMELINE_MILESTONE.ARTIST_ACCEPTED,
-    title: 'Professional Accepted',
-    description: 'Professional accepted the booking request. 1-hour payment window started.',
-    performedBy: user._id,
-    performedByRole: (user.role as any) || 'artist',
+    status: BOOKING_STATUS.CONFIRMED,
+    milestone: BOOKING_TIMELINE_MILESTONE.PAYMENT_COMPLETED,
+    title: 'Deposit Paid & Confirmed',
+    description: `Customer paid 20% deposit ($${breakdown.initialDepositAmount} AUD)`,
+    performedBy: customerUser._id,
+    performedByRole: 'customer',
   })
 
-  // Notify customer
-  try {
-    await notificationServices.sendNotification({
-      recipient: booking.customer,
-      sender: user._id,
-      senderName: user.name,
-      senderPicture: user.profileImage,
-      title: 'Booking Accepted',
-      message: `${user.name} has accepted your booking #${booking.bookingNumber}. Please complete the 20% deposit payment within 1 hour to secure your appointment.`,
-      type: NOTIFICATION_TYPE.BOOKING_ACCEPTED,
-      bookingId: booking._id,
-      bookingNumber: booking.bookingNumber,
-      actionUrl: `/bookings/${booking._id}`,
-    })
-  } catch (notifErr) {
-    logger.warn('[Booking Notification] Failed to notify customer:', notifErr)
+  return {
+    success: true,
+    booking,
+    clientSecret,
+    breakdown,
+  }
+}
+
+/**
+ * Artist accepts a requested booking.
+ * Automatically charges 20% deposit from the attached payment method (or customer default card).
+ * If auto-payment succeeds: booking transitions directly to CONFIRMED.
+ * If auto-payment fails: booking transitions to ACCEPTED with a 1-hour retry window for customer.
+ */
+const acceptBooking = async (user: IUser, bookingId: string) => {
+  const lockKey = String(bookingId)
+  if (acceptBookingLocks.has(lockKey)) {
+    throw new AppError(
+      httpStatus.CONFLICT,
+      'Booking acceptance is already in progress. Please wait a moment.'
+    )
   }
 
-  return booking
+  const task = (async () => {
+    const booking = await Booking.findById(bookingId).populate('service')
+    if (!booking) {
+      throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
+    }
+
+    const isArtist = booking.artist.toString() === user._id.toString()
+    const isAdmin = user.role === 'admin' || user.role === 'super_admin'
+    if (!isArtist && !isAdmin) {
+      throw new AppError(httpStatus.FORBIDDEN, 'Only the assigned professional can accept this booking')
+    }
+
+    if (booking.status !== BOOKING_STATUS.REQUESTED) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        `Cannot accept booking with status '${booking.status}'`
+      )
+    }
+
+    if (
+      booking.initialPayment?.status === PAYMENT_STAGE_STATUS.CAPTURED ||
+      booking.initialPayment?.status === PAYMENT_STAGE_STATUS.REFUNDED
+    ) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        `Cannot accept booking with initial payment status '${booking.initialPayment.status}'`
+      )
+    }
+
+    // Edge Case: Validate that scheduled appointment time is in the future
+    const appointmentDateStr = moment.utc(booking.bookingDate).format('YYYY-MM-DD')
+    const appointmentDateTime = moment(
+      `${appointmentDateStr} ${booking.startTime}`,
+      'YYYY-MM-DD HH:mm'
+    )
+    if (appointmentDateTime.isBefore(moment())) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'Cannot accept a booking request whose scheduled appointment time has already passed'
+      )
+    }
+
+    // Edge Case: Schedule conflict & blocked dates check before accepting
+    const appointmentDate = moment(booking.bookingDate).startOf('day').toDate()
+    const conflict = await Booking.findOne({
+      _id: { $ne: booking._id },
+      artist: booking.artist,
+      bookingDate: appointmentDate,
+      status: {
+        $in: [
+          BOOKING_STATUS.ACCEPTED,
+          BOOKING_STATUS.CONFIRMED,
+          BOOKING_STATUS.RESCHEDULED,
+        ],
+      },
+      startTime: { $lt: booking.endTime },
+      endTime: { $gt: booking.startTime },
+    })
+    if (conflict) {
+      throw new AppError(
+        httpStatus.CONFLICT,
+        `You already have another confirmed booking (#${conflict.bookingNumber}) during this time slot (${conflict.startTime} - ${conflict.endTime})`
+      )
+    }
+
+    const isBlocked = await ArtistBlockedDate.findOne({
+      artist: booking.artist,
+      date: appointmentDate,
+      $or: [
+        { isFullDay: true },
+        { startTime: { $lt: booking.endTime }, endTime: { $gt: booking.startTime } },
+      ],
+    })
+    if (isBlocked) {
+      throw new AppError(
+        httpStatus.CONFLICT,
+        'This time slot conflicts with your blocked schedule'
+      )
+    }
+
+    const customerId = (booking.customer as any)?._id || booking.customer
+    const customerUser = await User.findById(customerId)
+    if (!customerUser) {
+      throw new AppError(httpStatus.NOT_FOUND, 'Customer user not found')
+    }
+
+    // 1. Record professional acceptance in booking history
+    await recordBookingHistory({
+      booking: booking._id,
+      bookingNumber: booking.bookingNumber,
+      status: BOOKING_STATUS.ACCEPTED,
+      milestone: BOOKING_TIMELINE_MILESTONE.ARTIST_ACCEPTED,
+      title: 'Professional Accepted',
+      description: 'Professional accepted the booking request.',
+      performedBy: user._id,
+      performedByRole: (user.role as any) || 'artist',
+    })
+
+    // 2. Attempt auto-charge 20% deposit
+    const depositResult = await executeInitialDepositPayment({
+      booking,
+      customerUser,
+      usePlatformCredit: Boolean(booking.usePlatformCredit),
+    })
+
+    if (depositResult.success) {
+      // Payment succeeded! Booking is now CONFIRMED
+      try {
+        await Promise.all([
+          notificationServices.sendNotification({
+            recipient: booking.customer,
+            sender: user._id,
+            senderName: user.name,
+            senderPicture: user.profileImage,
+            title: 'Booking Confirmed',
+            message: `${user.name} has accepted your booking #${booking.bookingNumber}. Your 20% deposit ($${depositResult.breakdown?.initialDepositAmount ?? booking.initialPayment.amount} AUD) was charged successfully and your appointment is confirmed.`,
+            type: NOTIFICATION_TYPE.BOOKING_CONFIRMED,
+            bookingId: booking._id,
+            bookingNumber: booking.bookingNumber,
+            actionUrl: `/bookings/${booking._id}`,
+          }),
+          notificationServices.sendNotification({
+            recipient: (booking.artist as any)._id || booking.artist,
+            title: 'Booking Confirmed',
+            message: `Booking #${booking.bookingNumber} is confirmed! Customer deposit ($${depositResult.breakdown?.initialDepositAmount ?? booking.initialPayment.amount} AUD) was charged successfully.`,
+            type: NOTIFICATION_TYPE.BOOKING_CONFIRMED,
+            bookingId: booking._id,
+            bookingNumber: booking.bookingNumber,
+            actionUrl: `/bookings/${booking._id}`,
+          }),
+        ])
+      } catch (notifErr) {
+        logger.warn('[Booking Notification] Failed to notify parties of confirmed booking:', notifErr)
+      }
+
+      return depositResult.booking
+    }
+
+    // 3. Fallback: Payment failed or no payment method available
+    // Transition booking to ACCEPTED with 1-hour retry window
+    booking.status = BOOKING_STATUS.ACCEPTED
+    booking.initialPayment.status = PAYMENT_STAGE_STATUS.FAILED
+    booking.initialPayment.dueDate = moment().add(1, 'hour').toDate()
+    await booking.save()
+
+    // Record timeline entry for failed auto-charge
+    await recordBookingHistory({
+      booking: booking._id,
+      bookingNumber: booking.bookingNumber,
+      status: BOOKING_STATUS.ACCEPTED,
+      milestone: 'payment_failed',
+      title: 'Deposit Auto-Payment Failed',
+      description: `Auto-charge failed: ${depositResult.error || 'Payment declined'}. 1-hour retry window started.`,
+      performedBy: user._id,
+      performedByRole: 'system',
+      customerTitle: 'Deposit Payment Failed',
+      customerDescription: 'Automatic deposit charge failed. Please update payment method within 1 hour.',
+      artistTitle: 'Deposit Auto-Payment Failed',
+      artistDescription: 'Customer deposit auto-charge failed. 1-hour payment window started.',
+    })
+
+    // Notify customer with action required and inform artist of payment wait
+    try {
+      await Promise.all([
+        notificationServices.sendNotification({
+          recipient: booking.customer,
+          sender: user._id,
+          senderName: user.name,
+          senderPicture: user.profileImage,
+          title: 'Action Required: Deposit Payment Failed',
+          message: `${user.name} has accepted your booking #${booking.bookingNumber}, but the automatic deposit payment could not be processed (${depositResult.error || 'Payment declined'}). Please update your payment method and complete payment within 1 hour to secure your appointment.`,
+          type: NOTIFICATION_TYPE.BOOKING_ACCEPTED,
+          bookingId: booking._id,
+          bookingNumber: booking.bookingNumber,
+          actionUrl: `/bookings/${booking._id}`,
+        }),
+        notificationServices.sendNotification({
+          recipient: (booking.artist as any)._id || booking.artist,
+          title: 'Booking Accepted (Awaiting Payment)',
+          message: `You accepted booking #${booking.bookingNumber}, but the customer deposit auto-payment could not be captured. A 1-hour retry window was given to the customer.`,
+          type: NOTIFICATION_TYPE.BOOKING_ACCEPTED,
+          bookingId: booking._id,
+          bookingNumber: booking.bookingNumber,
+          actionUrl: `/bookings/${booking._id}`,
+        }),
+      ])
+    } catch (notifErr) {
+      logger.warn('[Booking Notification] Failed to notify parties of payment failure:', notifErr)
+    }
+
+    return booking
+  })()
+
+  acceptBookingLocks.set(lockKey, task)
+  try {
+    return await task
+  } finally {
+    acceptBookingLocks.delete(lockKey)
+  }
 }
 
 /**
@@ -3137,240 +3645,56 @@ const confirmBookingPayment = async (
     )
   }
 
-  const artistProfile = await ArtistProfile.findOne({ user: booking.artist })
-  const promoDoc = booking.promoCode ? await PromoCode.findById(booking.promoCode) : null
-  const wallet = await walletServices.getMyWallet(user._id)
-  const platformSettings = await PlatformSettings.getSettings()
-  const platformCommissionPercent = platformSettings?.platformPercentage ?? 20
-  const gstPercent = platformSettings?.gstPercentage ?? 10
-  const stripeGstTaxRateId = booking.stripeGstTaxRateId || platformSettings?.stripeGstTaxRateId
-
-  const useCredit =
-    input.usePlatformCredit !== undefined
-      ? Boolean(input.usePlatformCredit)
-      : booking.platformCreditApplied > 0
-
-  const breakdown = calculateBookingBreakdown({
-    servicePrice: booking.servicePrice,
-    travelFee: booking.travelFee,
-    parkingFee: booking.parkingFee,
-    isArtistGstRegistered: artistProfile?.isGstRegistered ?? false,
-    promoCode: promoDoc,
-    usePlatformCredit: useCredit,
-    availableWalletCredit: wallet.balance,
-    platformCommissionPercent,
-    gstPercent,
+  const depositResult = await executeInitialDepositPayment({
+    booking,
+    customerUser: user,
+    paymentMethodId: input.paymentMethodId,
+    usePlatformCredit: input.usePlatformCredit,
   })
 
-  // 1. Resolve Stripe Customer
-  if (!user.stripeCustomerId) {
+  if (!depositResult.success) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'Stripe customer not found. Please setup a payment method first.'
+      `Payment failed: ${depositResult.error || 'Card declined'}`
     )
   }
-  const stripeCustomerId = user.stripeCustomerId
-
-  // 2. Resolve Payment Method
-  let effectivePaymentMethodId: string | undefined
-  if (input.paymentMethodId) {
-    const existingCard = await PaymentMethod.findOne(
-      mongoose.isValidObjectId(input.paymentMethodId)
-        ? { _id: input.paymentMethodId }
-        : { stripePaymentMethodId: input.paymentMethodId }
-    )
-    if (!existingCard) {
-      throw new AppError(
-        httpStatus.NOT_FOUND,
-        'Payment method is not listed in the database. Please provide a valid saved payment method.'
-      )
-    }
-    if (existingCard.user.toString() !== user._id.toString()) {
-      throw new AppError(
-        httpStatus.FORBIDDEN,
-        'Selected payment method is not listed under your account.'
-      )
-    }
-    effectivePaymentMethodId = existingCard.stripePaymentMethodId
-  } else if (booking.stripePaymentMethodId) {
-    const bookedCard = await PaymentMethod.findOne({
-      stripePaymentMethodId: booking.stripePaymentMethodId,
-      user: user._id,
-    })
-    if (bookedCard) {
-      effectivePaymentMethodId = bookedCard.stripePaymentMethodId
-    }
-  }
-
-  if (breakdown.initialDepositAmount > 0 && !effectivePaymentMethodId) {
-    const defaultCard = await PaymentMethod.findOne({ user: user._id, isDefault: true })
-    if (!defaultCard) {
-      throw new AppError(
-        httpStatus.BAD_REQUEST,
-        'Payment method required to pay initial booking deposit.'
-      )
-    }
-    effectivePaymentMethodId = defaultCard.stripePaymentMethodId
-  }
-
-  // 3. Debit wallet credit if applied
-  if (breakdown.platformCreditApplied > 0) {
-    await walletServices.debitUserWallet({
-      userId: user._id,
-      amount: breakdown.platformCreditApplied,
-      source: WALLET_SOURCE.BOOKING_PAYMENT,
-      bookingId: booking._id,
-      bookingGroupId: booking.bookingGroupId || undefined,
-      description: `Platform credit applied to confirmed booking #${booking.bookingNumber}`,
-    })
-  }
-
-  // 4. Charge 20% Deposit via Stripe
-  let stripePaymentIntentId: string | undefined
-  let clientSecret: string | undefined
-  let initialStatus: 'pending' | 'captured' = 'pending'
-
-  if (breakdown.initialDepositAmount > 0 && effectivePaymentMethodId) {
-    try {
-      const piParams: Stripe.PaymentIntentCreateParams = {
-        amount: Math.round(breakdown.initialDepositAmount * 100),
-        currency: 'aud',
-        customer: stripeCustomerId,
-        payment_method: effectivePaymentMethodId,
-        confirm: true,
-        off_session: true,
-        automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
-        ...(booking.bookingGroupId ? { transfer_group: booking.bookingGroupId } : {}),
-        metadata: {
-          bookingNumber: booking.bookingNumber,
-          bookingGroupId: booking.bookingGroupId || '',
-          userId: user._id.toString(),
-          artistId: booking.artist.toString(),
-          type: PAYMENT_TRANSACTION_TYPE.INITIAL_20,
-          gstPercentage: gstPercent.toString(),
-          gstAmount: breakdown.serviceGst.toString(),
-          stripeGstTaxRateId: stripeGstTaxRateId || '',
-        },
-      }
-
-      const paymentIntent = await stripe.paymentIntents.create(piParams)
-      stripePaymentIntentId = paymentIntent.id
-      clientSecret = paymentIntent.client_secret || undefined
-
-      if (paymentIntent.status === 'succeeded') {
-        initialStatus = 'captured'
-      }
-    } catch (paymentErr: any) {
-      if (breakdown.platformCreditApplied > 0) {
-        await walletServices.rollbackDebit(
-          user._id,
-          breakdown.platformCreditApplied,
-          booking._id,
-          'Initial deposit payment failed - credit reversed'
-        )
-      }
-      throw new AppError(
-        httpStatus.BAD_REQUEST,
-        `Payment failed: ${paymentErr?.message || 'Card declined'}`
-      )
-    }
-  } else {
-    // 100% covered by wallet / promo
-    initialStatus = 'captured'
-  }
-
-  if (initialStatus !== 'captured') {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Deposit payment could not be captured.')
-  }
-
-  // 5. Increment promo code usage if applied
-  if (promoDoc && breakdown.discountAmount > 0) {
-    await PromoCode.findByIdAndUpdate(promoDoc._id, { $inc: { usageCount: 1 } })
-  }
-
-  // 6. Update Booking
-  booking.status = BOOKING_STATUS.CONFIRMED
-  booking.platformCreditApplied = breakdown.platformCreditApplied
-  booking.totalBookingPrice = breakdown.totalBookingPrice
-  booking.initialPayment.amount = breakdown.initialDepositAmount
-  booking.initialPayment.status = PAYMENT_STAGE_STATUS.CAPTURED
-  booking.initialPayment.stripePaymentIntentId = stripePaymentIntentId || null
-  booking.initialPayment.paidAt = new Date()
-  booking.balancePayment.amount = breakdown.balanceDueAmount
-  booking.stripeCustomerId = stripeCustomerId
-  if (effectivePaymentMethodId) {
-    booking.stripePaymentMethodId = effectivePaymentMethodId
-  }
-  booking.platformCommissionPercentage = breakdown.platformCommissionPercentage
-  booking.platformCommissionAmount = breakdown.platformCommissionAmount
-  booking.platformCommissionGst = breakdown.platformCommissionGst
-  booking.stripeInitialFee = breakdown.stripeInitialFee
-  booking.stripeBalanceFee = breakdown.stripeBalanceFee
-  booking.artistNetPayout = breakdown.artistNetPayout
-
-  await booking.save()
-
-  // 7. Issue Stripe Tax Invoice ONLY after payment succeeds
-  await issueCustomerStripeInvoice(booking)
-
-  // 8. Create PaymentTransaction audit record
-  const txnPayload: any = {
-    transactionId: `TXN-${booking.bookingNumber}-01`,
-    booking: booking._id,
-    bookingGroupId: booking.bookingGroupId,
-    user: user._id,
-    artist: booking.artist,
-    type: PAYMENT_TRANSACTION_TYPE.INITIAL_20,
-    gateway:
-      breakdown.platformCreditApplied > 0 ? PAYMENT_GATEWAY.MIXED : PAYMENT_GATEWAY.STRIPE_CONNECT,
-    status: PAYMENT_STATUS.SUCCEEDED,
-    currency: 'AUD',
-    amount: breakdown.initialDepositAmount,
-    platformCreditUsed: breakdown.platformCreditApplied,
-    marketplaceFee: breakdown.platformCommissionAmount,
-    marketplaceFeeGst: breakdown.platformCommissionGst,
-    stripeFeeBorne: breakdown.stripeInitialFee,
-    artistNetShare: 0,
-  }
-  if (stripePaymentIntentId) {
-    txnPayload.stripePaymentIntentId = stripePaymentIntentId
-  }
-  await PaymentTransaction.create(txnPayload)
-
-  await recordBookingHistory({
-    booking: booking._id,
-    bookingNumber: booking.bookingNumber,
-    status: BOOKING_STATUS.CONFIRMED,
-    milestone: BOOKING_TIMELINE_MILESTONE.PAYMENT_COMPLETED,
-    title: 'Deposit Paid & Confirmed',
-    description: `Customer paid 20% deposit ($${breakdown.initialDepositAmount} AUD)`,
-    performedBy: user._id,
-    performedByRole: 'customer',
-  })
 
   try {
-    await notificationServices.sendNotification({
-      recipient: (booking.artist as any)._id || booking.artist,
-      sender: user._id,
-      senderName: user.name,
-      senderPicture: user.profileImage,
-      title: 'Booking Confirmed',
-      message: `${user.name} has paid the deposit for booking #${booking.bookingNumber}. The appointment is confirmed.`,
-      type: NOTIFICATION_TYPE.BOOKING_CONFIRMED,
-      bookingId: booking._id,
-      bookingNumber: booking.bookingNumber,
-      actionUrl: `/bookings/${booking._id}`,
-    })
+    await Promise.all([
+      notificationServices.sendNotification({
+        recipient: (booking.artist as any)._id || booking.artist,
+        sender: user._id,
+        senderName: user.name,
+        senderPicture: user.profileImage,
+        title: 'Booking Confirmed',
+        message: `${user.name} has paid the deposit for booking #${booking.bookingNumber}. The appointment is confirmed.`,
+        type: NOTIFICATION_TYPE.BOOKING_CONFIRMED,
+        bookingId: booking._id,
+        bookingNumber: booking.bookingNumber,
+        actionUrl: `/bookings/${booking._id}`,
+      }),
+      notificationServices.sendNotification({
+        recipient: (booking.customer as any)._id || booking.customer,
+        title: 'Deposit Paid & Confirmed',
+        message: `Your deposit payment for booking #${booking.bookingNumber} was successful. The appointment is confirmed!`,
+        type: NOTIFICATION_TYPE.BOOKING_CONFIRMED,
+        bookingId: booking._id,
+        bookingNumber: booking.bookingNumber,
+        actionUrl: `/bookings/${booking._id}`,
+      }),
+    ])
   } catch (notifErr) {
-    logger.warn('[Booking Notification] Failed to notify artist of confirmed booking payment:', notifErr)
+    logger.warn('[Booking Notification] Failed to notify parties of confirmed booking payment:', notifErr)
   }
 
   return {
-    booking,
-    clientSecret,
-    breakdown,
+    booking: depositResult.booking,
+    clientSecret: depositResult.clientSecret,
+    breakdown: depositResult.breakdown,
   }
 }
+
+
 
 /**
  * Artist declines a booking request
@@ -3403,16 +3727,18 @@ const declineBooking = async (user: IUser, bookingId: string, reason?: string) =
   const wasInitialCaptured = booking.initialPayment.status === PAYMENT_STAGE_STATUS.CAPTURED
 
   // Full refund of customer initial deposit if captured
-  if (wasInitialCaptured && booking.initialPayment.stripePaymentIntentId) {
-    try {
-      await stripe.refunds.create({
-        payment_intent: booking.initialPayment.stripePaymentIntentId,
-        reason: 'requested_by_customer',
-      })
-      booking.initialPayment.status = PAYMENT_STAGE_STATUS.REFUNDED
-    } catch (refundErr: any) {
-      logger.error(`[Decline Booking] Stripe refund error: ${refundErr?.message}`)
+  if (wasInitialCaptured) {
+    if (booking.initialPayment.stripePaymentIntentId) {
+      try {
+        await stripe.refunds.create({
+          payment_intent: booking.initialPayment.stripePaymentIntentId,
+          reason: 'requested_by_customer',
+        })
+      } catch (refundErr: any) {
+        logger.error(`[Decline Booking] Stripe refund error: ${refundErr?.message}`)
+      }
     }
+    booking.initialPayment.status = PAYMENT_STAGE_STATUS.REFUNDED
   }
 
   // Restore customer platform credits if used
@@ -3470,69 +3796,6 @@ const declineBooking = async (user: IUser, bookingId: string, reason?: string) =
 }
 
 /**
- * Professional starts the service delivery (transitions CONFIRMED -> IN_PROGRESS)
- */
-const startService = async (user: IUser, bookingId: string) => {
-  const booking = await Booking.findById(bookingId)
-  if (!booking) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
-  }
-
-  const isArtist = booking.artist.toString() === user._id.toString()
-  const isAdmin = user.role === 'admin' || user.role === 'super_admin'
-  if (!isArtist && !isAdmin) {
-    throw new AppError(httpStatus.FORBIDDEN, 'Only the assigned professional can start this service')
-  }
-
-  const canStart =
-    booking.status === BOOKING_STATUS.CONFIRMED ||
-    booking.status === BOOKING_STATUS.RESCHEDULED
-
-  if (!canStart) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      `Cannot start service for booking with status '${booking.status}'. Booking must be confirmed.`
-    )
-  }
-
-  assertFullPaymentCaptured(booking, 'start service')
-
-  booking.status = BOOKING_STATUS.IN_PROGRESS
-  await booking.save()
-
-  await recordBookingHistory({
-    booking: booking._id,
-    bookingNumber: booking.bookingNumber,
-    status: BOOKING_STATUS.IN_PROGRESS,
-    milestone: BOOKING_TIMELINE_MILESTONE.SERVICE_STARTED,
-    title: 'Service Started',
-    description: 'Professional has started the service delivery',
-    performedBy: user._id,
-    performedByRole: (user.role as any) || 'artist',
-  })
-
-  // Notify customer
-  try {
-    await notificationServices.sendNotification({
-      recipient: booking.customer,
-      sender: user._id,
-      senderName: user.name,
-      senderPicture: user.profileImage,
-      title: 'Service Started',
-      message: `${user.name} has started your service for booking #${booking.bookingNumber}`,
-      type: NOTIFICATION_TYPE.BOOKING_CONFIRMED,
-      bookingId: booking._id,
-      bookingNumber: booking.bookingNumber,
-      actionUrl: `/bookings/${booking._id}`,
-    })
-  } catch (notifErr) {
-    logger.warn('[Booking Notification] Failed to notify customer:', notifErr)
-  }
-
-  return booking
-}
-
-/**
  * Artist completes a service (proof photos, products used, working time, notes, signature)
  */
 const completeBooking = async (
@@ -3553,14 +3816,13 @@ const completeBooking = async (
   }
 
   const canComplete =
-    booking.status === BOOKING_STATUS.IN_PROGRESS ||
     booking.status === BOOKING_STATUS.CONFIRMED ||
     booking.status === BOOKING_STATUS.RESCHEDULED
 
   if (!canComplete) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      `Cannot complete booking with status '${booking.status}'. Service must be confirmed or in progress.`
+      `Cannot complete booking with status '${booking.status}'. Service must be confirmed.`
     )
   }
 
@@ -3661,12 +3923,12 @@ const customerSign = async (
   }
 
   if (
-    booking.status !== BOOKING_STATUS.IN_PROGRESS &&
-    booking.status !== BOOKING_STATUS.COMPLETED
+    booking.status !== BOOKING_STATUS.COMPLETED &&
+    booking.status !== BOOKING_STATUS.CONFIRMED
   ) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      `Cannot sign a booking with status '${booking.status}'. Service must be in progress or completed.`
+      `Cannot sign a booking with status '${booking.status}'. Service must be confirmed or completed.`
     )
   }
 
@@ -3780,20 +4042,31 @@ const customerSign = async (
     })
 
     try {
-      await notificationServices.sendNotification({
-        recipient: (booking.artist as any)._id || booking.artist,
-        sender: user._id,
-        senderName: user.name,
-        senderPicture: user.profileImage,
-        title: 'Customer Signed Off',
-        message: `Customer verified and signed off on booking #${booking.bookingNumber}. Your payout has been released.`,
-        type: NOTIFICATION_TYPE.ORDER_COMPLETE,
-        bookingId: booking._id,
-        bookingNumber: booking.bookingNumber,
-        actionUrl: `/bookings/${booking._id}`,
-      })
+      await Promise.all([
+        notificationServices.sendNotification({
+          recipient: (booking.artist as any)._id || booking.artist,
+          sender: user._id,
+          senderName: user.name,
+          senderPicture: user.profileImage,
+          title: 'Customer Signed Off',
+          message: `Customer verified and signed off on booking #${booking.bookingNumber}. Your payout has been released.`,
+          type: NOTIFICATION_TYPE.ORDER_COMPLETE,
+          bookingId: booking._id,
+          bookingNumber: booking.bookingNumber,
+          actionUrl: `/bookings/${booking._id}`,
+        }),
+        notificationServices.sendNotification({
+          recipient: (booking.customer as any)._id || booking.customer,
+          title: 'Service Signed Off',
+          message: `Thank you for verifying and signing off on booking #${booking.bookingNumber}. We hope you enjoyed your service!`,
+          type: NOTIFICATION_TYPE.ORDER_COMPLETE,
+          bookingId: booking._id,
+          bookingNumber: booking.bookingNumber,
+          actionUrl: `/bookings/${booking._id}`,
+        }),
+      ])
     } catch (notifErr) {
-      logger.warn('[Booking Notification] Failed to notify artist of customer signature:', notifErr)
+      logger.warn('[Booking Notification] Failed to notify parties of customer signature:', notifErr)
     }
   }
 
@@ -3999,7 +4272,6 @@ const requestReschedule = async (
             BOOKING_STATUS.REQUESTED,
             BOOKING_STATUS.ACCEPTED,
             BOOKING_STATUS.CONFIRMED,
-            BOOKING_STATUS.IN_PROGRESS,
             BOOKING_STATUS.RESCHEDULED,
           ],
         },
@@ -4023,7 +4295,6 @@ const requestReschedule = async (
         BOOKING_STATUS.REQUESTED,
         BOOKING_STATUS.ACCEPTED,
         BOOKING_STATUS.CONFIRMED,
-        BOOKING_STATUS.IN_PROGRESS,
         BOOKING_STATUS.RESCHEDULED,
       ],
     },
@@ -4161,7 +4432,6 @@ const respondReschedule = async (
           BOOKING_STATUS.REQUESTED,
           BOOKING_STATUS.ACCEPTED,
           BOOKING_STATUS.CONFIRMED,
-          BOOKING_STATUS.IN_PROGRESS,
           BOOKING_STATUS.RESCHEDULED,
         ],
       },
@@ -4200,26 +4470,34 @@ const respondReschedule = async (
 
   await booking.save()
 
-  // Notify opponent of reschedule decision
+  // Notify parties of reschedule decision
   try {
-    const opponentId = isCustomer ? booking.artist : booking.customer
-    await notificationServices.sendNotification({
-      recipient: opponentId,
-      sender: user._id,
-      senderName: user.name,
-      senderPicture: user.profileImage,
-      title: payload.action === 'accept' ? 'Reschedule Accepted' : 'Reschedule Declined',
-      message:
-        payload.action === 'accept'
-          ? `${user.name} accepted the reschedule request for booking #${booking.bookingNumber}`
-          : `${user.name} declined the reschedule request for booking #${booking.bookingNumber}`,
-      type: NOTIFICATION_TYPE.BOOKING_RESCHEDULED,
-      bookingId: booking._id,
-      bookingNumber: booking.bookingNumber,
-      actionUrl: `/bookings/${booking._id}`,
-    })
+    const targetRecipients =
+      isAdmin && !isCustomer && !isArtist
+        ? [(booking.customer as any)._id || booking.customer, (booking.artist as any)._id || booking.artist]
+        : [isCustomer ? (booking.artist as any)._id || booking.artist : (booking.customer as any)._id || booking.customer]
+
+    await Promise.all(
+      targetRecipients.map((recipientId) =>
+        notificationServices.sendNotification({
+          recipient: recipientId,
+          sender: user._id,
+          senderName: user.name,
+          senderPicture: user.profileImage,
+          title: payload.action === 'accept' ? 'Reschedule Accepted' : 'Reschedule Declined',
+          message:
+            payload.action === 'accept'
+              ? `${user.name} accepted the reschedule request for booking #${booking.bookingNumber}`
+              : `${user.name} declined the reschedule request for booking #${booking.bookingNumber}`,
+          type: NOTIFICATION_TYPE.BOOKING_RESCHEDULED,
+          bookingId: booking._id,
+          bookingNumber: booking.bookingNumber,
+          actionUrl: `/bookings/${booking._id}`,
+        })
+      )
+    )
   } catch (notifErr) {
-    logger.warn('[Booking Notification] Failed to notify opponent of reschedule decision:', notifErr)
+    logger.warn('[Booking Notification] Failed to notify parties of reschedule decision:', notifErr)
   }
 
   return booking
@@ -4286,7 +4564,7 @@ const getArtistInboxSummary = async (user: IUser) => {
       artist: artistId,
       bookingDate: { $gte: todayStart },
       status: {
-        $in: [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.IN_PROGRESS, BOOKING_STATUS.RESCHEDULED],
+        $in: [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.RESCHEDULED],
       },
     }),
   ])
@@ -4338,7 +4616,6 @@ const reportCustomerNoShow = async (
 
   const canReportNoShow =
     booking.status === BOOKING_STATUS.CONFIRMED ||
-    booking.status === BOOKING_STATUS.IN_PROGRESS ||
     booking.status === BOOKING_STATUS.RESCHEDULED
 
   if (!canReportNoShow) {
@@ -4418,20 +4695,31 @@ const reportCustomerNoShow = async (
   )
 
   try {
-    await notificationServices.sendNotification({
-      recipient: (booking.customer as any)._id || booking.customer,
-      sender: user._id,
-      senderName: user.name,
-      senderPicture: user.profileImage,
-      title: 'Customer No-Show Reported',
-      message: `${user.name} reported that you were not present for booking #${booking.bookingNumber}. This case is under admin review.`,
-      type: NOTIFICATION_TYPE.GENERAL,
-      bookingId: booking._id,
-      bookingNumber: booking.bookingNumber,
-      actionUrl: `/bookings/${booking._id}`,
-    })
+    await Promise.all([
+      notificationServices.sendNotification({
+        recipient: (booking.customer as any)._id || booking.customer,
+        sender: user._id,
+        senderName: user.name,
+        senderPicture: user.profileImage,
+        title: 'Customer No-Show Reported',
+        message: `${user.name} reported that you were not present for booking #${booking.bookingNumber}. This case is under admin review.`,
+        type: NOTIFICATION_TYPE.GENERAL,
+        bookingId: booking._id,
+        bookingNumber: booking.bookingNumber,
+        actionUrl: `/bookings/${booking._id}`,
+      }),
+      notificationServices.sendNotification({
+        recipient: user._id,
+        title: 'No-Show Report Submitted',
+        message: `Your customer no-show report for booking #${booking.bookingNumber} has been submitted for admin verification.`,
+        type: NOTIFICATION_TYPE.GENERAL,
+        bookingId: booking._id,
+        bookingNumber: booking.bookingNumber,
+        actionUrl: `/bookings/${booking._id}`,
+      }),
+    ])
   } catch (notifErr) {
-    logger.warn('[Booking Notification] Failed to notify customer of reported no-show:', notifErr)
+    logger.warn('[Booking Notification] Failed to notify parties of reported no-show:', notifErr)
   }
 
   return {
@@ -4592,17 +4880,30 @@ const verifyCustomerNoShow = async (
         }),
       ])
     } else {
-      await notificationServices.sendNotification({
-        recipient: artistId,
-        sender: adminUser._id,
-        senderName: 'Admin',
-        title: 'No-Show Claim Rejected',
-        message: `Your customer no-show report for booking #${booking.bookingNumber} was rejected by admin.`,
-        type: NOTIFICATION_TYPE.GENERAL,
-        bookingId: booking._id,
-        bookingNumber: booking.bookingNumber,
-        actionUrl: `/bookings/${booking._id}`,
-      })
+      await Promise.all([
+        notificationServices.sendNotification({
+          recipient: artistId,
+          sender: adminUser._id,
+          senderName: 'Admin',
+          title: 'No-Show Claim Rejected',
+          message: `Your customer no-show report for booking #${booking.bookingNumber} was rejected by admin.`,
+          type: NOTIFICATION_TYPE.GENERAL,
+          bookingId: booking._id,
+          bookingNumber: booking.bookingNumber,
+          actionUrl: `/bookings/${booking._id}`,
+        }),
+        notificationServices.sendNotification({
+          recipient: customerId,
+          sender: adminUser._id,
+          senderName: 'Admin',
+          title: 'No-Show Claim Dismissed',
+          message: `The absence report for booking #${booking.bookingNumber} was reviewed and dismissed by admin. Your booking remains active.`,
+          type: NOTIFICATION_TYPE.GENERAL,
+          bookingId: booking._id,
+          bookingNumber: booking.bookingNumber,
+          actionUrl: `/bookings/${booking._id}`,
+        }),
+      ])
     }
   } catch (notifErr) {
     logger.warn('[Booking Notification] Failed to notify parties of no-show verification:', notifErr)
@@ -4617,6 +4918,229 @@ const verifyCustomerNoShow = async (
 }
 
 /**
+ * Helper to compute perspective-aware messages for customer, professional, and admin
+ */
+const getTimelineRoleMessages = (params: {
+  milestone: string
+  status?: string | undefined
+  title?: string | undefined
+  description?: string | null | undefined
+  performedByRole?: string | undefined
+  customerName?: string | undefined
+  artistName?: string | undefined
+  metadata?: Record<string, any> | null | undefined
+  note?: string | null | undefined
+}): {
+  customerTitle: string
+  customerDescription: string
+  artistTitle: string
+  artistDescription: string
+} => {
+  const customerName = params.customerName || 'Customer'
+  const artistName = params.artistName || 'Professional'
+  const role = params.performedByRole || 'system'
+  const desc = params.description || ''
+  const t = params.title || ''
+
+  switch (params.milestone) {
+    case BOOKING_TIMELINE_MILESTONE.BOOKING_CREATED:
+      return {
+        customerTitle: 'Booking Request Sent',
+        customerDescription: `You sent a booking request to ${artistName}`,
+        artistTitle: 'New Booking Request',
+        artistDescription: `${customerName} sent you a booking request`,
+      }
+
+    case BOOKING_TIMELINE_MILESTONE.ARTIST_ACCEPTED:
+      return {
+        customerTitle: 'Booking Accepted',
+        customerDescription: `${artistName} accepted your booking request`,
+        artistTitle: 'Booking Accepted',
+        artistDescription: `You accepted ${customerName}'s booking request`,
+      }
+
+    case BOOKING_TIMELINE_MILESTONE.PAYMENT_COMPLETED: {
+      const isBalance =
+        desc.toLowerCase().includes('balance') ||
+        desc.toLowerCase().includes('80%') ||
+        t.toLowerCase().includes('balance')
+
+      if (isBalance) {
+        return {
+          customerTitle: 'Balance Payment Paid',
+          customerDescription: desc || 'You paid the remaining 80% balance payment',
+          artistTitle: 'Balance Payment Received',
+          artistDescription: `${customerName} paid the remaining 80% balance payment`,
+        }
+      }
+
+      return {
+        customerTitle: 'Deposit Paid',
+        customerDescription: desc || 'You paid the initial deposit; booking is confirmed',
+        artistTitle: 'Deposit Received',
+        artistDescription: `${customerName} paid the initial deposit; booking is confirmed`,
+      }
+    }
+
+    case BOOKING_TIMELINE_MILESTONE.SERVICE_COMPLETED:
+      return {
+        customerTitle: 'Service Completed',
+        customerDescription: `${artistName} completed your service and uploaded proof`,
+        artistTitle: 'Service Completed',
+        artistDescription: 'You completed the service and uploaded proof',
+      }
+
+    case BOOKING_TIMELINE_MILESTONE.BOOKING_CLOSED:
+      return {
+        customerTitle: 'Service Signed Off',
+        customerDescription: 'You verified and signed off on the completed service',
+        artistTitle: 'Customer Signed Off',
+        artistDescription: `${customerName} verified and signed off on the service; payout released`,
+      }
+
+    case BOOKING_TIMELINE_MILESTONE.CANCELLED: {
+      if (role === 'customer') {
+        const cleanDesc =
+          desc && !desc.toLowerCase().startsWith('customer cancelled')
+            ? desc
+            : 'You cancelled this booking request'
+        const artistCleanDesc =
+          desc && !desc.toLowerCase().startsWith('customer cancelled')
+            ? `${customerName} cancelled this booking (${desc})`
+            : `${customerName} cancelled this booking`
+        return {
+          customerTitle: 'You Cancelled Booking',
+          customerDescription: cleanDesc,
+          artistTitle: 'Booking Cancelled by Customer',
+          artistDescription: artistCleanDesc,
+        }
+      }
+      if (role === 'artist') {
+        const cleanDesc =
+          desc && !desc.toLowerCase().startsWith('professional cancelled')
+            ? desc
+            : 'You cancelled this booking'
+        const customerCleanDesc =
+          desc && !desc.toLowerCase().startsWith('professional cancelled')
+            ? `${artistName} cancelled this booking (${desc})`
+            : `${artistName} cancelled this booking`
+        return {
+          customerTitle: 'Booking Cancelled by Professional',
+          customerDescription: customerCleanDesc,
+          artistTitle: 'You Cancelled Booking',
+          artistDescription: cleanDesc,
+        }
+      }
+      if (role === 'system') {
+        return {
+          customerTitle: 'Booking Cancelled (Payment Expired)',
+          customerDescription:
+            'Booking was cancelled because deposit was not paid within the 1-hour window',
+          artistTitle: 'Booking Cancelled (Payment Expired)',
+          artistDescription: `${customerName} did not complete deposit payment within 1 hour`,
+        }
+      }
+      // Admin cancel
+      return {
+        customerTitle: 'Booking Cancelled by Admin',
+        customerDescription: desc || 'Booking was cancelled by platform administration',
+        artistTitle: 'Booking Cancelled by Admin',
+        artistDescription: desc || 'Booking was cancelled by platform administration',
+      }
+    }
+
+    case BOOKING_TIMELINE_MILESTONE.DECLINED:
+      return {
+        customerTitle: 'Booking Request Declined',
+        customerDescription: `${artistName} was unable to accept your booking request`,
+        artistTitle: 'Booking Request Declined',
+        artistDescription: `You declined ${customerName}'s booking request`,
+      }
+
+    case BOOKING_TIMELINE_MILESTONE.RESCHEDULED: {
+      const isAccepted =
+        t.toLowerCase().includes('accept') || desc.toLowerCase().includes('accept')
+      const isDeclined =
+        t.toLowerCase().includes('decline') || desc.toLowerCase().includes('decline')
+
+      if (isAccepted) {
+        if (role === 'customer') {
+          return {
+            customerTitle: 'Reschedule Accepted',
+            customerDescription: 'You accepted the new appointment schedule',
+            artistTitle: 'Reschedule Accepted',
+            artistDescription: `${customerName} accepted the new appointment schedule`,
+          }
+        }
+        return {
+          customerTitle: 'Reschedule Accepted',
+          customerDescription: `${artistName} accepted the new appointment schedule`,
+          artistTitle: 'Reschedule Accepted',
+          artistDescription: 'You accepted the new appointment schedule',
+        }
+      }
+
+      if (isDeclined) {
+        if (role === 'customer') {
+          return {
+            customerTitle: 'Reschedule Declined',
+            customerDescription: 'You declined the reschedule request',
+            artistTitle: 'Reschedule Declined',
+            artistDescription: `${customerName} declined the reschedule request`,
+          }
+        }
+        return {
+          customerTitle: 'Reschedule Declined',
+          customerDescription: `${artistName} declined the reschedule request`,
+          artistTitle: 'Reschedule Declined',
+          artistDescription: 'You declined the reschedule request',
+        }
+      }
+
+      // Request stage
+      if (role === 'customer') {
+        return {
+          customerTitle: 'You Requested Reschedule',
+          customerDescription: desc || 'You requested to reschedule the appointment',
+          artistTitle: 'Reschedule Requested by Customer',
+          artistDescription: desc || `${customerName} requested to reschedule the appointment`,
+        }
+      }
+      return {
+        customerTitle: 'Reschedule Requested by Professional',
+        customerDescription: desc || `${artistName} requested to reschedule the appointment`,
+        artistTitle: 'You Requested Reschedule',
+        artistDescription: desc || 'You requested to reschedule the appointment',
+      }
+    }
+
+    case BOOKING_TIMELINE_MILESTONE.NO_SHOW_REPORTED:
+      return {
+        customerTitle: 'Appointment Issue Reported',
+        customerDescription: `${artistName} reported customer absence or access issue`,
+        artistTitle: 'You Reported Customer No-Show',
+        artistDescription: 'You submitted a customer no-show report for admin verification',
+      }
+
+    case BOOKING_TIMELINE_MILESTONE.NO_SHOW_VERIFIED:
+      return {
+        customerTitle: 'No-Show Claim Processed',
+        customerDescription: 'Platform administration reviewed and processed the appointment attendance claim',
+        artistTitle: 'No-Show Claim Approved',
+        artistDescription: 'Admin verified customer no-show; full payout released',
+      }
+
+    default:
+      return {
+        customerTitle: t || 'Booking Update',
+        customerDescription: desc || '',
+        artistTitle: t || 'Booking Update',
+        artistDescription: desc || '',
+      }
+  }
+}
+
+/**
  * Record a milestone or status change in the BookingHistory collection
  */
 const recordBookingHistory = async (payload: {
@@ -4626,12 +5150,26 @@ const recordBookingHistory = async (payload: {
   milestone: string
   title: string
   description?: string | null | undefined
+  customerTitle?: string | null | undefined
+  customerDescription?: string | null | undefined
+  artistTitle?: string | null | undefined
+  artistDescription?: string | null | undefined
   performedBy?: mongoose.Types.ObjectId | string | null | undefined
   performedByRole?: 'customer' | 'artist' | 'admin' | 'system' | undefined
   note?: string | null | undefined
   metadata?: Record<string, any> | null | undefined
 }) => {
   try {
+    const roleMessages = getTimelineRoleMessages({
+      milestone: payload.milestone,
+      status: payload.status,
+      title: payload.title,
+      description: payload.description,
+      performedByRole: payload.performedByRole,
+      metadata: payload.metadata,
+      note: payload.note,
+    })
+
     return await BookingHistory.create({
       booking: payload.booking,
       bookingNumber: payload.bookingNumber,
@@ -4639,6 +5177,10 @@ const recordBookingHistory = async (payload: {
       milestone: payload.milestone,
       title: payload.title,
       description: payload.description,
+      customerTitle: payload.customerTitle || roleMessages.customerTitle,
+      customerDescription: payload.customerDescription || roleMessages.customerDescription,
+      artistTitle: payload.artistTitle || roleMessages.artistTitle,
+      artistDescription: payload.artistDescription || roleMessages.artistDescription,
       performedBy: payload.performedBy || null,
       performedByRole: payload.performedByRole || 'system',
       note: payload.note,
@@ -4653,7 +5195,7 @@ const recordBookingHistory = async (payload: {
 /**
  * Retrieve booking timeline milestones and history log from BookingHistory table (Figma Admin/6.png)
  */
-const getBookingTimelineFromHistory = async (booking: any) => {
+const getBookingTimelineFromHistory = async (booking: any, viewer?: any) => {
   let historyItems = await BookingHistory.find({ booking: booking._id })
     .sort({ createdAt: 1 })
     .populate('performedBy', 'name email role profileImage')
@@ -4679,7 +5221,6 @@ const getBookingTimelineFromHistory = async (booking: any) => {
       [
         BOOKING_STATUS.ACCEPTED,
         BOOKING_STATUS.CONFIRMED,
-        BOOKING_STATUS.IN_PROGRESS,
         BOOKING_STATUS.COMPLETED,
         BOOKING_STATUS.RESCHEDULED,
       ].includes(booking.status)
@@ -4717,20 +5258,6 @@ const getBookingTimelineFromHistory = async (booking: any) => {
           booking.balancePayment?.paidAt ||
           booking.initialPayment?.paidAt ||
           booking.updatedAt,
-      })
-    }
-
-    if ([BOOKING_STATUS.IN_PROGRESS, BOOKING_STATUS.COMPLETED].includes(booking.status)) {
-      initialHistories.push({
-        booking: booking._id,
-        bookingNumber: booking.bookingNumber,
-        status: BOOKING_STATUS.IN_PROGRESS,
-        milestone: BOOKING_TIMELINE_MILESTONE.SERVICE_STARTED,
-        title: 'Service Started',
-        description: 'Service delivery in progress',
-        performedBy: booking.artist,
-        performedByRole: 'artist',
-        createdAt: booking.bookingDate || booking.updatedAt,
       })
     }
 
@@ -4786,7 +5313,62 @@ const getBookingTimelineFromHistory = async (booking: any) => {
     }
   }
 
-  return historyItems
+  const customerName =
+    booking.customer?.name || (typeof booking.customer === 'object' ? booking.customer?.name : null) || 'Customer'
+  const artistName =
+    booking.artist?.name || (typeof booking.artist === 'object' ? booking.artist?.name : null) || 'Professional'
+
+  const viewerRole = viewer?.role
+  const viewerId = viewer?._id?.toString()
+  const customerId = (booking.customer?._id || booking.customer)?.toString()
+  const artistId = (booking.artist?._id || booking.artist)?.toString()
+
+  const isCustomerViewer = viewerRole === 'customer' || (viewerId && viewerId === customerId)
+  const isArtistViewer = viewerRole === 'artist' || (viewerId && viewerId === artistId)
+
+  return historyItems.map((item: any) => {
+    const roleMsgs = getTimelineRoleMessages({
+      milestone: item.milestone,
+      status: item.status,
+      title: item.title,
+      description: item.description,
+      performedByRole: item.performedByRole,
+      customerName,
+      artistName,
+      metadata: item.metadata,
+      note: item.note,
+    })
+
+    const customerTitle = item.customerTitle || roleMsgs.customerTitle
+    const customerDescription = item.customerDescription || roleMsgs.customerDescription
+    const artistTitle = item.artistTitle || roleMsgs.artistTitle
+    const artistDescription = item.artistDescription || roleMsgs.artistDescription
+    const systemTitle = item.title
+    const systemDescription = item.description
+
+    let displayTitle = systemTitle
+    let displayDescription = systemDescription
+
+    if (isCustomerViewer) {
+      displayTitle = customerTitle
+      displayDescription = customerDescription
+    } else if (isArtistViewer) {
+      displayTitle = artistTitle
+      displayDescription = artistDescription
+    }
+
+    return {
+      ...item,
+      title: displayTitle,
+      description: displayDescription,
+      customerTitle,
+      customerDescription,
+      artistTitle,
+      artistDescription,
+      systemTitle,
+      systemDescription,
+    }
+  })
 }
 
 
@@ -5073,25 +5655,32 @@ const getRecentBookingsAdmin = async (queryLimit = 6) => {
 }
 
 /**
- * Get booking timeline and history log for Admin (Figma Admin/6.png)
+ * Get booking timeline and history log (perspective-formatted for viewer)
  */
-const getBookingTimelineAdmin = async (bookingId: string) => {
+const getBookingTimelineAdmin = async (bookingId: string, user?: IUser) => {
   const query = mongoose.Types.ObjectId.isValid(bookingId)
     ? { _id: bookingId }
     : { bookingNumber: bookingId }
 
-  const booking = await Booking.findOne(query).lean()
+  const booking = await Booking.findOne(query)
+    .populate('customer', 'name email profileImage')
+    .populate('artist', 'name email profileImage')
+    .lean()
   if (!booking) {
     throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
   }
 
-  const timeline = await getBookingTimelineFromHistory(booking)
+  const timeline = await getBookingTimelineFromHistory(booking, user)
   return {
     bookingId: booking._id,
     bookingNumber: booking.bookingNumber,
     currentStatus: booking.status,
     timeline,
   }
+}
+
+const getBookingTimeline = async (bookingId: string, user?: IUser) => {
+  return getBookingTimelineAdmin(bookingId, user)
 }
 
 /**
@@ -5286,7 +5875,6 @@ export const bookingServices = {
   acceptBooking,
   confirmBookingPayment,
   declineBooking,
-  startService,
   completeBooking,
   customerSign,
   requestReschedule,
@@ -5298,6 +5886,8 @@ export const bookingServices = {
   getAllBookingsAdmin,
   getRecentBookingsAdmin,
   getBookingTimelineAdmin,
+  getBookingTimeline,
+  getTimelineRoleMessages,
   getBookingDetailsAdmin,
   updateAdminBookingNotes,
   recordBookingHistory,

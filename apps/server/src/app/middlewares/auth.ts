@@ -105,6 +105,7 @@ const checkArtistPermission = (user: IUser, req: Request) => {
   if (user.role === AuthRoles.ARTIST) {
     const limitedAccessRoutes = [
       { method: 'GET', route: '/api/v1/auth/me' },
+      { method: 'POST', route: '/api/v1/auth/logout' },
       { method: 'POST', route: '/api/v1/artist' }, // Onboarding submit
       { method: 'PATCH', route: '/api/v1/artist/resubmit' }, // Resubmit docs
       { method: 'GET', route: '/api/v1/artist/verification-status' },

@@ -40,6 +40,22 @@ const bookingHistorySchema = new Schema<IBookingHistoryDoc>(
       type: String,
       trim: true,
     },
+    customerTitle: {
+      type: String,
+      trim: true,
+    },
+    customerDescription: {
+      type: String,
+      trim: true,
+    },
+    artistTitle: {
+      type: String,
+      trim: true,
+    },
+    artistDescription: {
+      type: String,
+      trim: true,
+    },
     performedBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',

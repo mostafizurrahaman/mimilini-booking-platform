@@ -31,7 +31,7 @@ export const ResetPasswordOTPEmail = ({
   userEmail = 'user@example.com',
   expirationMinutes = 5,
   companyName = 'Your Company',
-  companyLogo = 'https://via.placeholder.com/120x40/5850EC/ffffff?text=LOGO',
+  companyLogo,
 }: ResetPasswordOTPEmailProps) => {
   const previewText = `Your password reset code is ${otpCode}`
 
@@ -177,13 +177,26 @@ export const ResetPasswordOTPEmail = ({
           <Section style={card}>
             {/* Header */}
             <Container style={header}>
-              <Img
-                src={companyLogo}
-                width="120"
-                height="40"
-                alt={companyName}
-                style={{ margin: '0 auto' }}
-              />
+              {companyLogo ? (
+                <Img
+                  src={companyLogo}
+                  width="120"
+                  height="40"
+                  alt={companyName}
+                  style={{ margin: '0 auto' }}
+                />
+              ) : (
+                <Text
+                  style={{
+                    color: colors.white,
+                    fontSize: '20px',
+                    fontWeight: '700',
+                    margin: '0',
+                  }}
+                >
+                  {companyName}
+                </Text>
+              )}
             </Container>
 
             {/* Main Content */}

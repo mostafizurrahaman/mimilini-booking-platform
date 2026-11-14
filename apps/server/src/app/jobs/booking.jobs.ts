@@ -134,6 +134,42 @@ export const process24HourBalancePayments = async () => {
             artistNetShare: booking.artistNetPayout,
           })
 
+          await bookingServices.recordBookingHistory({
+            booking: (booking as any)._id,
+            bookingNumber: booking.bookingNumber,
+            status: booking.status,
+            milestone: BOOKING_TIMELINE_MILESTONE.PAYMENT_COMPLETED,
+            title: 'Balance Payment Auto-Charged',
+            description: `Remaining 80% balance ($${booking.balancePayment.amount} AUD) auto-charged successfully 24h prior to appointment`,
+            performedByRole: 'system',
+            metadata: { stripePaymentIntentId: paymentIntent.id },
+          })
+
+          try {
+            await Promise.all([
+              notificationServices.sendNotification({
+                recipient: booking.customer,
+                title: 'Balance Payment Auto-Charged',
+                message: `Your remaining balance ($${booking.balancePayment.amount} AUD) for booking #${booking.bookingNumber} was auto-charged successfully. Your appointment is confirmed!`,
+                type: NOTIFICATION_TYPE.PAYMENT_SUCCESS,
+                bookingId: booking._id,
+                bookingNumber: booking.bookingNumber,
+                actionUrl: `/bookings/${booking._id}`,
+              }),
+              notificationServices.sendNotification({
+                recipient: booking.artist,
+                title: 'Balance Payment Received',
+                message: `Remaining balance ($${booking.balancePayment.amount} AUD) for booking #${booking.bookingNumber} was auto-charged successfully from customer. Appointment is ready!`,
+                type: NOTIFICATION_TYPE.PAYMENT_SUCCESS,
+                bookingId: booking._id,
+                bookingNumber: booking.bookingNumber,
+                actionUrl: `/bookings/${booking._id}`,
+              }),
+            ])
+          } catch (notifErr) {
+            logger.warn('[Booking Notification] Failed to notify parties of 24h balance auto-charge:', notifErr)
+          }
+
           logger.info(
             `[Cron: 24h Balance Auto-Charge] Succeeded for booking ${booking.bookingNumber}`
           )
@@ -161,6 +197,31 @@ export const process24HourBalancePayments = async () => {
           artistNetShare: 0,
           failureReason: chargeErr?.message || 'Off-session card charge declined',
         })
+
+        try {
+          await Promise.all([
+            notificationServices.sendNotification({
+              recipient: booking.customer,
+              title: 'Action Required: Balance Auto-Charge Failed',
+              message: `Auto-charge for the remaining balance ($${booking.balancePayment.amount} AUD) on booking #${booking.bookingNumber} failed (${chargeErr?.message || 'Card declined'}). Please pay within 2 hours to avoid booking cancellation.`,
+              type: NOTIFICATION_TYPE.BOOKING_REMINDER,
+              bookingId: booking._id,
+              bookingNumber: booking.bookingNumber,
+              actionUrl: `/bookings/${booking._id}`,
+            }),
+            notificationServices.sendNotification({
+              recipient: booking.artist,
+              title: 'Notice: Customer Balance Payment Failed',
+              message: `Customer auto-charge for booking #${booking.bookingNumber} failed. Customer has a 2-hour window to settle payment.`,
+              type: NOTIFICATION_TYPE.BOOKING_REMINDER,
+              bookingId: booking._id,
+              bookingNumber: booking.bookingNumber,
+              actionUrl: `/bookings/${booking._id}`,
+            }),
+          ])
+        } catch (notifErr) {
+          logger.warn('[Booking Notification] Failed to notify parties of 24h balance charge failure:', notifErr)
+        }
 
         logger.error(
           `[Cron: URGENT 24h Non-Payment Notice] Booking ${booking.bookingNumber} auto-charge failed (${chargeErr?.message}). 2-hour rectification window open until ${booking.balancePayment.rectificationDeadline.toISOString()}. Non-payment will cancel booking and refund deposit minus Stripe processing fee.`
@@ -231,6 +292,43 @@ export const processExpiredRectificationCancellations = async () => {
       booking.platformCreditIssued = refundCreditAmount
       booking.initialPayment.status = PAYMENT_STAGE_STATUS.REFUNDED
       await booking.save()
+
+      await bookingServices.recordBookingHistory({
+        booking: booking._id,
+        bookingNumber: booking.bookingNumber,
+        status: BOOKING_STATUS.CANCELLED,
+        milestone: BOOKING_TIMELINE_MILESTONE.CANCELLED,
+        title: 'Booking Cancelled (Balance Payment Timeout)',
+        description:
+          'Booking was automatically cancelled due to non-payment of remaining 80% balance within the 2-hour rectification window.',
+        performedByRole: 'system',
+        note: booking.cancellationReason,
+      })
+
+      try {
+        await Promise.all([
+          notificationServices.sendNotification({
+            recipient: booking.customer,
+            title: 'Booking Cancelled (Payment Timeout)',
+            message: `Booking #${booking.bookingNumber} was cancelled because the balance payment was not settled within 2 hours. Your deposit minus fees ($${refundCreditAmount} AUD) has been credited to your wallet.`,
+            type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
+            bookingId: booking._id,
+            bookingNumber: booking.bookingNumber,
+            actionUrl: `/bookings/${booking._id}`,
+          }),
+          notificationServices.sendNotification({
+            recipient: booking.artist,
+            title: 'Booking Cancelled (Unpaid Slot Released)',
+            message: `Booking #${booking.bookingNumber} was cancelled due to customer non-payment. Your schedule has been freed up.`,
+            type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
+            bookingId: booking._id,
+            bookingNumber: booking.bookingNumber,
+            actionUrl: `/bookings/${booking._id}`,
+          }),
+        ])
+      } catch (notifErr) {
+        logger.warn('[Booking Notification] Failed to notify parties of rectification expiry:', notifErr)
+      }
 
       logger.warn(
         `[Cron: Policy Enforced] Booking #${booking.bookingNumber} cancelled due to non-payment. 20% deposit ($${depositPaid}) minus Stripe processing fee ($${stripeFee}) credited to wallet as $${refundCreditAmount}. Slot released.`
@@ -449,6 +547,21 @@ export const processPendingArtistPayouts = async () => {
           await Booking.findByIdAndUpdate(freshTxn.booking, {
             $set: { 'completionDetails.payoutTransferredAt': new Date() },
           })
+        }
+
+        if (freshTxn.artist) {
+          try {
+            await notificationServices.sendNotification({
+              recipient: freshTxn.artist,
+              title: 'Payout Released',
+              message: `Your payout of $${freshTxn.artistNetShare} AUD has been transferred to your Stripe account.`,
+              type: NOTIFICATION_TYPE.PAYMENT_SUCCESS,
+              bookingId: freshTxn.booking ? freshTxn.booking.toString() : undefined,
+              actionUrl: '/finances',
+            })
+          } catch (notifErr) {
+            logger.warn('[Booking Notification] Failed to notify artist of payout transfer:', notifErr)
+          }
         }
 
         logger.info(

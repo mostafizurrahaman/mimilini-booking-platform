@@ -170,6 +170,10 @@ const bookingSchema = new Schema<IBookingDoc>(
       type: Boolean,
       default: false,
     },
+    usePlatformCredit: {
+      type: Boolean,
+      default: false,
+    },
     servicePrice: {
       type: Number,
       required: true,

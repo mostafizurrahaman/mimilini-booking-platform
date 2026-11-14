@@ -1,9 +1,10 @@
-# Flow 07: In-Progress Cancellation Block & Admin Override Cancellation
+# Flow 07: Completed Cancellation Block & Admin Override Cancellation
 
 > **Policy Rules:**
-> 1. Once a service has started (`status: in_progress`), **neither Customer nor Professional** can self-cancel the booking.
-> 2. **Admin / Super Admin** has override permission via `POST /bookings/:id/cancel` to cancel even an `in_progress` booking (e.g., for dispute or emergency intervention).
-> 3. Admin cancellation voids/credit-notes Stripe invoices, records history as `admin`, and notifies **both** customer and professional.
+> 1. Note: Service `startService` / `in_progress` step has been removed; bookings transition directly from `confirmed` to `completed`.
+> 2. Once a booking is `completed`, neither customer nor professional can cancel it.
+> 3. **Admin / Super Admin** has override permission via `POST /bookings/:id/cancel` to cancel a booking (e.g., for dispute or emergency intervention) prior to completion.
+> 4. Admin cancellation voids/credit-notes Stripe invoices, records history as `admin`, and notifies **both** customer and professional.
 
 ---
 
@@ -32,51 +33,33 @@
 
 ---
 
-### Step 2: Professional Starts the Service (`confirmed` $\rightarrow$ `in_progress`)
-- **Method:** `PATCH`
-- **URL:** `{{baseUrl}}/bookings/{{bookingId}}/start-service`
+### Step 2: Professional Completes Service Directly from Confirmed
+- **Method:** `POST`
+- **URL:** `{{baseUrl}}/bookings/{{bookingId}}/complete`
 - **Auth:** `Bearer {{artistToken}}`
 - **What to Check:**
   - Status Code: `200 OK`
-  - `data.status`: `"in_progress"`
+  - `data.status`: `"completed"`
 
 ---
 
-### Step 3: Negative Check — Customer Tries to Cancel During Service
+### Step 3: Negative Check — Customer Tries to Cancel Completed Booking
 - **Method:** `POST`
 - **URL:** `{{baseUrl}}/bookings/{{bookingId}}/customer-cancel` *(and test `/cancel` with `customerToken`)*
 - **Auth:** `Bearer {{customerToken}}`
 - **Body:**
 ```json
 {
-  "cancellationReason": "Trying to cancel mid-service"
+  "cancellationReason": "Trying to cancel completed booking"
 }
 ```
 - **What to Check:**
   - Status Code: `400 Bad Request`
-  - `message`: `"Cannot cancel a booking that is currently in progress. Please contact the professional or support."`
-  - Booking remains `"in_progress"`.
+  - `message`: `"Cannot cancel booking that is already 'completed'"`
 
 ---
 
-### Step 4: Negative Check — Professional Tries to Cancel During Service
-- **Method:** `POST`
-- **URL:** `{{baseUrl}}/bookings/{{bookingId}}/artist-cancel` *(and test `/cancel` with `artistToken`)*
-- **Auth:** `Bearer {{artistToken}}`
-- **Body:**
-```json
-{
-  "cancellationReason": "Trying to cancel mid-service"
-}
-```
-- **What to Check:**
-  - Status Code: `400 Bad Request`
-  - `message`: `"Cannot cancel a booking that is currently in progress. Please contact the professional or support."`
-  - Booking remains `"in_progress"`.
-
----
-
-### Step 5: Admin Executes Override Cancellation
+### Step 4: Admin Executes Override Cancellation
 - **Method:** `POST`
 - **URL:** `{{baseUrl}}/bookings/{{bookingId}}/cancel`
 - **Auth:** `Bearer {{adminToken}}`

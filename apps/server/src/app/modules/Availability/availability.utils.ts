@@ -1,5 +1,5 @@
-import moment from 'moment'
-import type { IBreakTime, IWorkingDay } from '@repo/db'
+import moment from 'moment-timezone'
+import type { IBreakTime, IWeeklySchedule, IWorkingDay } from '@repo/db'
 
 export type TBreakTimeInput = {
   title?: string | null | undefined
@@ -158,4 +158,132 @@ export const normalizeWorkingDay = (day: TWorkingDayInput): IWorkingDay => {
     endTime: day.endTime ?? null,
     breakTimes: normalizeBreakTimes(day.breakTimes),
   }
+}
+
+export interface IScheduleConflictBooking {
+  bookingNumber?: string | null
+  bookingDate: Date | string
+  startTime: string
+  endTime: string
+}
+
+const WEEKDAY_NAMES = [
+  'sunday',
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+] as const
+
+const normalizeToHHmm = (value?: string | null): string | null => {
+  if (!value) return null
+  const parsed = moment(value.trim(), ['HH:mm', 'hh:mm A', 'h:mm A', 'hh:mma', 'h:mma'], true)
+  return parsed.isValid() ? parsed.format('HH:mm') : null
+}
+
+const doTimeRangesOverlap = (
+  aStart: string,
+  aEnd: string,
+  bStart: string,
+  bEnd: string
+): boolean => {
+  const startA = parseTime(aStart)
+  const endA = parseTime(aEnd)
+  const startB = parseTime(bStart)
+  const endB = parseTime(bEnd)
+
+  if (!startA || !endA || !startB || !endB) return false
+  return startA.isBefore(endB) && endA.isAfter(startB)
+}
+
+const areWorkingDaysEqual = (a?: IWorkingDay | null, b?: IWorkingDay | null): boolean => {
+  const aWorking = Boolean(a?.isWorkingDay)
+  const bWorking = Boolean(b?.isWorkingDay)
+  if (aWorking !== bWorking) return false
+  if (!aWorking) return true
+
+  if ((a?.startTime ?? null) !== (b?.startTime ?? null)) return false
+  if ((a?.endTime ?? null) !== (b?.endTime ?? null)) return false
+
+  const aBreaks = a?.breakTimes ?? []
+  const bBreaks = b?.breakTimes ?? []
+  if (aBreaks.length !== bBreaks.length) return false
+
+  return aBreaks.every(
+    (brk, idx) =>
+      brk.startTime === bBreaks[idx]?.startTime && brk.endTime === bBreaks[idx]?.endTime
+  )
+}
+
+/**
+ * Checks whether proposed weeklySchedule changes make any existing future active booking unavailable
+ * (day turned off, working hours reduced/shifted, or break time overlapping a booking).
+ */
+export const findScheduleUpdateBookingConflict = (
+  existingSchedule: IWeeklySchedule,
+  proposedDays: Partial<Record<string, IWorkingDay>>,
+  bookings: IScheduleConflictBooking[],
+  timezone: string,
+  now: Date = new Date()
+): string | null => {
+  const changedDays: Record<string, IWorkingDay> = {}
+
+  for (const [dayKey, proposedDay] of Object.entries(proposedDays)) {
+    if (!proposedDay) continue
+    const existingDay = (existingSchedule as Record<string, IWorkingDay | undefined>)?.[dayKey]
+    if (!areWorkingDaysEqual(existingDay, proposedDay)) {
+      changedDays[dayKey] = proposedDay
+    }
+  }
+
+  if (Object.keys(changedDays).length === 0 || bookings.length === 0) {
+    return null
+  }
+
+  const nowInTz = moment.tz(now, timezone)
+  const todayStr = nowInTz.format('YYYY-MM-DD')
+
+  for (const booking of bookings) {
+    const bookingDateStr = moment(booking.bookingDate).format('YYYY-MM-DD')
+    if (bookingDateStr < todayStr) continue
+
+    const bStart = normalizeToHHmm(booking.startTime)
+    const bEnd = normalizeToHHmm(booking.endTime)
+    if (!bStart || !bEnd) continue
+
+    const bookingEndInTz = moment.tz(`${bookingDateStr} ${bEnd}`, 'YYYY-MM-DD HH:mm', timezone)
+    if (bookingEndInTz.isSameOrBefore(nowInTz)) continue
+
+    const weekday = WEEKDAY_NAMES[moment(bookingDateStr, 'YYYY-MM-DD').day()]
+    const proposedDay = weekday ? changedDays[weekday] : undefined
+    if (!proposedDay) continue
+
+    const ref = booking.bookingNumber ? `#${booking.bookingNumber} ` : ''
+
+    if (!proposedDay.isWorkingDay) {
+      return `Cannot mark ${weekday} as unavailable because active booking ${ref}is scheduled on ${bookingDateStr} (${bStart} - ${bEnd}).`
+    }
+
+    if (
+      !proposedDay.startTime ||
+      !proposedDay.endTime ||
+      !isTimeRangeWithin(bStart, bEnd, proposedDay.startTime, proposedDay.endTime)
+    ) {
+      return `Cannot update ${weekday} working hours (${proposedDay.startTime} - ${proposedDay.endTime}) because active booking ${ref}is scheduled on ${bookingDateStr} (${bStart} - ${bEnd}).`
+    }
+
+    const overlappingBreak = proposedDay.breakTimes.find(
+      (brk) =>
+        Boolean(brk.startTime && brk.endTime) &&
+        doTimeRangesOverlap(bStart, bEnd, brk.startTime as string, brk.endTime as string)
+    )
+
+    if (overlappingBreak) {
+      return `Cannot set break time (${overlappingBreak.startTime} - ${overlappingBreak.endTime}) on ${weekday} because active booking ${ref}is scheduled on ${bookingDateStr} (${bStart} - ${bEnd}).`
+    }
+  }
+
+  return null
 }
