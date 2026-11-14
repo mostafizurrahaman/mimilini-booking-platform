@@ -22,6 +22,15 @@ Every possible stage and role-based cancellation scenario in the Mimilini platfo
 
 ---
 
+## 🎨 Low-Fidelity UI/UX Design Specifications
+
+Wireframes, user flows, confirmation modals, warning banners, and notification text mappings for the frontend web and mobile teams:
+
+- 👤 **Customer Flow:** [LOW_FIDELITY_CUSTOMER_CANCELLATION_FLOW.md](./LOW_FIDELITY_CUSTOMER_CANCELLATION_FLOW.md)
+- 💄 **Professional / Artist Flow:** [LOW_FIDELITY_ARTIST_CANCELLATION_FLOW.md](./LOW_FIDELITY_ARTIST_CANCELLATION_FLOW.md)
+
+---
+
 ## ⚖️ Quick Policy Comparison Matrix
 
 | Cancellation Scenario | Refund / Wallet Credit | Artist Penalty | Artist Account | Slot Freed? |

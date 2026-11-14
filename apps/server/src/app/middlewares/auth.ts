@@ -11,7 +11,8 @@ export const auth = (...requiredRoles: TAuthRole[]) => {
      */
     const authHeader = req.headers.authorization
     if (!authHeader?.startsWith('Bearer ')) {
-      throw new AppError(httpStatus.UNAUTHORIZED, 'Authorization token is missing')
+      // throw new AppError(httpStatus.UNAUTHORIZED, 'Authorization token is missing')
+      throw new AppError(httpStatus.UNAUTHORIZED, 'Please log in to continue')
     }
 
     const token = authHeader.split(' ')[1]
@@ -22,7 +23,8 @@ export const auth = (...requiredRoles: TAuthRole[]) => {
     const decoded = verifyToken(token as string, configs.jwt.accessToken.secret)
 
     if (!decoded?.email) {
-      throw new AppError(httpStatus.UNAUTHORIZED, 'Invalid access token')
+      // throw new AppError(httpStatus.UNAUTHORIZED, 'Invalid access token')
+      throw new AppError(httpStatus.UNAUTHORIZED, 'Please log in to continue')
     }
 
     /**
