@@ -226,10 +226,28 @@ const deleteArtistBlockedDateById = async (user: IUser, id: string) => {
   return existing
 }
 
+const getMyArtistBlockedDate = async (
+  userId: string,
+  query: TGetAllArtistBlockedDateQueryParamsType
+) => {
+  const today = getTodayDateOnly()
+  // Only return current and future blocked dates (exclude past dates)
+  const effectiveFromDate =
+    query.fromDate && query.fromDate > today ? query.fromDate : today
+
+  return getAllArtistBlockedDate({
+    ...query,
+    user: userId,
+    fromDate: effectiveFromDate,
+    sortOrder: query.sortOrder || 'asc',
+  })
+}
+
 export const artistBlockedDateServices = {
   createArtistBlockedDate,
   updateArtistBlockedDate,
   getAllArtistBlockedDate,
+  getMyArtistBlockedDate,
   getArtistBlockedDateById,
   deleteArtistBlockedDateById,
 }
