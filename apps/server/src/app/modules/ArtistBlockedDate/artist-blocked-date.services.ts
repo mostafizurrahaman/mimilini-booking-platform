@@ -131,7 +131,7 @@ const getAllArtistBlockedDate = async (query: TGetAllArtistBlockedDateQueryParam
     page = 1,
     limit = 10,
     searchTerm,
-    sortOrder = 'desc',
+    sortOrder = 'asc',
     sortBy = 'date',
     fromDate,
     toDate,
@@ -155,13 +155,19 @@ const getAllArtistBlockedDate = async (query: TGetAllArtistBlockedDateQueryParam
     pipeline.push({ $match: { reason } })
   }
 
-  if (fromDate || toDate) {
-    const dateFilter: Record<string, unknown> = {}
-    if (fromDate) dateFilter.$gte = toDateOnly(fromDate)
-    if (toDate) dateFilter.$lte = toDateOnly(toDate)
+  // Only return current and future blocked dates (exclude past dates)
+  const today = getTodayDateOnly()
+  const effectiveFromDate =
+    fromDate && fromDate > today ? toDateOnly(fromDate) : today
 
-    pipeline.push({ $match: { date: dateFilter } })
+  const dateFilter: Record<string, unknown> = {
+    $gte: effectiveFromDate,
   }
+  if (toDate) {
+    dateFilter.$lte = toDateOnly(toDate)
+  }
+
+  pipeline.push({ $match: { date: dateFilter } })
 
   if (searchTerm) {
     pipeline.push({
@@ -226,10 +232,21 @@ const deleteArtistBlockedDateById = async (user: IUser, id: string) => {
   return existing
 }
 
+const getMyArtistBlockedDate = async (
+  userId: string,
+  query: TGetAllArtistBlockedDateQueryParamsType
+) => {
+  return getAllArtistBlockedDate({
+    ...query,
+    user: userId,
+  })
+}
+
 export const artistBlockedDateServices = {
   createArtistBlockedDate,
   updateArtistBlockedDate,
   getAllArtistBlockedDate,
+  getMyArtistBlockedDate,
   getArtistBlockedDateById,
   deleteArtistBlockedDateById,
 }

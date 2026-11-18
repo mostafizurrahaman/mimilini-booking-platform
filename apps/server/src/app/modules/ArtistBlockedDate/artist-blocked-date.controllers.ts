@@ -45,10 +45,10 @@ const getAllArtistBlockedDate = catchAsync(async (req, res) => {
 
 const getMyArtistBlockedDate = catchAsync(async (req, res) => {
   const user = await getUserFromRequest(req)
-  const result = await artistBlockedDateServices.getAllArtistBlockedDate({
-    ...req.query,
-    user: String(user._id),
-  })
+  const result = await artistBlockedDateServices.getMyArtistBlockedDate(
+    String(user._id),
+    req.query
+  )
 
   sendResponse(res, {
     success: true,
