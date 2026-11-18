@@ -260,10 +260,11 @@ export const findScheduleUpdateBookingConflict = (
     const proposedDay = weekday ? changedDays[weekday] : undefined
     if (!proposedDay) continue
 
-    const ref = booking.bookingNumber ? `#${booking.bookingNumber} ` : ''
+    const ref = booking.bookingNumber ? `booking #${booking.bookingNumber}` : 'an active booking'
+    const dayLabel = weekday ? weekday.charAt(0).toUpperCase() + weekday.slice(1) : 'this day'
 
     if (!proposedDay.isWorkingDay) {
-      return `Cannot mark ${weekday} as unavailable because active booking ${ref}is scheduled on ${bookingDateStr} (${bStart} - ${bEnd}).`
+      return `Cannot mark ${dayLabel} as unavailable because ${ref} is scheduled on ${bookingDateStr} (${bStart} - ${bEnd}). Please reschedule or cancel this booking first.`
     }
 
     if (
@@ -271,7 +272,7 @@ export const findScheduleUpdateBookingConflict = (
       !proposedDay.endTime ||
       !isTimeRangeWithin(bStart, bEnd, proposedDay.startTime, proposedDay.endTime)
     ) {
-      return `Cannot update ${weekday} working hours (${proposedDay.startTime} - ${proposedDay.endTime}) because active booking ${ref}is scheduled on ${bookingDateStr} (${bStart} - ${bEnd}).`
+      return `Cannot change ${dayLabel} working hours to ${proposedDay.startTime} - ${proposedDay.endTime} because ${ref} is scheduled on ${bookingDateStr} (${bStart} - ${bEnd}). Your working hours must cover this appointment.`
     }
 
     const overlappingBreak = proposedDay.breakTimes.find(
@@ -281,7 +282,7 @@ export const findScheduleUpdateBookingConflict = (
     )
 
     if (overlappingBreak) {
-      return `Cannot set break time (${overlappingBreak.startTime} - ${overlappingBreak.endTime}) on ${weekday} because active booking ${ref}is scheduled on ${bookingDateStr} (${bStart} - ${bEnd}).`
+      return `Cannot set break time (${overlappingBreak.startTime} - ${overlappingBreak.endTime}) on ${dayLabel} because ${ref} is scheduled on ${bookingDateStr} (${bStart} - ${bEnd}). Please choose a break time that does not overlap with your booking.`
     }
   }
 

@@ -11,6 +11,7 @@ import { allRoutes } from '@app/routes'
 import { logger } from '@app/libs/logger'
 import dns from 'node:dns'
 import { stripeController } from '@app/modules/stripe/stripe.controllers'
+import { paymentWebRoutes } from '@app/modules/PaymentWeb/payment-web.routes'
 
 dns.setServers(['1.1.1.1'])
 
@@ -69,6 +70,9 @@ app.get('/', (req: Request, res: Response) => {
     message: `Your server is running now`,
   })
 })
+
+// payment redirect pages:
+app.use('/payment', paymentWebRoutes)
 
 // other api endpoints with versions :
 app.use('/api/v1', allRoutes)

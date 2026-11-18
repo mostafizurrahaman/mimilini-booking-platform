@@ -1,4 +1,5 @@
 import configs from '@app/configs'
+import { PAYMENT_SUCCESS_URL, PAYMENT_CANCEL_URL } from '@app/modules/PaymentWeb/payment-web.routes'
 import {
   Countries,
   Currency,
@@ -188,8 +189,8 @@ export const stripeCheckoutSession = async ({
     ],
     expires_at: expiresAt,
     metadata,
-    success_url: `${configs.stripe.successUrl}?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: configs.stripe.cancelUrl,
+    success_url: `${PAYMENT_SUCCESS_URL}?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: PAYMENT_CANCEL_URL,
   })
 
   return session
@@ -232,8 +233,8 @@ export const stripeCheckoutSessionWithApplicationFee = async ({
         destination: destinationAccountId,
       },
     },
-    success_url: `${configs.stripe.successUrl}?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: configs.stripe.cancelUrl,
+    success_url: `${PAYMENT_SUCCESS_URL}?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: PAYMENT_CANCEL_URL,
   })
 
   return session
