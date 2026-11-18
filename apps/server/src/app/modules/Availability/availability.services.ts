@@ -375,7 +375,8 @@ const CALENDAR_LEGEND = [
   { status: 'booked', label: 'Booked', color: '#F43F5E' },
   { status: 'blocked', label: 'Blocked', color: '#94A3B8' },
   { status: 'vacation', label: 'Vacation', color: '#F59E0B' },
-  { status: 'today', label: 'Today', color: '#F43F5E' },
+  { status: 'penalized', label: 'Penalized', color: '#EF4444' },
+  { status: 'today', label: 'Today', color: '#0345f8ff' },
 ] as const
 
 const getArtistAvailableDaysInMonth = async (artistId: string, monthStr?: string) => {
@@ -454,6 +455,7 @@ const getArtistAvailableDaysInMonth = async (artistId: string, monthStr?: string
   let availableCount = 0
   let bookedCount = 0
   let blockedCount = 0
+  let penalizedCount = 0
   let vacationCount = 0
   let offCount = 0
 
@@ -473,7 +475,7 @@ const getArtistAvailableDaysInMonth = async (artistId: string, monthStr?: string
     const dayBookings = bookingsByDate[dateFormatted] || []
     const bookingCount = dayBookings.length
 
-    let status: 'available' | 'booked' | 'blocked' | 'vacation' | 'off' = 'off'
+    let status: 'available' | 'booked' | 'blocked' | 'vacation' | 'off' | 'penalized' = 'off'
     let statusLabel = 'Non-working day'
     let dotColor: string | null = null
     let hasDot = false
@@ -482,14 +484,14 @@ const getArtistAvailableDaysInMonth = async (artistId: string, monthStr?: string
     let totalSlots = 0
     let availableSlotsCount = 0
 
-    // Priority 1: Penalized artist -> all dates blocked
+    // Priority 1: Penalized artist -> all dates penalized
     if (isPenalized) {
-      status = 'blocked'
-      statusLabel = 'Blocked'
-      dotColor = '#94A3B8'
+      status = 'penalized'
+      statusLabel = 'Penalized'
+      dotColor = '#EF4444'
       hasDot = true
       reason = 'Artist profile is temporarily penalized'
-      blockedCount++
+      penalizedCount++
     }
     // Priority 2: Vacation
     else if (
@@ -624,6 +626,7 @@ const getArtistAvailableDaysInMonth = async (artistId: string, monthStr?: string
       dotColor,
       hasDot,
       isAvailable,
+      isPenalized,
       bookingCount,
       totalSlots,
       availableSlotsCount,
@@ -639,6 +642,7 @@ const getArtistAvailableDaysInMonth = async (artistId: string, monthStr?: string
     artistId: artistUserId,
     month: targetMoment.format('YYYY-MM'),
     monthName: targetMoment.format('MMMM YYYY'),
+    isPenalized,
     totalAvailableDays: availableDates.length,
     availableDates,
     summary: {
@@ -646,6 +650,7 @@ const getArtistAvailableDaysInMonth = async (artistId: string, monthStr?: string
       availableDays: availableCount,
       bookedDays: bookedCount,
       blockedDays: blockedCount,
+      penalizedDays: penalizedCount,
       vacationDays: vacationCount,
       offDays: offCount,
     },
@@ -681,6 +686,8 @@ const getArtistAvailableSlotsForDate = async (
       artistId: artistUserId,
       date: formattedDate,
       isWorkingDay: false,
+      isPenalized: true,
+      reason: 'Artist profile is temporarily penalized',
       workingHours: null,
       serviceDurationMinutes,
       bufferTime: 0,

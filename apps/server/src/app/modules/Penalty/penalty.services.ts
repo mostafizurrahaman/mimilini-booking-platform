@@ -11,6 +11,7 @@ import httpStatus from 'http-status'
 import Stripe from 'stripe'
 import { stripe } from '@app/libs/stripe'
 import configs from '@app/configs'
+import { PAYMENT_SUCCESS_URL, PAYMENT_CANCEL_URL } from '@app/modules/PaymentWeb/payment-web.routes'
 import { notificationServices } from '../Notification/notification.services'
 
 export const formatTimeframeTier = (tier?: string): string => {
@@ -159,8 +160,8 @@ const createPenaltyCheckoutSession = async (user: IUser, penaltyId: string) => {
       bookingId: penalty.booking.toString(),
       isGstInclusive: 'true',
     },
-    success_url: `${configs.stripe.successUrl}?type=penalty_success&penaltyId=${penalty._id}`,
-    cancel_url: `${configs.stripe.cancelUrl}?type=penalty_cancel&penaltyId=${penalty._id}`,
+    success_url: `${PAYMENT_SUCCESS_URL}?type=penalty_success&penaltyId=${penalty._id}&bookingNumber=${penalty.bookingNumber}&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${PAYMENT_CANCEL_URL}?type=penalty_cancel&penaltyId=${penalty._id}&bookingNumber=${penalty.bookingNumber}`,
   }
 
   if (user.stripeCustomerId) {

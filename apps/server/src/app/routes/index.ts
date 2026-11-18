@@ -26,6 +26,7 @@ import { adminOperationsRoutes } from '@app/modules/AdminOperations/admin-operat
 import { reportRoutes } from '@app/modules/Report/report.routes'
 import { bugReportRoutes } from '@app/modules/BugReport/bug-report.routes'
 import { paymentTransactionRoutes } from '@app/modules/PaymentTransaction/payment-transaction.routes'
+import { paymentWebRoutes } from '@app/modules/PaymentWeb/payment-web.routes'
 import express, { Router } from 'express'
 
 const router: Router = express.Router()
@@ -144,6 +145,10 @@ const routes = [
   {
     path: '/transactions',
     route: paymentTransactionRoutes,
+  },
+  {
+    path: '/payment',
+    route: paymentWebRoutes,
   },
 ]
 
