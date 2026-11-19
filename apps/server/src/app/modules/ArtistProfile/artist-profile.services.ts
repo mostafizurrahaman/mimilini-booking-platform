@@ -56,7 +56,7 @@ export const createArtistProfile = async (
   const {
     businessName,
     abn,
-    isGstRegistered, 
+    isGstRegistered,
     phone,
     businessAddress,
     latitude,
@@ -529,7 +529,10 @@ const verifyArtistDocuments = async (targetUserId: string) => {
 
   // ?? Check verification status: VERIFIED
   if (targetedUser.verificationStatus === verificationStatus.VERIFIED) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'The professional documents have already been verified.')
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'The professional documents have already been verified.'
+    )
   }
 
   // ?? Check verification status: REJECTED:
@@ -544,12 +547,16 @@ const verifyArtistDocuments = async (targetUserId: string) => {
     await notificationServices.sendNotification({
       recipient: targetedUser._id,
       title: 'Documents Verified',
-      message: 'Congratulations! Your professional documents have been approved and verified by admin. You can now accept client bookings.',
+      message:
+        'Congratulations! Your professional documents have been approved and verified by admin. You can now accept client bookings.',
       type: NOTIFICATION_TYPE.ACCOUNT_STATUS,
       actionUrl: '/profile',
     })
   } catch (notifErr) {
-    logger.warn('[ArtistProfile Notification] Failed to notify artist of verified documents:', notifErr)
+    logger.warn(
+      '[ArtistProfile Notification] Failed to notify artist of verified documents:',
+      notifErr
+    )
   }
 
   return {
@@ -596,12 +603,18 @@ const rejectArtistDocuments = async (targetUserId: string, reason: string) => {
 
   // ?? Check verification status: VERIFIED
   if (targetedUser.verificationStatus === verificationStatus.VERIFIED) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'The professional documents have already been verified.')
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'The professional documents have already been verified.'
+    )
   }
 
   // ?? Check verification status: REJECTED:
   if (targetedUser.verificationStatus === verificationStatus.REJECTED) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'The professional documents have already been rejected.')
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'The professional documents have already been rejected.'
+    )
   }
 
   targetedUser.verificationStatus = verificationStatus.REJECTED
@@ -617,7 +630,10 @@ const rejectArtistDocuments = async (targetUserId: string, reason: string) => {
       actionUrl: '/profile',
     })
   } catch (notifErr) {
-    logger.warn('[ArtistProfile Notification] Failed to notify artist of rejected documents:', notifErr)
+    logger.warn(
+      '[ArtistProfile Notification] Failed to notify artist of rejected documents:',
+      notifErr
+    )
   }
 
   return {
@@ -971,9 +987,7 @@ const addCertification = async (
   }
 
   if (payload?.url?.trim()) {
-    const isDuplicateUrl = previousFiles.some(
-      (cert) => cert.url?.trim() === payload.url?.trim()
-    )
+    const isDuplicateUrl = previousFiles.some((cert) => cert.url?.trim() === payload.url?.trim())
     if (isDuplicateUrl) {
       throw new AppError(httpStatus.BAD_REQUEST, 'This certificate already exists.')
     }
@@ -982,10 +996,7 @@ const addCertification = async (
   let certUrl = payload?.url?.trim()
 
   if (certificateFile) {
-    const uploaded = await uploadSingleFileToS3(
-      certificateFile,
-      AWS_FOLDER_NAMES.Certifications
-    )
+    const uploaded = await uploadSingleFileToS3(certificateFile, AWS_FOLDER_NAMES.Certifications)
     if (!uploaded?.url) {
       throw new AppError(
         httpStatus.INTERNAL_SERVER_ERROR,
@@ -996,10 +1007,7 @@ const addCertification = async (
   }
 
   if (!certUrl) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      'Certificate file or image URL is required.'
-    )
+    throw new AppError(httpStatus.BAD_REQUEST, 'Certificate file or image URL is required.')
   }
 
   try {
@@ -1240,9 +1248,7 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
 
   // Resolve artistId filter if provided
   const targetArtistId =
-    artistId && mongoose.isValidObjectId(artistId)
-      ? new mongoose.Types.ObjectId(artistId)
-      : null
+    artistId && mongoose.isValidObjectId(artistId) ? new mongoose.Types.ObjectId(artistId) : null
 
   const initialMatch: any = {
     isPenaltyRequired: { $ne: true },
@@ -1322,9 +1328,7 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
               $and: [
                 { $eq: ['$artist', '$$artistUserId'] },
                 { $eq: ['$isActive', true] },
-                ...(categoryObjectId
-                  ? [{ $eq: ['$category', categoryObjectId] }]
-                  : []),
+                ...(categoryObjectId ? [{ $eq: ['$category', categoryObjectId] }] : []),
               ],
             },
           },
@@ -1383,10 +1387,7 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
         {
           $match: {
             $expr: {
-              $and: [
-                { $eq: ['$artist', '$$artistUserId'] },
-                { $eq: ['$isActive', true] },
-              ],
+              $and: [{ $eq: ['$artist', '$$artistUserId'] }, { $eq: ['$isActive', true] }],
             },
           },
         },
@@ -1437,10 +1438,7 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
               'availabilityDoc.vacationEndDate': { $gte: startOfDay },
             },
           ],
-          $or: [
-            { availabilityDoc: { $exists: false } },
-            { [isWorkingDayField]: true },
-          ],
+          $or: [{ availabilityDoc: { $exists: false } }, { [isWorkingDayField]: true }],
         },
       },
       {
@@ -1493,10 +1491,7 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
       name: { $ifNull: ['$userDetails.name', '$businessName'] },
       businessName: 1,
       profileImage: {
-        $ifNull: [
-          '$userDetails.profileImage',
-          { $arrayElemAt: ['$portfolioImages', 0] },
-        ],
+        $ifNull: ['$userDetails.profileImage', { $arrayElemAt: ['$portfolioImages', 0] }],
       },
       isQuickBookingEnabled: {
         $cond: {
@@ -1506,10 +1501,7 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
         },
       },
       category: {
-        $ifNull: [
-          { $arrayElemAt: ['$services.categoryDoc.name', 0] },
-          'Beauty Professional',
-        ],
+        $ifNull: [{ $arrayElemAt: ['$services.categoryDoc.name', 0] }, 'Beauty Professional'],
       },
       headline: {
         $ifNull: [
@@ -1523,27 +1515,18 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
         ],
       },
       rating: {
-        $ifNull: [
-          { $round: [{ $arrayElemAt: ['$reviewStats.avgRating', 0] }, 1] },
-          0,
-        ],
+        $ifNull: [{ $round: [{ $arrayElemAt: ['$reviewStats.avgRating', 0] }, 1] }, 0],
       },
       reviewCount: {
         $ifNull: [{ $arrayElemAt: ['$reviewStats.totalReviews', 0] }, 0],
       },
       yearOfExperience: { $ifNull: ['$yearOfExperience', 0] },
       experienceText: {
-        $concat: [
-          { $toString: { $ifNull: ['$yearOfExperience', 0] } },
-          ' yrs',
-        ],
+        $concat: [{ $toString: { $ifNull: ['$yearOfExperience', 0] } }, ' yrs'],
       },
       travelRadius: { $ifNull: ['$travelRadius', 15] },
       travelRadiusText: {
-        $concat: [
-          { $toString: { $ifNull: ['$travelRadius', 15] } },
-          ' km radius',
-        ],
+        $concat: [{ $toString: { $ifNull: ['$travelRadius', 15] } }, ' km radius'],
       },
       distanceKm: {
         $cond: {
@@ -1570,20 +1553,14 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
       sortPrice: {
         $cond: {
           if: {
-            $and: [
-              { $gt: [{ $size: '$services' }, 0] },
-              { $gt: [{ $min: '$services.price' }, 0] },
-            ],
+            $and: [{ $gt: [{ $size: '$services' }, 0] }, { $gt: [{ $min: '$services.price' }, 0] }],
           },
           then: { $min: '$services.price' },
           else: 999999,
         },
       },
       startingPriceText: {
-        $concat: [
-          'From $',
-          { $toString: { $ifNull: [{ $min: '$services.price' }, 0] } },
-        ],
+        $concat: ['From $', { $toString: { $ifNull: [{ $min: '$services.price' }, 0] } }],
       },
       matchedService: {
         $cond: {
@@ -1642,11 +1619,7 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
   })
 
   // 6.1 Sorting (Most Popular, Highest Rated, Nearest, Low to High, High to Low)
-  const rawSortBy = (sortBy || '')
-    .toString()
-    .toLowerCase()
-    .trim()
-    .replace(/[-\s]/g, '_')
+  const rawSortBy = (sortBy || '').toString().toLowerCase().trim().replace(/[-\s]/g, '_')
   const effectiveSortOrder = (sortOrder || '').toString().toLowerCase().trim()
 
   const sortStage: Record<string, 1 | -1> = {}
@@ -1681,19 +1654,11 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
     // Most Popular: most reviews and high rating first
     sortStage.reviewCount = effectiveSortOrder === 'asc' ? 1 : -1
     sortStage.rating = -1
-  } else if (
-    rawSortBy === 'highest_rated' ||
-    rawSortBy === 'rating' ||
-    rawSortBy === 'top_rated'
-  ) {
+  } else if (rawSortBy === 'highest_rated' || rawSortBy === 'rating' || rawSortBy === 'top_rated') {
     // Highest Rated: top average rating first
     sortStage.rating = effectiveSortOrder === 'asc' ? 1 : -1
     sortStage.reviewCount = -1
-  } else if (
-    rawSortBy === 'nearest' ||
-    rawSortBy === 'distance' ||
-    rawSortBy === 'distancekm'
-  ) {
+  } else if (rawSortBy === 'nearest' || rawSortBy === 'distance' || rawSortBy === 'distancekm') {
     // Nearest: closest distance in KM first
     if (hasLocation) {
       sortStage.distanceKm = effectiveSortOrder === 'desc' ? -1 : 1
@@ -1721,13 +1686,8 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
 
   pipeline.push({
     $facet: {
-      data: [
-        { $skip: skip },
-        { $limit: limitNum },
-      ],
-      totalCount: [
-        { $count: 'total' },
-      ],
+      data: [{ $skip: skip }, { $limit: limitNum }],
+      totalCount: [{ $count: 'total' }],
     },
   })
 
@@ -1756,11 +1716,7 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
         isAvailableToday = false
       }
 
-      if (
-        availableToday === true ||
-        availableToday === 'true' ||
-        rawSortBy === 'available_today'
-      ) {
+      if (availableToday === true || availableToday === 'true' || rawSortBy === 'available_today') {
         if (!isAvailableToday) {
           return null
         }
@@ -1774,7 +1730,11 @@ const findAvailableArtists = async (query: IFindArtistsQuery) => {
             date,
             duration
           )
-          if (!slotsData.isWorkingDay || slotsData.availableSlotsCount === 0 || slotsData.isMaxBookingReached) {
+          if (
+            !slotsData.isWorkingDay ||
+            slotsData.availableSlotsCount === 0 ||
+            slotsData.isMaxBookingReached
+          ) {
             isAvailable = false
           } else {
             availableSlots = slotsData.availableSlots.map((s) => s.startTime)
@@ -1866,9 +1826,7 @@ const computeDaySlots = (options: {
     return { isWorkingDay: false, availableSlotsCount: 0, availableSlots: [] }
   }
 
-  const isMaxBookingReached = Boolean(
-    maxBookingPerDay && bookingsForDay.length >= maxBookingPerDay
-  )
+  const isMaxBookingReached = Boolean(maxBookingPerDay && bookingsForDay.length >= maxBookingPerDay)
   if (isMaxBookingReached && onlyCheckHasSlots) {
     return { isWorkingDay: true, availableSlotsCount: 0, availableSlots: [] }
   }
@@ -1893,12 +1851,7 @@ const computeDaySlots = (options: {
   const slots: Array<{ startTime: string; endTime: string; formattedTime: string }> = []
   let currentSlotStart = workStart.clone()
 
-  while (
-    currentSlotStart
-      .clone()
-      .add(serviceDurationMinutes, 'minutes')
-      .isSameOrBefore(workEnd)
-  ) {
+  while (currentSlotStart.clone().add(serviceDurationMinutes, 'minutes').isSameOrBefore(workEnd)) {
     const currentSlotEnd = currentSlotStart.clone().add(serviceDurationMinutes, 'minutes')
     let isSlotAvailable = true
 
@@ -2056,9 +2009,7 @@ const getArtistDetails = async (
       : Promise.resolve(null),
   ])
 
-  const avgRating = reviewStats[0]?.avgRating
-    ? Math.round(reviewStats[0].avgRating * 10) / 10
-    : 0
+  const avgRating = reviewStats[0]?.avgRating ? Math.round(reviewStats[0].avgRating * 10) / 10 : 0
   const totalReviews = reviewStats[0]?.totalCount || 0
 
   const formattedRecentReviews = recentReviews.map((rev: any) => {
@@ -2084,9 +2035,7 @@ const getArtistDetails = async (
     let durationText = `${duration} min`
     if (duration >= 60) {
       const hrs = duration / 60
-      durationText = Number.isInteger(hrs)
-        ? `${hrs} ${hrs > 1 ? 'hrs' : 'hr'}`
-        : `${hrs} hrs`
+      durationText = Number.isInteger(hrs) ? `${hrs} ${hrs > 1 ? 'hrs' : 'hr'}` : `${hrs} hrs`
     }
 
     return {
@@ -2127,9 +2076,7 @@ const getArtistDetails = async (
   // Determine target service duration
   let targetServiceDuration = 60
   if (query.serviceId) {
-    const matchedSvc = formattedServices.find(
-      (s) => s._id.toString() === query.serviceId
-    )
+    const matchedSvc = formattedServices.find((s) => s._id.toString() === query.serviceId)
     if (!matchedSvc) {
       throw new AppError(
         httpStatus.NOT_FOUND,
@@ -2265,10 +2212,7 @@ const getArtistDetails = async (
     const custLat = Number(query.latitude)
     const custLng = Number(query.longitude)
     if (!isNaN(custLat) && !isNaN(custLng)) {
-      distanceKm = calculateDistanceKm(
-        [custLng, custLat],
-        artistProfile.location.coordinates
-      )
+      distanceKm = calculateDistanceKm([custLng, custLat], artistProfile.location.coordinates)
       isWithinTravelRadius = distanceKm <= travelRadius
     }
   }
@@ -2326,6 +2270,11 @@ const getArtistDetails = async (
     // Certifications
     certifications: artistProfile.certifications || [],
 
+    hasCertificate:
+      artistProfile.certifications &&
+      Array.isArray(artistProfile.certifications) &&
+      artistProfile.certifications?.length,
+
     // Reviews
     reviews: {
       avgRating,
@@ -2347,7 +2296,6 @@ const getArtistDetails = async (
     },
   }
 }
-
 
 /**
  * Toggle Save / Favorite an Artist (Customer Wishlist)
@@ -2434,9 +2382,7 @@ const getMyFavoriteArtists = async (
     const artistUserIdStr = String(p.user?._id || p.user)
     const artistServices = services.filter((s) => String(s.artist) === artistUserIdStr)
     const minPrice =
-      artistServices.length > 0
-        ? Math.min(...artistServices.map((s) => s.price || 0))
-        : 0
+      artistServices.length > 0 ? Math.min(...artistServices.map((s) => s.price || 0)) : 0
     const primaryCategory = (artistServices[0] as any)?.category?.name || 'Beauty & Wellness'
     const stat = reviewMap.get(artistUserIdStr)
 
