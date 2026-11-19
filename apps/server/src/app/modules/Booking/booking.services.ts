@@ -188,7 +188,7 @@ const checkoutPreview = async (user: IUser, input: ICheckoutPreviewInput) => {
     if (!foundAddress) {
       throw new AppError(
         httpStatus.NOT_FOUND,
-        'Customer address is not listed in the database. Please provide a valid saved address.'
+        'Client address is not listed in the database. Please provide a valid saved address.'
       )
     }
     if (foundAddress.customer.toString() !== user._id.toString()) {
@@ -204,14 +204,14 @@ const checkoutPreview = async (user: IUser, input: ICheckoutPreviewInput) => {
     if (!input.address || !addressDoc) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        'Customer address is required for home visits to calculate travel fee'
+        'Client address is required for home visits to calculate travel fee'
       )
     }
 
     if (!addressDoc.location?.coordinates) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        'Customer address is missing location coordinates'
+        'Client address is missing location coordinates'
       )
     }
 
@@ -626,7 +626,7 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     if (!foundAddress) {
       throw new AppError(
         httpStatus.NOT_FOUND,
-        'Customer address is not listed in the database. Please provide a valid saved address.'
+        'Client address is not listed in the database. Please provide a valid saved address.'
       )
     }
     if (foundAddress.customer.toString() !== user._id.toString()) {
@@ -649,14 +649,14 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     if (!input.address || !addressDoc) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        'Customer address is required for home visits to calculate travel fee'
+        'Client address is required for home visits to calculate travel fee'
       )
     }
 
     if (!addressDoc.location?.coordinates) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        'Customer address is missing location coordinates'
+        'Client address is missing location coordinates'
       )
     }
 
@@ -769,7 +769,7 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     if (!user.stripeCustomerId) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        'Stripe customer not found. Please setup a payment method first.'
+        'Stripe client profile not found. Please setup a payment method first.'
       )
     }
     const stripeCustomerId = user.stripeCustomerId
@@ -1094,7 +1094,7 @@ const customerCancelBooking = async (
   const isCustomer = booking.customer._id.toString() === user._id.toString()
   const isAdmin = user.role === 'admin' || user.role === 'super_admin'
   if (!isCustomer && !isAdmin) {
-    throw new AppError(httpStatus.FORBIDDEN, 'Only the customer can cancel this booking')
+    throw new AppError(httpStatus.FORBIDDEN, 'Only the client can cancel this booking')
   }
 
   if (
@@ -1119,7 +1119,7 @@ const customerCancelBooking = async (
     booking.status = BOOKING_STATUS.CANCELLED
     booking.cancelledBy = user._id
     booking.cancelledByRole = isAdmin && !isCustomer ? 'admin' : 'customer'
-    booking.cancellationReason = cancellationReason || 'Cancelled by customer before payment/confirmation'
+    booking.cancellationReason = cancellationReason || 'Cancelled by client before payment/confirmation'
     booking.cancelledAt = new Date()
     booking.cancellationFeeCharged = 0
     booking.depositForfeited = false
@@ -1144,7 +1144,7 @@ const customerCancelBooking = async (
       status: BOOKING_STATUS.CANCELLED,
       milestone: BOOKING_TIMELINE_MILESTONE.CANCELLED,
       title: 'Booking Cancelled',
-      description: 'Customer cancelled the booking request before payment',
+      description: 'Client cancelled the booking request before payment',
       performedBy: user._id,
       performedByRole: booking.cancelledByRole,
       note: booking.cancellationReason,
@@ -1247,7 +1247,7 @@ const customerCancelBooking = async (
     booking.status = BOOKING_STATUS.CANCELLED
     booking.cancelledBy = user._id
     booking.cancelledByRole = isAdmin && !isCustomer ? 'admin' : 'customer'
-    booking.cancellationReason = cancellationReason || 'Cancelled by customer >24h'
+    booking.cancellationReason = cancellationReason || 'Cancelled by client >24h'
     booking.cancelledAt = new Date()
     booking.platformCreditIssued = refundCreditAmount
     if (isInitialPaid) {
@@ -1286,7 +1286,7 @@ const customerCancelBooking = async (
           sender: user._id,
           senderName: user.name,
           senderPicture: user.profileImage,
-          title: 'Booking Cancelled by Customer',
+          title: 'Booking Cancelled by Client',
           message: `${user.name} has cancelled booking #${booking.bookingNumber}.`,
           type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
           bookingId: booking._id,
@@ -1424,7 +1424,7 @@ const customerCancelBooking = async (
   booking.status = BOOKING_STATUS.CANCELLED
   booking.cancelledBy = user._id
   booking.cancelledByRole = isAdmin && !isCustomer ? 'admin' : 'customer'
-  booking.cancellationReason = cancellationReason || 'Late cancellation by customer (<24h)'
+  booking.cancellationReason = cancellationReason || 'Late cancellation by client (<24h)'
   booking.cancelledAt = new Date()
   booking.platformCreditIssued = customerCreditAmount
   await booking.save()
@@ -1454,7 +1454,7 @@ const customerCancelBooking = async (
         sender: user._id,
         senderName: user.name,
         senderPicture: user.profileImage,
-        title: 'Booking Cancelled by Customer',
+        title: 'Booking Cancelled by Client',
         message: `${user.name} has cancelled booking #${booking.bookingNumber} within 24 hours of appointment.${isBalancePaid ? ` You received 50% compensation payout ($${artistShareAmount} AUD).` : ''}`,
         type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
         bookingId: booking._id,
@@ -1720,8 +1720,8 @@ const artistCancelBooking = async (
 
   const refundSummary =
     totalPaid > 0
-      ? `Customer received $${refundCreditAmount} Platform Credit ($${totalPaid} minus $${totalTransactionFee} Platform processing fee).`
-      : 'No payment had been charged to the customer.'
+      ? `Client received $${refundCreditAmount} Platform Credit ($${totalPaid} minus $${totalTransactionFee} Platform processing fee).`
+      : 'No payment had been charged to the client.'
 
   let timeframeLabel = 'more than 14 days in advance'
   if (hoursUntilAppointment <= 48) {
@@ -1735,7 +1735,7 @@ const artistCancelBooking = async (
   const artistCancelMessage = isSuspended
     ? `Booking cancelled successfully. Your account has been SUSPENDED due to last-moment cancellation (${timeframeLabel}). A penalty of $${penaltyIncurred} AUD must be paid to reactivate your account.`
     : penaltyIncurred > 0
-      ? `Booking cancelled successfully. A penalty of $${penaltyIncurred} AUD was issued for cancellation ${timeframeLabel}, and your profile is hidden from customer search until paid.`
+      ? `Booking cancelled successfully. A penalty of $${penaltyIncurred} AUD was issued for cancellation ${timeframeLabel}, and your profile is hidden from client search until paid.`
       : `Booking cancelled successfully (${timeframeLabel} - zero penalty).`
 
   await recordBookingHistory({
@@ -3178,7 +3178,7 @@ const executeInitialDepositPayment = async ({
   if (breakdown.initialDepositAmount > 0 && !customerUser.stripeCustomerId) {
     return {
       success: false,
-      error: 'Stripe customer not found. Please setup a payment method first.',
+      error: 'Stripe client profile not found. Please setup a payment method first.',
     }
   }
   const stripeCustomerId = customerUser.stripeCustomerId
@@ -3200,7 +3200,7 @@ const executeInitialDepositPayment = async ({
     if (existingCard.user.toString() !== customerUser._id.toString()) {
       return {
         success: false,
-        error: 'Selected payment method is not listed under customer account.',
+        error: 'Selected payment method is not listed under client account.',
       }
     }
     effectivePaymentMethodId = existingCard.stripePaymentMethodId
@@ -3501,7 +3501,7 @@ const acceptBooking = async (user: IUser, bookingId: string) => {
     const customerId = (booking.customer as any)?._id || booking.customer
     const customerUser = await User.findById(customerId)
     if (!customerUser) {
-      throw new AppError(httpStatus.NOT_FOUND, 'Customer user not found')
+      throw new AppError(httpStatus.NOT_FOUND, 'Client user not found')
     }
 
     // 1. Record professional acceptance in booking history
@@ -3542,7 +3542,7 @@ const acceptBooking = async (user: IUser, bookingId: string) => {
           notificationServices.sendNotification({
             recipient: (booking.artist as any)._id || booking.artist,
             title: 'Booking Confirmed',
-            message: `Booking #${booking.bookingNumber} is confirmed! Customer deposit ($${depositResult.breakdown?.initialDepositAmount ?? booking.initialPayment.amount} AUD) was charged successfully.`,
+            message: `Booking #${booking.bookingNumber} is confirmed! Client deposit ($${depositResult.breakdown?.initialDepositAmount ?? booking.initialPayment.amount} AUD) was charged successfully.`,
             type: NOTIFICATION_TYPE.BOOKING_CONFIRMED,
             bookingId: booking._id,
             bookingNumber: booking.bookingNumber,
@@ -3578,7 +3578,7 @@ const acceptBooking = async (user: IUser, bookingId: string) => {
       customerTitle: 'Deposit Payment Failed',
       customerDescription: 'Automatic deposit charge failed. Please update payment method within 1 hour.',
       artistTitle: 'Deposit Auto-Payment Failed',
-      artistDescription: 'Customer deposit auto-charge failed. 1-hour payment window started.',
+      artistDescription: 'Client deposit auto-charge failed. 1-hour payment window started.',
     })
 
     // Notify customer with action required and inform artist of payment wait
@@ -3599,7 +3599,7 @@ const acceptBooking = async (user: IUser, bookingId: string) => {
         notificationServices.sendNotification({
           recipient: (booking.artist as any)._id || booking.artist,
           title: 'Booking Accepted (Awaiting Payment)',
-          message: `You accepted booking #${booking.bookingNumber}, but the customer deposit auto-payment could not be captured. A 1-hour retry window was given to the customer.`,
+          message: `You accepted booking #${booking.bookingNumber}, but the client deposit auto-payment could not be captured. A 1-hour retry window was given to the client.`,
           type: NOTIFICATION_TYPE.BOOKING_ACCEPTED,
           bookingId: booking._id,
           bookingNumber: booking.bookingNumber,
@@ -3957,7 +3957,7 @@ const customerSign = async (
   const isCustomer = booking.customer.toString() === user._id.toString()
   const isAdmin = user.role === 'admin' || user.role === 'super_admin'
   if (!isCustomer && !isAdmin) {
-    throw new AppError(httpStatus.FORBIDDEN, 'Only the customer can sign for this booking')
+    throw new AppError(httpStatus.FORBIDDEN, 'Only the client can sign for this booking')
   }
 
   if (
@@ -4074,7 +4074,7 @@ const customerSign = async (
       status: booking.status,
       milestone: BOOKING_TIMELINE_MILESTONE.BOOKING_CLOSED,
       title: 'Booking Closed',
-      description: 'Customer verified and signed off on completed service',
+      description: 'Client verified and signed off on completed service',
       performedBy: user._id,
       performedByRole: 'customer',
     })
@@ -4086,8 +4086,8 @@ const customerSign = async (
           sender: user._id,
           senderName: user.name,
           senderPicture: user.profileImage,
-          title: 'Customer Signed Off',
-          message: `Customer verified and signed off on booking #${booking.bookingNumber}. Your payout has been released.`,
+          title: 'Client Signed Off',
+          message: `Client verified and signed off on booking #${booking.bookingNumber}. Your payout has been released.`,
           type: NOTIFICATION_TYPE.ORDER_COMPLETE,
           bookingId: booking._id,
           bookingNumber: booking.bookingNumber,
@@ -4174,7 +4174,7 @@ const requestReschedule = async (
     if (hoursUntilAppointment < 2) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        'Customers cannot request a reschedule within 2 hours of the scheduled appointment time.'
+        'Clients cannot request a reschedule within 2 hours of the scheduled appointment time.'
       )
     }
   }
@@ -4451,14 +4451,14 @@ const respondReschedule = async (
     if (!isArtist && !isAdmin) {
       throw new AppError(
         httpStatus.FORBIDDEN,
-        'Only the professional can respond to a customer reschedule request'
+        'Only the professional can respond to a client reschedule request'
       )
     }
   } else if (booking.rescheduleRequest.requestedByRole === 'artist') {
     if (!isCustomer && !isAdmin) {
       throw new AppError(
         httpStatus.FORBIDDEN,
-        'Only the customer can respond to a professional reschedule request'
+        'Only the client can respond to a professional reschedule request'
       )
     }
   }
@@ -4654,7 +4654,7 @@ const reportCustomerNoShow = async (
   if (!isArtist) {
     throw new AppError(
       httpStatus.FORBIDDEN,
-      'Only the assigned professional can report a customer no-show'
+      'Only the assigned professional can report a client no-show'
     )
   }
 
@@ -4684,7 +4684,7 @@ const reportCustomerNoShow = async (
   if (moment().isBefore(appointmentDateTime.clone().add(15, 'minutes'))) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'Customer no-show can only be reported after 15 minutes past the scheduled appointment start time'
+      'Client no-show can only be reported after 15 minutes past the scheduled appointment start time'
     )
   }
 
@@ -4728,7 +4728,7 @@ const reportCustomerNoShow = async (
     reportedAt: new Date(),
     reason:
       payload.reason ||
-      (payload.isSafetyConcern ? 'Unsafe premises / safety refusal' : 'Customer failed to attend'),
+      (payload.isSafetyConcern ? 'Unsafe premises / safety refusal' : 'Client failed to attend'),
     isSafetyConcern: Boolean(payload.isSafetyConcern),
     isApproved: false,
   }
@@ -4745,7 +4745,7 @@ const reportCustomerNoShow = async (
         sender: user._id,
         senderName: user.name,
         senderPicture: user.profileImage,
-        title: 'Customer No-Show Reported',
+        title: 'Client No-Show Reported',
         message: `${user.name} reported that you were not present for booking #${booking.bookingNumber}. This case is under admin review.`,
         type: NOTIFICATION_TYPE.GENERAL,
         bookingId: booking._id,
@@ -4755,7 +4755,7 @@ const reportCustomerNoShow = async (
       notificationServices.sendNotification({
         recipient: user._id,
         title: 'No-Show Report Submitted',
-        message: `Your customer no-show report for booking #${booking.bookingNumber} has been submitted for admin verification.`,
+        message: `Your client no-show report for booking #${booking.bookingNumber} has been submitted for admin verification.`,
         type: NOTIFICATION_TYPE.GENERAL,
         bookingId: booking._id,
         bookingNumber: booking.bookingNumber,
@@ -4768,7 +4768,7 @@ const reportCustomerNoShow = async (
 
   return {
     message:
-      'Customer no-show reported successfully. Admin verification is required before releasing the payout.',
+      'Client no-show reported successfully. Admin verification is required before releasing the payout.',
     booking,
   }
 }
@@ -4916,7 +4916,7 @@ const verifyCustomerNoShow = async (
           sender: adminUser._id,
           senderName: 'Admin',
           title: 'No-Show Claim Approved',
-          message: `Customer no-show for booking #${booking.bookingNumber} was approved. Protected payout of $${booking.artistNetPayout} AUD has been released.`,
+          message: `Client no-show for booking #${booking.bookingNumber} was approved. Protected payout of $${booking.artistNetPayout} AUD has been released.`,
           type: NOTIFICATION_TYPE.GENERAL,
           bookingId: booking._id,
           bookingNumber: booking.bookingNumber,
@@ -4930,7 +4930,7 @@ const verifyCustomerNoShow = async (
           sender: adminUser._id,
           senderName: 'Admin',
           title: 'No-Show Claim Rejected',
-          message: `Your customer no-show report for booking #${booking.bookingNumber} was rejected by admin.`,
+          message: `Your client no-show report for booking #${booking.bookingNumber} was rejected by admin.`,
           type: NOTIFICATION_TYPE.GENERAL,
           bookingId: booking._id,
           bookingNumber: booking.bookingNumber,
@@ -4955,8 +4955,8 @@ const verifyCustomerNoShow = async (
 
   return {
     message: payload.isApproved
-      ? `Customer no-show verified and approved. Full payout of ${booking.artistNetPayout} AUD has been released to the professional.`
-      : 'Customer no-show claim was rejected by admin.',
+      ? `Client no-show verified and approved. Full payout of ${booking.artistNetPayout} AUD has been released to the professional.`
+      : 'Client no-show claim was rejected by admin.',
     booking,
   }
 }
@@ -5038,7 +5038,7 @@ const getTimelineRoleMessages = (params: {
       return {
         customerTitle: 'Service Signed Off',
         customerDescription: 'You verified and signed off on the completed service',
-        artistTitle: 'Customer Signed Off',
+        artistTitle: 'Client Signed Off',
         artistDescription: `${customerName} verified and signed off on the service; payout released`,
       }
 
@@ -5058,7 +5058,7 @@ const getTimelineRoleMessages = (params: {
         return {
           customerTitle: 'You Cancelled Booking',
           customerDescription: cleanDesc,
-          artistTitle: 'Booking Cancelled by Customer',
+          artistTitle: 'Booking Cancelled by Client',
           artistDescription: artistCleanDesc,
         }
       }
@@ -5146,7 +5146,7 @@ const getTimelineRoleMessages = (params: {
         return {
           customerTitle: 'You Requested Reschedule',
           customerDescription: desc || 'You requested to reschedule the appointment',
-          artistTitle: 'Reschedule Requested by Customer',
+          artistTitle: 'Reschedule Requested by Client',
           artistDescription: desc || `${customerName} requested to reschedule the appointment`,
         }
       }
@@ -5161,9 +5161,9 @@ const getTimelineRoleMessages = (params: {
     case BOOKING_TIMELINE_MILESTONE.NO_SHOW_REPORTED:
       return {
         customerTitle: 'Appointment Issue Reported',
-        customerDescription: `${artistName} reported customer absence or access issue`,
-        artistTitle: 'You Reported Customer No-Show',
-        artistDescription: 'You submitted a customer no-show report for admin verification',
+        customerDescription: `${artistName} reported client absence or access issue`,
+        artistTitle: 'You Reported Client No-Show',
+        artistDescription: 'You submitted a client no-show report for admin verification',
       }
 
     case BOOKING_TIMELINE_MILESTONE.NO_SHOW_VERIFIED:
@@ -5171,7 +5171,7 @@ const getTimelineRoleMessages = (params: {
         customerTitle: 'No-Show Claim Processed',
         customerDescription: 'Platform administration reviewed and processed the appointment attendance claim',
         artistTitle: 'No-Show Claim Approved',
-        artistDescription: 'Admin verified customer no-show; full payout released',
+        artistDescription: 'Admin verified client no-show; full payout released',
       }
 
     default:
@@ -5331,7 +5331,7 @@ const getBookingTimelineFromHistory = async (booking: any, viewer?: any) => {
           status: BOOKING_STATUS.COMPLETED,
           milestone: BOOKING_TIMELINE_MILESTONE.BOOKING_CLOSED,
           title: 'Booking Closed',
-          description: 'Customer signed off and booking closed',
+          description: 'Client signed off and booking closed',
           performedBy: booking.customer,
           performedByRole: 'customer',
           createdAt: booking.completionDetails.signedAt,
@@ -5364,7 +5364,7 @@ const getBookingTimelineFromHistory = async (booking: any, viewer?: any) => {
   }
 
   const customerName =
-    booking.customer?.name || (typeof booking.customer === 'object' ? booking.customer?.name : null) || 'Customer'
+    booking.customer?.name || (typeof booking.customer === 'object' ? booking.customer?.name : null) || 'Client'
   const artistName =
     booking.artist?.name || (typeof booking.artist === 'object' ? booking.artist?.name : null) || 'Professional'
 
@@ -5418,7 +5418,7 @@ const getBookingTimelineFromHistory = async (booking: any, viewer?: any) => {
     const systemTitle =
       item.title === 'Booking Created' ? 'Booking request submitted' : item.title
     const systemDescription =
-      item.description === 'Booking was submitted by the customer'
+      item.description === 'Booking was submitted by the client'
         ? 'Booking request submitted'
         : item.description
 
@@ -5696,7 +5696,7 @@ const getRecentBookingsAdmin = async (queryLimit = 6) => {
       bookingId: b._id,
       customer: {
         _id: b.customer?._id,
-        name: b.customer?.name || 'Customer',
+        name: b.customer?.name || 'Client',
         email: b.customer?.email,
         profileImage: b.customer?.profileImage,
       },
@@ -5834,14 +5834,14 @@ const getBookingDetailsAdmin = async (bookingId: string) => {
     },
     customerInformation: {
       _id: (booking.customer as any)?._id,
-      name: (booking.customer as any)?.name || 'Customer',
+      name: (booking.customer as any)?.name || 'Client',
       email: (booking.customer as any)?.email,
       phone: (booking.customer as any)?.phone || '—',
       profileImage: (booking.customer as any)?.profileImage,
       location,
       badge:
         (booking.customer as any)?.role === 'customer'
-          ? 'Customer'
+          ? 'Client'
           : (booking.customer as any)?.role || 'Member',
     },
     artistInformation: {

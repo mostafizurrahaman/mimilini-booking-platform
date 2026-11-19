@@ -311,7 +311,7 @@ const login = async (payload: ILoginType) => {
   if (user.role !== AuthRoles.CUSTOMER) {
     throw new AppError(
       httpStatus.FORBIDDEN,
-      'Only customer accounts are permitted to log in through this app.'
+      'Only client accounts are permitted to log in through this app.'
     )
   }
 

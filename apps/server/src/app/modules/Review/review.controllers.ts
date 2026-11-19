@@ -74,7 +74,7 @@ const getCustomerStories = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'Customer stories retrieved successfully!',
+    message: 'Client stories retrieved successfully!',
     data: result.stories,
     meta: result.meta,
   })
@@ -90,7 +90,7 @@ const getCustomerStoryById = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'Customer story details retrieved successfully!',
+    message: 'Client story details retrieved successfully!',
     data: result,
   })
 })

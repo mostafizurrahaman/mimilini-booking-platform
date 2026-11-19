@@ -212,7 +212,7 @@ const deleteCategoryById = async (id: string) => {
   if (usedInPreferences) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'Cannot delete category because it is selected in customer beauty preferences.'
+      'Cannot delete category because it is selected in client beauty preferences.'
     )
   }
 

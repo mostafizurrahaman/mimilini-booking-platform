@@ -70,7 +70,7 @@ const getCustomerRetention = catchAsync(async (req, res) => {
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
-    message: 'Customer retention metrics retrieved successfully',
+    message: 'Client retention metrics retrieved successfully',
     data: result,
   })
 })

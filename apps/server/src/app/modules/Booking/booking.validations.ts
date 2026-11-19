@@ -36,7 +36,7 @@ const createBookingSchema = z.object({
     address: optionalString('Address ID'),
     bookingDate: requiredString('Booking Date (YYYY-MM-DD)'),
     startTime: timeSchema('Start Time'),
-    guestCount: positiveNumber('Guest Count'), // Mandatory
+    guestCount: positiveNumber('Client Count'), // Mandatory
     promoCode: optionalString('Promo Code'),
     usePlatformCredit: z.boolean().default(false),
     isQuickBooking: z.boolean().optional().default(false),
@@ -50,7 +50,7 @@ const checkoutPreviewSchema = z.object({
     services: z
       .array(requiredString('Service ID'))
       .min(1, 'At least one service is required'),
-    guestCount: positiveNumber('Guest Count'), // Mandatory
+    guestCount: positiveNumber('Client Count'), // Mandatory
     visitType: optionalEnumString(VISIT_TYPE_VALUES, 'Visit Type'),
     address: optionalString('Address ID'),
     promoCode: optionalString('Promo Code'),
@@ -64,7 +64,7 @@ const publicCheckoutPreviewSchema = z.object({
     services: z
       .array(requiredString('Service ID'))
       .min(1, 'At least one service is required'),
-    guestCount: positiveNumber('Guest Count'), // Mandatory
+    guestCount: positiveNumber('Client Count'), // Mandatory
     visitType: optionalEnumString(VISIT_TYPE_VALUES, 'Visit Type'),
     latitude: z.coerce.number().min(-90).max(90).optional(),
     longitude: z.coerce.number().min(-180).max(180).optional(),
@@ -104,7 +104,7 @@ const completeBookingSchema = z.object({
       productsUsed: optionalString('Products Used'),
       totalWorkingTime: optionalString('Total Working Time'),
       specialNotes: optionalString('Special Notes'),
-      customerSignature: optionalString('Customer Signature'),
+      customerSignature: optionalString('Client Signature'),
       data: z.string().optional(),
     })
     .passthrough(),
@@ -154,7 +154,7 @@ const verifyCustomerNoShowSchema = z.object({
 
 const customerSignSchema = z.object({
   body: z.object({
-    customerSignature: requiredString('Customer Signature'),
+    customerSignature: requiredString('Client Signature'),
   }),
 })
 

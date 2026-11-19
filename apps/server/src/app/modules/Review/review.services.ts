@@ -371,10 +371,10 @@ const getCustomerStories = async (query: {
       quote: rev.comment || '',
       comment: rev.comment || '',
       tags: rev.tags || [],
-      customerName: customerObj?.name || 'Verified Customer',
+      customerName: customerObj?.name || 'Verified Client',
       customer: {
         _id: customerObj?._id || null,
-        name: customerObj?.name || 'Verified Customer',
+        name: customerObj?.name || 'Verified Client',
         profileImage: customerObj?.profileImage || null,
       },
       artist: {
@@ -424,7 +424,7 @@ const getCustomerStoryById = async (storyId: string) => {
     .lean()
 
   if (!rev) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Customer story not found')
+    throw new AppError(httpStatus.NOT_FOUND, 'Client story not found')
   }
 
   const customerObj = rev.customer as unknown as {
@@ -491,7 +491,7 @@ const getCustomerStoryById = async (storyId: string) => {
       profileImage?: string
     } | null
     const relSvc = rel.service as unknown as { name?: string } | null
-    const fullName = relCust?.name || 'Customer'
+    const fullName = relCust?.name || 'Client'
     const parts = fullName.trim().split(/\s+/)
     const shortName =
       parts.length > 1 ? `${parts[0]} ${parts[1]![0]?.toUpperCase()}.` : fullName
@@ -513,10 +513,10 @@ const getCustomerStoryById = async (storyId: string) => {
       heroImage,
       badge: rev.isVerifiedBooking !== false ? 'Verified Booking' : null,
       isVerifiedBooking: rev.isVerifiedBooking ?? true,
-      customerName: customerObj?.name || 'Verified Customer',
+      customerName: customerObj?.name || 'Verified Client',
       customer: {
         _id: customerObj?._id || null,
-        name: customerObj?.name || 'Verified Customer',
+        name: customerObj?.name || 'Verified Client',
         profileImage: customerObj?.profileImage || null,
       },
       artist: {
@@ -631,7 +631,7 @@ const getArtistReviews = async (
       profileImage?: string
     } | null
     const svc = rev.service as unknown as { _id?: Types.ObjectId; name?: string } | null
-    const custName = cust?.name || 'Customer'
+    const custName = cust?.name || 'Client'
 
     return {
       _id: rev._id,
@@ -1024,7 +1024,7 @@ const getAdminReviewModeration = async (query: {
       reviewId: rev.reviewNumber || `REV-${1000 + idx + 1}`,
       customer: {
         _id: cust?._id || null,
-        name: cust?.name || 'Customer',
+        name: cust?.name || 'Client',
         initials: getInitials(cust?.name),
         email: cust?.email || null,
         profileImage: cust?.profileImage || null,
@@ -1151,12 +1151,12 @@ const performAdminReviewAction = async (
       ) {
         review.moderationStatus = REVIEW_MODERATION_STATUS.APPROVED
       }
-      actionMessage = 'Review featured in Customer Stories'
+      actionMessage = 'Review featured in Client Stories'
       break
 
     case ADMIN_REVIEW_ACTION.UNFEATURE_STORY:
       review.isFeaturedStory = false
-      actionMessage = 'Review removed from featured Customer Stories'
+      actionMessage = 'Review removed from featured Client Stories'
       break
 
     default:
