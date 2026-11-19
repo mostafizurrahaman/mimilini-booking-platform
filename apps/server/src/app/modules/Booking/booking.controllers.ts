@@ -191,7 +191,7 @@ const acceptBooking = catchAsync(async (req, res) => {
     statusCode: httpStatus.OK,
     message: isConfirmed
       ? 'Booking accepted and deposit charged successfully!'
-      : 'Booking accepted, awaiting customer payment.',
+      : 'Booking accepted, awaiting client payment.',
     data: result,
   })
 })
@@ -257,7 +257,7 @@ const customerSign = catchAsync(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: 'Customer signature submitted successfully!',
+    message: 'Client signature submitted successfully!',
     data: result,
   })
 })

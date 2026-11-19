@@ -2013,7 +2013,7 @@ const getArtistDetails = async (
   const totalReviews = reviewStats[0]?.totalCount || 0
 
   const formattedRecentReviews = recentReviews.map((rev: any) => {
-    const custName = rev.customer?.name || 'Customer'
+    const custName = rev.customer?.name || 'Client'
     return {
       _id: rev._id,
       rating: rev.rating,

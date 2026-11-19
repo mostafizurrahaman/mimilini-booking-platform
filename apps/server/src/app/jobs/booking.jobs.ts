@@ -160,7 +160,7 @@ export const process24HourBalancePayments = async () => {
               notificationServices.sendNotification({
                 recipient: booking.artist,
                 title: 'Balance Payment Received',
-                message: `Remaining balance ($${booking.balancePayment.amount} AUD) for booking #${booking.bookingNumber} was auto-charged successfully from customer. Appointment is ready!`,
+                message: `Remaining balance ($${booking.balancePayment.amount} AUD) for booking #${booking.bookingNumber} was auto-charged successfully from client. Appointment is ready!`,
                 type: NOTIFICATION_TYPE.PAYMENT_SUCCESS,
                 bookingId: booking._id,
                 bookingNumber: booking.bookingNumber,
@@ -216,8 +216,8 @@ export const process24HourBalancePayments = async () => {
             }),
             notificationServices.sendNotification({
               recipient: booking.artist,
-              title: 'Notice: Customer Balance Payment Failed',
-              message: `Customer auto-charge for booking #${booking.bookingNumber} failed. Customer has a 2-hour window to settle payment.`,
+              title: 'Notice: Client Balance Payment Failed',
+              message: `Client auto-charge for booking #${booking.bookingNumber} failed. Client has a 2-hour window to settle payment.`,
               type: NOTIFICATION_TYPE.BOOKING_REMINDER,
               bookingId: booking._id,
               bookingNumber: booking.bookingNumber,
@@ -324,7 +324,7 @@ export const processExpiredRectificationCancellations = async () => {
           notificationServices.sendNotification({
             recipient: booking.artist,
             title: 'Booking Cancelled (Unpaid Slot Released)',
-            message: `Booking #${booking.bookingNumber} was cancelled due to customer non-payment. Your schedule has been freed up.`,
+            message: `Booking #${booking.bookingNumber} was cancelled due to client non-payment. Your schedule has been freed up.`,
             type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
             bookingId: booking._id,
             bookingNumber: booking.bookingNumber,
@@ -393,7 +393,7 @@ export const processExpiredInitialPaymentBookings = async () => {
 
       booking.status = BOOKING_STATUS.CANCELLED
       booking.cancellationReason =
-        'Auto-cancelled: Customer did not complete initial deposit payment within 1 hour'
+        'Auto-cancelled: Client did not complete initial deposit payment within 1 hour'
       booking.cancelledAt = now
       booking.cancelledByRole = 'system'
       booking.cancellationFeeCharged = 0
@@ -433,7 +433,7 @@ export const processExpiredInitialPaymentBookings = async () => {
         await notificationServices.sendNotification({
           recipient: booking.artist,
           title: 'Booking Cancelled (Unpaid Slot Released)',
-          message: `Booking #${booking.bookingNumber} was automatically cancelled because the customer did not pay within 1 hour. Your schedule has been freed up.`,
+          message: `Booking #${booking.bookingNumber} was automatically cancelled because the client did not pay within 1 hour. Your schedule has been freed up.`,
           type: NOTIFICATION_TYPE.BOOKING_CANCELLED,
           bookingId: booking._id,
           bookingNumber: booking.bookingNumber,

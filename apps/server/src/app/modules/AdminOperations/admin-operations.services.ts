@@ -152,7 +152,7 @@ const getAdminDashboardOverview = async (timeframe: 'daily' | 'weekly' | 'monthl
     id: b._id,
     bookingNumber: b.bookingNumber,
     customer: {
-      name: (b.customer as any)?.name || 'Customer',
+      name: (b.customer as any)?.name || 'Client',
       email: (b.customer as any)?.email || '',
       profileImage: (b.customer as any)?.profileImage || null,
     },
@@ -361,7 +361,7 @@ const getAdminRefunds = async (query: {
       bookingId: b._id,
       bookingNumber: b.bookingNumber,
       customer: {
-        name: (b.customer as any)?.name || 'Customer',
+        name: (b.customer as any)?.name || 'Client',
         email: (b.customer as any)?.email || '',
         profileImage: (b.customer as any)?.profileImage || null,
       },
@@ -459,11 +459,11 @@ const getAdminRefundDetails = async (id: string) => {
     },
 
     cancellationDetails: {
-      cancelledBy: booking.cancelledByRole || 'Customer',
+      cancelledBy: booking.cancelledByRole || 'Client',
       cancellationDate: moment(booking.cancelledAt || booking.updatedAt).format('MMMM D, YYYY'),
       cancellationTime: moment(booking.cancelledAt || booking.updatedAt).format('h:mm A'),
       refundPolicyApplied: '24-Hour Cancellation Policy',
-      reason: booking.cancellationReason || 'Requested by customer',
+      reason: booking.cancellationReason || 'Requested by client',
     },
 
     paymentTimeline,

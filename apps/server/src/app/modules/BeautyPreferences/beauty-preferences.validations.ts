@@ -31,7 +31,7 @@ const getMyAllBeautyPreferencesSchema = z.object({
     sortOrder: optionalEnumString(sortingOrderValues, 'Sort order'),
     sortBy: optionalEnumString(beautyPreferencesSortableFields, 'Sort by'),
     fromDate: optionalDate('From date'),
-    customer: requiredMongooseId('Customer').optional(),
+    customer: requiredMongooseId('Client').optional(),
     toDate: optionalDate('To date'),
   }),
 })

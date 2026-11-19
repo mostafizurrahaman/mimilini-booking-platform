@@ -100,7 +100,7 @@ export const assertChatAccess = (user: IUser, chat: IChatDoc, writeAccess = fals
     throw new AppError(
       httpStatus.FORBIDDEN,
       writeAccess
-        ? 'Only the customer and professional of this conversation can send or modify messages'
+        ? 'Only the client and professional of this conversation can send or modify messages'
         : 'You do not have permission to access this conversation'
     )
   }
@@ -180,7 +180,7 @@ const resolveOrCreateChatDoc = async (
       if (!payload.participantId) {
         throw new AppError(
           httpStatus.BAD_REQUEST,
-          'participantId (customer or professional ID) is required when an admin starts a support chat'
+          'participantId (client or professional ID) is required when an admin starts a support chat'
         )
       }
       validateObjectId(payload.participantId, 'participantId')
@@ -191,7 +191,7 @@ const resolveOrCreateChatDoc = async (
       if (isAdminRole(targetUser.role)) {
         throw new AppError(
           httpStatus.BAD_REQUEST,
-          'Support chat can only be created with a customer or professional'
+          'Support chat can only be created with a client or professional'
         )
       }
       supportUserId = new Types.ObjectId(String(targetUser._id))
@@ -226,7 +226,7 @@ const resolveOrCreateChatDoc = async (
         supportUserRole,
         assignedAdmin: isAdminRole(user.role) ? userId : null,
         booking: bookingRef,
-        subject: payload.subject?.trim() || 'Customer/Professional Support',
+        subject: payload.subject?.trim() || 'Client/Professional Support',
         messages: [],
         unreadByCustomer: 0,
         unreadByArtist: 0,
@@ -324,7 +324,7 @@ const resolveOrCreateChatDoc = async (
   } else {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'Normal chat is only allowed between a Customer and an Artist. For Admin help, use chatType "support".'
+      'Normal chat is only allowed between a Client and an Artist. For Admin help, use chatType "support".'
     )
   }
 
