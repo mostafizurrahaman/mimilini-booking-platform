@@ -3,6 +3,7 @@ import {
   DISCOUNT_STATUS,
   DISCOUNT_TYPES,
   PromoCode,
+  PromoCodeUsage,
   promoCodeSearchableFields,
   promoCodeSortableFields,
   type IUser,
@@ -640,7 +641,10 @@ const deletePromoCodeById = async (user: IUser, id: string) => {
   return result
 }
 
-const validatePromoCode = async (payload: TValidatePromoCodePayloadType) => {
+const validatePromoCode = async (
+  payload: TValidatePromoCodePayloadType,
+  user?: IUser
+) => {
   const { promoCode, bookingAmount, artistId } = payload
   const normalizedCode = promoCode.trim().toUpperCase()
 
@@ -734,6 +738,20 @@ const validatePromoCode = async (payload: TValidatePromoCodePayloadType) => {
       httpStatus.BAD_REQUEST,
       'This promo code has reached its maximum usage limit.'
     )
+  }
+
+  // 6b. Check single-use per client limit
+  if (user?._id) {
+    const alreadyUsed = await PromoCodeUsage.exists({
+      user: user._id,
+      promoCode: promo._id,
+    })
+    if (alreadyUsed) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'You have already used this promo code. Promo codes can only be used once per client.'
+      )
+    }
   }
 
   // 7. Check minimum booking spend

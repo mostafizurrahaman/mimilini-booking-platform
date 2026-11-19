@@ -106,7 +106,8 @@ const deletePromoCodeById = catchAsync(async (req, res) => {
 })
 
 const validatePromoCode = catchAsync(async (req, res) => {
-  const result = await promoCodeServices.validatePromoCode(req.body)
+  const user = await getUserFromRequest(req)
+  const result = await promoCodeServices.validatePromoCode(req.body, user)
 
   sendResponse(res, {
     success: true,

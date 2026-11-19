@@ -23,6 +23,7 @@ import {
   PENALTY_STATUS,
   PlatformSettings,
   PromoCode,
+  PromoCodeUsage,
   Review,
   User,
   WalletLedger,
@@ -244,6 +245,18 @@ const checkoutPreview = async (user: IUser, input: ICheckoutPreviewInput) => {
     promoDoc = await PromoCode.findOne({
       promoCode: input.promoCode.toUpperCase().trim(),
     })
+    if (promoDoc) {
+      const alreadyUsed = await PromoCodeUsage.exists({
+        user: user._id,
+        promoCode: promoDoc._id,
+      })
+      if (alreadyUsed) {
+        throw new AppError(
+          httpStatus.BAD_REQUEST,
+          'You have already used this promo code. Promo codes can only be used once per client.'
+        )
+      }
+    }
   }
 
   // Wallet balance
@@ -693,6 +706,16 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     if (!promoDoc) {
       throw new AppError(httpStatus.BAD_REQUEST, 'Invalid promo code')
     }
+    const alreadyUsed = await PromoCodeUsage.exists({
+      user: user._id,
+      promoCode: promoDoc._id,
+    })
+    if (alreadyUsed) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'You have already used this promo code. Promo codes can only be used once per client.'
+      )
+    }
   }
 
   // 6. Wallet platform credit check
@@ -921,6 +944,16 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     promoCodeText: promoDoc?.promoCode || null,
   })
 
+  // 12b. Record PromoCodeUsage to reserve/consume single-use immediately upon booking creation
+  if (promoDoc && breakdown.discountAmount > 0) {
+    await PromoCodeUsage.create({
+      promoCode: promoDoc._id,
+      user: user._id,
+      booking: booking._id,
+      discountAmount: breakdown.discountAmount,
+    })
+  }
+
   // 13. Issue official Stripe Tax Invoice ONLY after payment succeeds
   if (initialStatus === 'captured') {
     await issueCustomerStripeInvoice(booking)
@@ -1136,6 +1169,10 @@ const customerCancelBooking = async (
       })
     }
 
+    if (booking.promoCode) {
+      await PromoCodeUsage.deleteOne({ promoCode: booking.promoCode, user: booking.customer._id })
+    }
+
     await booking.save()
 
     await recordBookingHistory({
@@ -1184,6 +1221,7 @@ const customerCancelBooking = async (
   // Release promo code if applied and deposit was captured
   if (booking.promoCode && isInitialPaid) {
     await PromoCode.findByIdAndUpdate(booking.promoCode, { $inc: { usageCount: -1 } })
+    await PromoCodeUsage.deleteOne({ promoCode: booking.promoCode, user: booking.customer })
   }
 
   // Void customer Stripe invoice or issue Credit Note if already finalized/paid
@@ -1589,6 +1627,7 @@ const artistCancelBooking = async (
   // Release promo code if applied and deposit was captured
   if (booking.promoCode && isInitialPaid) {
     await PromoCode.findByIdAndUpdate(booking.promoCode, { $inc: { usageCount: -1 } })
+    await PromoCodeUsage.deleteOne({ promoCode: booking.promoCode, user: booking.customer })
   }
 
   // Void Stripe invoices if exist
@@ -1828,6 +1867,10 @@ const cancelBooking = async (user: IUser, bookingId: string, cancellationReason?
   // Admin cancellation
   if (booking.promoCode && booking.initialPayment?.status === PAYMENT_STAGE_STATUS.CAPTURED) {
     await PromoCode.findByIdAndUpdate(booking.promoCode, { $inc: { usageCount: -1 } })
+    await PromoCodeUsage.deleteOne({
+      promoCode: booking.promoCode,
+      user: (booking.customer as any)._id || booking.customer,
+    })
   }
   await voidOrCreditNoteInvoice(booking.stripeInvoiceId, booking.bookingNumber)
   if (booking.artistStripeInvoiceId) {
@@ -3325,6 +3368,16 @@ const executeInitialDepositPayment = async ({
   // 5. Increment promo code usage if applied
   if (promoDoc && breakdown.discountAmount > 0) {
     await PromoCode.findByIdAndUpdate(promoDoc._id, { $inc: { usageCount: 1 } })
+    await PromoCodeUsage.updateOne(
+      { promoCode: promoDoc._id, user: customerUser._id },
+      {
+        $set: {
+          booking: booking._id,
+          discountAmount: breakdown.discountAmount,
+        },
+      },
+      { upsert: true }
+    )
   }
 
   // 6. Update Booking
@@ -3788,9 +3841,15 @@ const declineBooking = async (user: IUser, bookingId: string, reason?: string) =
   }
 
   // Restore promo code usage count only if it was incremented on deposit capture
-  if (booking.promoCode && wasInitialCaptured) {
-    await PromoCode.findByIdAndUpdate(booking.promoCode, {
-      $inc: { usageCount: -1 },
+  if (booking.promoCode) {
+    if (wasInitialCaptured) {
+      await PromoCode.findByIdAndUpdate(booking.promoCode, {
+        $inc: { usageCount: -1 },
+      })
+    }
+    await PromoCodeUsage.deleteOne({
+      promoCode: booking.promoCode,
+      user: (booking.customer as any)._id || booking.customer,
     })
   }
 
