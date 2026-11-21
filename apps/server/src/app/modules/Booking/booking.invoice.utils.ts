@@ -84,6 +84,10 @@ export interface IBookingTaxInvoice {
     hostedUrl: string | null
     pdfUrl: string | null
   }
+
+  // Direct Stunner Alert Generated Custom PDF
+  customPdfUrl?: string | null
+  finalDisplayedPdfUrl?: string | null
 }
 
 /**
@@ -214,6 +218,9 @@ export const generateBookingTaxInvoice = (
       hostedUrl: booking.stripeInvoiceUrl || null,
       pdfUrl: booking.stripeInvoicePdf || null,
     },
+
+    customPdfUrl: booking.customPdf || null,
+    finalDisplayedPdfUrl: booking.customPdf || booking.stripeInvoicePdf || null,
   }
 }
 
@@ -253,6 +260,8 @@ export interface IBalancePaymentReceipt {
     stripeInvoiceUrl?: string | null
     stripeInvoicePdf?: string | null
   }
+  customReceiptPdf?: string | null
+  finalDisplayedPdfUrl?: string | null
 }
 
 /**
@@ -305,6 +314,8 @@ export const generateBalancePaymentReceipt = (booking: any): IBalancePaymentRece
       stripeInvoiceUrl: booking.stripeInvoiceUrl || null,
       stripeInvoicePdf: booking.stripeInvoicePdf || null,
     },
+    customReceiptPdf: booking.customReceiptPdf || null,
+    finalDisplayedPdfUrl: booking.customReceiptPdf || booking.stripeReceiptUrl || null,
   }
 }
 
@@ -349,6 +360,8 @@ export interface IArtistRctiInvoice {
     hostedUrl: string | null
     pdfUrl: string | null
   }
+  artistCustomPdf?: string | null
+  finalDisplayedPdfUrl?: string | null
 }
 
 /**
@@ -405,6 +418,8 @@ export const generateArtistRctiInvoice = (booking: any): IArtistRctiInvoice => {
       hostedUrl: booking.artistStripeInvoiceUrl || null,
       pdfUrl: booking.artistStripeInvoicePdf || null,
     },
+    artistCustomPdf: booking.artistCustomPdf || null,
+    finalDisplayedPdfUrl: booking.artistCustomPdf || booking.artistStripeInvoicePdf || null,
   }
 }
 

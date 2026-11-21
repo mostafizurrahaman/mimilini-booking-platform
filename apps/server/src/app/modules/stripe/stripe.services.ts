@@ -184,6 +184,14 @@ const handlePaymentIntentSucceeded = async (paymentIntent: Stripe.PaymentIntent)
     // Automatically issue official Recipient Created Tax Invoice (RCTI) for artist
     await bookingServices.issueArtistRctiStripeInvoice(booking)
 
+    // Refresh customer custom tax invoice and generate balance receipt
+    try {
+      await bookingServices.generateAndSaveBookingCustomPdf(booking._id.toString())
+      await bookingServices.generateAndSaveBalanceReceiptPdf(booking._id.toString())
+    } catch {
+      // safe fallback
+    }
+
     const transferGroup =
       booking.bookingGroupId || metadata.bookingGroupId || `GRP-${booking.bookingNumber}`
 
