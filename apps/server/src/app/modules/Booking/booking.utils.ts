@@ -230,3 +230,89 @@ export const calculateDistanceKm = (
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
   return round2(R * c)
 }
+
+/**
+ * Resolves the single primary PDF invoice URL that the UI should display to the user
+ * based on the viewer's role, the booking status, and payment stages.
+ */
+export const resolveFinalDisplayedPdfUrl = (
+  booking: any,
+  role?: string
+): {
+  finalDisplayedPdfUrl: string | null
+  pdfType: 'invoice' | 'rcti' | 'receipt' | 'credit_note' | null
+  label: string
+} => {
+  const isArtist = role === 'artist'
+  const isCancelled =
+    booking.status === 'cancelled' ||
+    booking.status === 'declined' ||
+    booking.status === 'no_show'
+
+  // 1. Cancelled / Declined bookings -> Show Credit Note (if exists) or customer invoice
+  if (isCancelled) {
+    const creditNoteUrl =
+      booking.customCreditNotePdf || booking.creditNotePdfUrl || null
+    if (creditNoteUrl) {
+      return {
+        finalDisplayedPdfUrl: creditNoteUrl,
+        pdfType: 'credit_note',
+        label: 'Adjustment / Credit Note',
+      }
+    }
+    const invUrl = booking.customPdf || booking.stripeInvoicePdf || null
+    return {
+      finalDisplayedPdfUrl: invUrl,
+      pdfType: invUrl ? 'invoice' : null,
+      label: invUrl ? 'Cancelled Booking Invoice' : 'No Document',
+    }
+  }
+
+  // 2. Artist View -> Show RCTI (Artist Custom PDF or Stripe RCTI)
+  if (isArtist) {
+    const rctiUrl =
+      booking.artistCustomPdf || booking.artistStripeInvoicePdf || null
+    return {
+      finalDisplayedPdfUrl: rctiUrl,
+      pdfType: rctiUrl ? 'rcti' : null,
+      label: rctiUrl ? 'Recipient Created Tax Invoice (RCTI)' : 'Pending Settlement',
+    }
+  }
+
+  // 3. Client / Admin View
+  // If 80% balance is captured -> Show Payment Receipt if requested or Final Master Invoice
+  const isBalancePaid = booking.balancePayment?.status === 'captured'
+  const isInitialPaid = booking.initialPayment?.status === 'captured'
+
+  if (isBalancePaid) {
+    const finalInvoiceUrl =
+      booking.customPdf ||
+      booking.stripeInvoicePdf ||
+      booking.customReceiptPdf ||
+      null
+    return {
+      finalDisplayedPdfUrl: finalInvoiceUrl,
+      pdfType: finalInvoiceUrl ? 'invoice' : null,
+      label: finalInvoiceUrl ? 'Tax Invoice (Paid in Full)' : 'Pending Invoice',
+    }
+  }
+
+  if (isInitialPaid) {
+    const depositInvoiceUrl =
+      booking.customPdf || booking.stripeInvoicePdf || null
+    return {
+      finalDisplayedPdfUrl: depositInvoiceUrl,
+      pdfType: depositInvoiceUrl ? 'invoice' : null,
+      label: depositInvoiceUrl ? 'Tax Invoice (Deposit Paid)' : 'Pending Invoice',
+    }
+  }
+
+  // Pending / Unpaid booking request
+  const unpaidInvoiceUrl =
+    booking.customPdf || booking.stripeInvoicePdf || null
+  return {
+    finalDisplayedPdfUrl: unpaidInvoiceUrl,
+    pdfType: unpaidInvoiceUrl ? 'invoice' : null,
+    label: unpaidInvoiceUrl ? 'Proforma Invoice (Unpaid)' : 'Payment Pending',
+  }
+}

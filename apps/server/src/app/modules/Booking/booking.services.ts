@@ -48,6 +48,7 @@ import {
   calculateArtistCancellationPenalty,
   calculateDistanceKm,
   round2,
+  resolveFinalDisplayedPdfUrl,
 } from './booking.utils'
 import {
   generateBookingTaxInvoice,
@@ -2120,10 +2121,16 @@ const getMyBookings = async (
 
   const reviewByBookingId = new Map(bookingReviews.map((r: any) => [String(r.booking), r]))
 
-  const enrichedBookings = bookings.map((b: any) => ({
-    ...b,
-    review: reviewByBookingId.get(String(b._id)) || null,
-  }))
+  const enrichedBookings = bookings.map((b: any) => {
+    const pdfInfo = resolveFinalDisplayedPdfUrl(b, user.role)
+    return {
+      ...b,
+      finalDisplayedPdfUrl: pdfInfo.finalDisplayedPdfUrl,
+      finalDisplayedPdfType: pdfInfo.pdfType,
+      finalDisplayedPdfLabel: pdfInfo.label,
+      review: reviewByBookingId.get(String(b._id)) || null,
+    }
+  })
 
   return {
     bookings: enrichedBookings,
@@ -2195,6 +2202,11 @@ const getBookingById = async (user: IUser, bookingId: string) => {
   }
   bookingObj.review = bookingReview || null
   bookingObj.timeline = await getBookingTimelineFromHistory(booking, user)
+
+  const pdfInfo = resolveFinalDisplayedPdfUrl(bookingObj, user.role)
+  bookingObj.finalDisplayedPdfUrl = pdfInfo.finalDisplayedPdfUrl
+  bookingObj.finalDisplayedPdfType = pdfInfo.pdfType
+  bookingObj.finalDisplayedPdfLabel = pdfInfo.label
 
   return bookingObj
 }
@@ -5934,6 +5946,8 @@ const getAllBookingsAdmin = async (query: {
       paymentStatus = 'Partial (20% Paid)'
     }
 
+    const pdfInfo = resolveFinalDisplayedPdfUrl(b, 'admin')
+
     return {
       _id: b._id,
       bookingNumber: b.bookingNumber,
@@ -5960,6 +5974,19 @@ const getAllBookingsAdmin = async (query: {
       gstAmount: b.gstAmount,
       initialPayment: b.initialPayment,
       balancePayment: b.balancePayment,
+      invoices: {
+        customerInvoiceId: b.stripeInvoiceId || null,
+        customerInvoicePdf: b.stripeInvoicePdf || null,
+        customPdf: b.customPdf || null,
+        customReceiptPdf: b.customReceiptPdf || null,
+        customCreditNotePdf: b.customCreditNotePdf || null,
+        artistInvoiceId: b.artistStripeInvoiceId || null,
+        artistInvoicePdf: b.artistStripeInvoicePdf || null,
+        artistCustomPdf: b.artistCustomPdf || null,
+      },
+      finalDisplayedPdfUrl: pdfInfo.finalDisplayedPdfUrl,
+      finalDisplayedPdfType: pdfInfo.pdfType,
+      finalDisplayedPdfLabel: pdfInfo.label,
       createdAt: b.createdAt,
     }
   })
