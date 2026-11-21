@@ -15,6 +15,7 @@ import {
   PENALTY_STATUS,
   PlatformSettings,
   PromoCode,
+  PromoCodeUsage,
   type TAccountStatus,
   User,
   WalletLedger,
@@ -316,6 +317,7 @@ const handlePaymentIntentFailed = async (paymentIntent: Stripe.PaymentIntent) =>
     // Release promo code if applied
     if (booking.promoCode) {
       await PromoCode.findByIdAndUpdate(booking.promoCode, { $inc: { usageCount: -1 } })
+      await PromoCodeUsage.deleteOne({ promoCode: booking.promoCode, user: booking.customer })
       logger.info(`[Stripe Webhook] Released promo code for failed booking ${bookingNumber}`)
     }
 
@@ -395,6 +397,7 @@ const handlePaymentIntentCanceled = async (paymentIntent: Stripe.PaymentIntent) 
     }
     if (booking.promoCode) {
       await PromoCode.findByIdAndUpdate(booking.promoCode, { $inc: { usageCount: -1 } })
+      await PromoCodeUsage.deleteOne({ promoCode: booking.promoCode, user: booking.customer })
       logger.info(`[Stripe Webhook] Released promo code for canceled booking ${bookingNumber}`)
     }
     booking.status = BOOKING_STATUS.CANCELLED
@@ -461,16 +464,17 @@ const handleChargeRefunded = async (charge: Stripe.Charge) => {
 
   // 4. Release promo code if not already released and booking wasn't already cancelled
   const isAlreadyCancelled = booking.status === BOOKING_STATUS.CANCELLED
+  const customerId = (booking.customer as any)?._id || booking.customer
 
   if (booking.promoCode && !isAlreadyCancelled) {
     await PromoCode.findByIdAndUpdate(booking.promoCode, { $inc: { usageCount: -1 } })
+    await PromoCodeUsage.deleteOne({ promoCode: booking.promoCode, user: customerId })
     logger.info(
       `[Stripe Webhook] Released promo code for refunded booking ${booking.bookingNumber}`
     )
   }
 
   // 5. Handle Wallet Credit properly at cancellation time:
-  const customerId = (booking.customer as any)?._id || booking.customer
 
   // A. Restore original platform credit if customer applied wallet credit on booking and not already restored
   if (booking.platformCreditApplied > 0) {

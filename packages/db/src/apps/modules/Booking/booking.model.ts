@@ -250,6 +250,21 @@ const bookingSchema = new Schema<IBookingDoc>(
       trim: true,
       default: null,
     },
+    customPdf: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    customReceiptPdf: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    customCreditNotePdf: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     artistStripeInvoiceId: {
       type: String,
       trim: true,
@@ -261,6 +276,11 @@ const bookingSchema = new Schema<IBookingDoc>(
       default: null,
     },
     artistStripeInvoicePdf: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    artistCustomPdf: {
       type: String,
       trim: true,
       default: null,
