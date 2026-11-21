@@ -10,4 +10,5 @@ export const AWS_FOLDER_NAMES = {
   ChatImages: 'chatImages',
   ReviewImages: 'reviewImages',
   BugAttachments: 'bugAttachments',
+  Invoices: 'invoices',
 } as const

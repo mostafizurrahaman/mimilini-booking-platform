@@ -73,11 +73,15 @@ export interface IBooking {
   stripeInvoiceId?: string | null | undefined
   stripeInvoiceUrl?: string | null | undefined
   stripeInvoicePdf?: string | null | undefined
+  customPdf?: string | null | undefined
+  customReceiptPdf?: string | null | undefined
+  customCreditNotePdf?: string | null | undefined
 
   // Artist Platform Fee / RCTI Invoice:
   artistStripeInvoiceId?: string | null | undefined
   artistStripeInvoiceUrl?: string | null | undefined
   artistStripeInvoicePdf?: string | null | undefined
+  artistCustomPdf?: string | null | undefined
 
   // Marketplace & Processing Fee Sharing:
   platformCommissionPercentage: number // 20%
