@@ -167,146 +167,158 @@ export const generateAndUploadCustomerInvoicePdf = async (
 ): Promise<string> => {
   const buffer = await buildPdfBuffer((doc) => {
     // Header
-    doc.fontSize(22).font('Helvetica-Bold').fillColor('#1A1A1A').text('STUNNER ALERT', 40, 40)
+    doc.fontSize(20).font('Helvetica-Bold').fillColor('#0F172A').text('STUNNER ALERT', 40, 40)
     doc
-      .fontSize(9)
+      .fontSize(7.5)
       .font('Helvetica')
-      .fillColor('#555555')
-      .text('Stunner Alert Pty Ltd (Platform) | ABN: 88 701 443 129', 40, 68)
-    doc.text('billing@stunneralert.com | Sydney, Australia', 40, 80)
+      .fillColor('#64748B')
+      .text('Stunner Alert Pty Ltd (Platform) | ABN: 88 701 443 129', 40, 64)
+    doc.text('billing@stunneralert.com | Sydney, Australia', 40, 75)
 
-    doc.fontSize(16).font('Helvetica-Bold').fillColor('#1A1A1A').text(data.title, 360, 40, { align: 'right' })
-    doc.fontSize(9).font('Helvetica').fillColor('#333333')
-    doc.text(`Invoice No: ${data.invoiceNumber}`, 360, 65, { align: 'right' })
-    doc.text(`Issue Date: ${data.issueDate}`, 360, 78, { align: 'right' })
+    doc.fontSize(14).font('Helvetica-Bold').fillColor('#0F172A').text(data.title, 315, 40, { width: 240, align: 'right' })
+    doc.fontSize(7.5).font('Helvetica').fillColor('#334155')
+    doc.text(`Invoice No: ${data.invoiceNumber}`, 315, 60, { width: 240, align: 'right' })
+    doc.text(`Issue Date: ${data.issueDate}`, 315, 71, { width: 240, align: 'right' })
     if (data.dueDate) {
-      doc.text(`Due Date: ${data.dueDate}`, 360, 91, { align: 'right' })
+      doc.text(`Due Date: ${data.dueDate}`, 315, 82, { width: 240, align: 'right' })
     }
 
-    doc.strokeColor('#DDDDDD').lineWidth(1).moveTo(40, 115).lineTo(555, 115).stroke()
+    doc.strokeColor('#E2E8F0').lineWidth(0.75).moveTo(40, 98).lineTo(555, 98).stroke()
 
     // Parties
-    doc.fontSize(10).font('Helvetica-Bold').fillColor('#1A1A1A').text('SERVICE PROVIDER (ARTIST):', 40, 125)
-    doc.fontSize(9).font('Helvetica').fillColor('#333333')
-    doc.text(data.seller.businessName || data.seller.name, 40, 140)
+    doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#64748B').text('SERVICE PROVIDER (ARTIST):', 40, 108)
+    doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#0F172A').text(data.seller.businessName || data.seller.name, 40, 120)
+    doc.fontSize(7.5).font('Helvetica').fillColor('#334155')
+    let py = 132
     if (data.seller.abn) {
-      doc.text(`ABN: ${data.seller.abn}`, 40, 153)
+      doc.text(`ABN: ${data.seller.abn}`, 40, py)
+      py += 11
     }
-    doc.text(`GST Registered: ${data.seller.isGstRegistered ? 'YES' : 'NO'}`, 40, 166)
+    doc.text(`GST Registered: ${data.seller.isGstRegistered ? 'YES' : 'NO'}`, 40, py)
 
-    doc.fontSize(10).font('Helvetica-Bold').fillColor('#1A1A1A').text('CLIENT / BILLED TO:', 320, 125)
-    doc.fontSize(9).font('Helvetica').fillColor('#333333')
-    doc.text(data.buyer.name, 320, 140)
-    if (data.buyer.email) doc.text(data.buyer.email, 320, 153)
-    if (data.buyer.address) doc.text(data.buyer.address, 320, 166, { width: 220 })
+    doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#64748B').text('CLIENT / BILLED TO:', 315, 108)
+    doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#0F172A').text(data.buyer.name, 315, 120)
+    doc.fontSize(7.5).font('Helvetica').fillColor('#334155')
+    let cy = 132
+    if (data.buyer.email) {
+      doc.text(data.buyer.email, 315, cy)
+      cy += 11
+    }
+    if (data.buyer.address) {
+      doc.text(data.buyer.address, 315, cy, { width: 240 })
+    }
 
     // Status Banner
-    doc.rect(40, 195, 515, 24).fillAndStroke('#F4F6F8', '#E1E4E8')
-    doc.fontSize(9).font('Helvetica-Bold').fillColor('#24292E')
+    doc.rect(40, 164, 515, 20).fillAndStroke('#F8FAFC', '#E2E8F0')
+    doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#1E293B')
     doc.text(
-      `STATUS: [ ${data.statusText} ]  |  BOOKING REF: #${data.bookingNumber}  |  APPOINTMENT: ${data.appointmentDate}`,
+      `STATUS: [ ${data.statusText} ]  •  BOOKING REF: #${data.bookingNumber}  •  APPOINTMENT: ${data.appointmentDate}`,
       48,
-      202
+      170
     )
 
     // Table Header
-    let y = 235
-    doc.rect(40, y, 515, 20).fill('#212529')
-    doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#FFFFFF')
-    doc.text('#', 48, y + 6, { width: 20 })
-    doc.text('ITEM DESCRIPTION', 72, y + 6, { width: 230 })
-    doc.text('QTY', 305, y + 6, { width: 35, align: 'center' })
-    doc.text('UNIT PRICE (AUD)', 345, y + 6, { width: 68, align: 'right' })
-    doc.text('GST RATE', 418, y + 6, { width: 55, align: 'center' })
-    doc.text('TOTAL AUD', 478, y + 6, { width: 70, align: 'right' })
+    let y = 194
+    doc.rect(40, y, 515, 18).fill('#1E293B')
+    doc.fontSize(7).font('Helvetica-Bold').fillColor('#FFFFFF')
+    doc.text('#', 48, y + 5, { width: 20 })
+    doc.text('ITEM DESCRIPTION', 72, y + 5, { width: 235 })
+    doc.text('QTY', 310, y + 5, { width: 30, align: 'center' })
+    doc.text('UNIT PRICE (AUD)', 345, y + 5, { width: 70, align: 'right' })
+    doc.text('GST RATE', 420, y + 5, { width: 50, align: 'center' })
+    doc.text('TOTAL AUD', 475, y + 5, { width: 72, align: 'right' })
 
     // Table Rows
-    y += 20
-    doc.font('Helvetica').fontSize(9).fillColor('#333333')
+    y += 18
+    doc.font('Helvetica').fontSize(7.5).fillColor('#1E293B')
     let idx = 1
     for (const item of data.items) {
       const idxStr = idx.toString().padStart(2, '0')
       const gstRateText = item.gstRate || (data.seller.isGstRegistered ? '10.0%' : '0.0%')
-      doc.text(idxStr, 48, y + 6, { width: 20 })
-      doc.text(item.description, 72, y + 6, { width: 230 })
-      doc.text(item.quantity.toString(), 305, y + 6, { width: 35, align: 'center' })
-      doc.text(`$${fmt(item.unitPrice)}`, 345, y + 6, { width: 68, align: 'right' })
-      doc.text(gstRateText, 418, y + 6, { width: 55, align: 'center' })
-      doc.text(`$${fmt(item.amount)}`, 478, y + 6, { width: 70, align: 'right' })
-      y += 22
-      doc.strokeColor('#EEEEEE').lineWidth(0.5).moveTo(40, y).lineTo(555, y).stroke()
+      doc.text(idxStr, 48, y + 5, { width: 20 })
+      doc.text(item.description, 72, y + 5, { width: 235 })
+      doc.text(item.quantity.toString(), 310, y + 5, { width: 30, align: 'center' })
+      doc.text(`$${fmt(item.unitPrice)}`, 345, y + 5, { width: 70, align: 'right' })
+      doc.text(gstRateText, 420, y + 5, { width: 50, align: 'center' })
+      doc.text(`$${fmt(item.amount)}`, 475, y + 5, { width: 72, align: 'right' })
+      y += 18
+      doc.strokeColor('#F1F5F9').lineWidth(0.5).moveTo(40, y).lineTo(555, y).stroke()
       idx++
     }
 
     // Totals Block
-    y += 10
-    doc.text('Gross Service Total:', 340, y, { width: 120, align: 'right' })
-    doc.text(`$${fmt(data.totals?.subtotal)}`, 470, y, { width: 78, align: 'right' })
+    y += 8
+    doc.fontSize(7.5).font('Helvetica').fillColor('#475569')
+    doc.text('Gross Service Total:', 330, y, { width: 130, align: 'right' })
+    doc.text(`$${fmt(data.totals?.subtotal)}`, 465, y, { width: 82, align: 'right' })
 
     if (data.totals?.discount && data.totals.discount > 0) {
-      y += 15
-      doc.text('Promo Code Discount:', 340, y, { width: 120, align: 'right' })
-      doc.text(`-$${fmt(data.totals.discount)}`, 470, y, { width: 78, align: 'right' })
+      y += 13
+      doc.text('Promo Code Discount:', 330, y, { width: 130, align: 'right' })
+      doc.text(`-$${fmt(data.totals.discount)}`, 465, y, { width: 82, align: 'right' })
     }
 
-    y += 15
+    y += 13
     const gstLabel = data.seller.isGstRegistered ? 'Total GST (10% Inc):' : 'GST (0% Not Registered):'
-    doc.text(gstLabel, 340, y, { width: 120, align: 'right' })
-    doc.text(`$${fmt(data.totals?.gstAmount)}`, 470, y, { width: 78, align: 'right' })
+    doc.text(gstLabel, 330, y, { width: 130, align: 'right' })
+    doc.text(`$${fmt(data.totals?.gstAmount)}`, 465, y, { width: 82, align: 'right' })
 
-    y += 18
-    doc.rect(330, y - 4, 225, 24).fill('#E8F4FD')
-    doc.font('Helvetica-Bold').fontSize(10).fillColor('#0B4F8A')
-    doc.text('Total Booking Price:', 338, y + 2)
-    doc.text(`$${fmt(data.totals?.totalAmount)} AUD`, 440, y + 2, { width: 108, align: 'right' })
+    y += 15
+    doc.rect(320, y - 3, 235, 20).fill('#EFF6FF').stroke('#BFDBFE')
+    doc.font('Helvetica-Bold').fontSize(8).fillColor('#1D4ED8')
+    doc.text('Total Booking Price:', 330, y + 2)
+    doc.fontSize(8.5)
+    doc.text(`$${fmt(data.totals?.totalAmount)} AUD`, 440, y + 2, { width: 107, align: 'right' })
 
     // Payment Ledger / Due Schedule
     if (data.paymentBreakdown && data.paymentBreakdown.length > 0) {
-      y += 35
-      doc.font('Helvetica-Bold').fontSize(9).fillColor('#1A1A1A').text('PAYMENT METHOD & TENDER BREAKDOWN:', 40, y)
-      y += 14
-      doc.font('Helvetica').fontSize(9).fillColor('#444444')
+      y += 28
+      doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#334155').text('PAYMENT METHOD & TENDER BREAKDOWN:', 40, y)
+      y += 12
+      doc.font('Helvetica').fontSize(7.5).fillColor('#475569')
       for (const p of data.paymentBreakdown) {
         doc.text(`• ${p.label}`, 50, y)
-        doc.text(`-$${fmt(p.amount)}`, 470, y, { width: 78, align: 'right' })
-        y += 14
+        doc.text(`-$${fmt(p.amount)}`, 465, y, { width: 82, align: 'right' })
+        y += 12
       }
     } else if (data.dueSchedule) {
-      y += 35
-      doc.font('Helvetica-Bold').fontSize(9).fillColor('#1A1A1A').text('PAYMENT STATUS & DUE SCHEDULE:', 40, y)
-      y += 14
-      doc.font('Helvetica').fontSize(9).fillColor('#444444')
+      y += 28
+      doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#334155').text('PAYMENT STATUS & DUE SCHEDULE:', 40, y)
+      y += 12
+      doc.font('Helvetica').fontSize(7.5).fillColor('#475569')
       doc.text('• Current Amount Paid:', 50, y)
-      doc.text(`$${fmt(data.dueSchedule.currentPaid)}`, 470, y, { width: 78, align: 'right' })
-      y += 14
+      doc.text(`$${fmt(data.dueSchedule.currentPaid)}`, 465, y, { width: 82, align: 'right' })
+      y += 12
       doc.text('• Initial 20% Deposit (Due upon artist confirmation):', 50, y)
-      doc.text(`$${fmt(data.dueSchedule.initialDeposit)}`, 470, y, { width: 78, align: 'right' })
-      y += 14
+      doc.text(`$${fmt(data.dueSchedule.initialDeposit)}`, 465, y, { width: 82, align: 'right' })
+      y += 12
       doc.text('• Remaining 80% Balance (Due 24h before appointment):', 50, y)
-      doc.text(`$${fmt(data.dueSchedule.balanceDue)}`, 470, y, { width: 78, align: 'right' })
-      y += 14
+      doc.text(`$${fmt(data.dueSchedule.balanceDue)}`, 465, y, { width: 82, align: 'right' })
+      y += 12
     }
 
     if (data.balanceDue !== undefined) {
       y += 6
       const isSettled = data.balanceDue === 0
-      doc.font('Helvetica-Bold').fontSize(9).fillColor(isSettled ? '#1C7430' : '#C02A2A')
-      doc.text('BALANCE DUE / OUTSTANDING:', 50, y)
+      doc.rect(40, y - 3, 515, 18).fill(isSettled ? '#F0FDF4' : '#FEF2F2').stroke(isSettled ? '#BBF7D0' : '#FECACA')
+      doc.font('Helvetica-Bold').fontSize(7.5).fillColor(isSettled ? '#15803D' : '#B91C1C')
+      doc.text('BALANCE DUE / OUTSTANDING:', 48, y + 2)
       doc.text(
         isSettled ? '$0.00 AUD [ PAID IN FULL ]' : `$${fmt(data.balanceDue)} AUD`,
         380,
-        y,
-        { width: 168, align: 'right' }
+        y + 2,
+        { width: 167, align: 'right' }
       )
     }
 
     // Footer note
-    doc.fontSize(8).font('Helvetica').fillColor('#777777')
+    doc.strokeColor('#E2E8F0').lineWidth(0.5).moveTo(40, 770).lineTo(555, 770).stroke()
+    doc.fontSize(7).font('Helvetica').fillColor('#94A3B8')
     doc.text(
       data.footerNote ||
         'Total price includes Australian GST where applicable. All transactions are in Australian Dollars (AUD). Issued by Stunner Alert Pty Ltd.',
       40,
-      760,
+      778,
       { width: 515, align: 'center' }
     )
   })
@@ -322,57 +334,67 @@ export const generateAndUploadArtistRctiPdf = async (
 ): Promise<string> => {
   const buffer = await buildPdfBuffer((doc) => {
     // Header
-    doc.fontSize(20).font('Helvetica-Bold').fillColor('#1A1A1A').text('STUNNER ALERT', 40, 40)
-    doc.fontSize(9).font('Helvetica').fillColor('#555555').text('Mimilini Pty Ltd t/a Stunner Alert (Recipient / Payer)', 40, 65)
-    doc.text(`ABN: ${data.recipient.abn} | ${data.recipient.email} | Sydney, NSW, Australia`, 40, 78)
+    doc.fontSize(20).font('Helvetica-Bold').fillColor('#0F172A').text('STUNNER ALERT', 40, 40)
+    doc
+      .fontSize(7.5)
+      .font('Helvetica')
+      .fillColor('#64748B')
+      .text('Mimilini Pty Ltd t/a Stunner Alert (Recipient / Payer)', 40, 64)
+    doc.text(`ABN: ${data.recipient.abn} | ${data.recipient.email} | Sydney, NSW, Australia`, 40, 75)
 
-    doc.fontSize(12).font('Helvetica-Bold').fillColor('#1A1A1A').text('RECIPIENT CREATED TAX INVOICE (RCTI)', 280, 40, { align: 'right' })
-    doc.fontSize(9).font('Helvetica').fillColor('#333333')
-    doc.text(`Invoice Number: ${data.invoiceNumber}`, 320, 65, { align: 'right' })
-    doc.text(`Issue Date:     ${data.issueDate}`, 320, 78, { align: 'right' })
-    doc.text(`Booking Ref:    #${data.bookingNumber}`, 320, 91, { align: 'right' })
-    doc.text(`Payout Method:  ${data.payoutMethod || 'Stripe Connect'}`, 320, 104, { align: 'right' })
+    doc
+      .fontSize(13)
+      .font('Helvetica-Bold')
+      .fillColor('#0F172A')
+      .text('RECIPIENT CREATED TAX INVOICE (RCTI)', 250, 40, { width: 305, align: 'right' })
+    doc.fontSize(7.5).font('Helvetica').fillColor('#334155')
+    doc.text(`Invoice Number: ${data.invoiceNumber}`, 315, 60, { width: 240, align: 'right' })
+    doc.text(`Issue Date:     ${data.issueDate}`, 315, 71, { width: 240, align: 'right' })
+    doc.text(`Booking Ref:    #${data.bookingNumber}`, 315, 82, { width: 240, align: 'right' })
+    doc.text(`Payout Method:  ${data.payoutMethod || 'Stripe Connect'}`, 315, 93, { width: 240, align: 'right' })
 
-    doc.strokeColor('#DDDDDD').lineWidth(1).moveTo(40, 122).lineTo(555, 122).stroke()
+    doc.strokeColor('#E2E8F0').lineWidth(0.75).moveTo(40, 106).lineTo(555, 106).stroke()
 
     // Professional / Supplier Section
-    doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#1A1A1A').text('SUPPLIER / SERVICE PROFESSIONAL:', 40, 130)
-    doc.fontSize(9).font('Helvetica').fillColor('#333333')
-    doc.text(data.supplier.businessName || data.supplier.name, 40, 144)
-    doc.text(`ABN: ${data.supplier.abn || 'Not Registered'}`, 40, 157)
-    doc.text(`GST Registered: ${data.supplier.isGstRegistered ? 'YES' : 'NO'}`, 40, 170)
+    doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#64748B').text('SUPPLIER / SERVICE PROFESSIONAL:', 40, 114)
+    doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#0F172A').text(data.supplier.businessName || data.supplier.name, 40, 126)
+    doc.fontSize(7.5).font('Helvetica').fillColor('#334155')
+    let sy = 138
+    doc.text(`ABN: ${data.supplier.abn || 'Not Registered'}`, 40, sy)
+    doc.text(`GST Registered: ${data.supplier.isGstRegistered ? 'YES' : 'NO'}`, 220, sy)
     if (data.supplier.address) {
-      doc.text(`Address: ${data.supplier.address}`, 40, 183, { width: 500 })
+      sy += 11
+      doc.text(`Address: ${data.supplier.address}`, 40, sy, { width: 500 })
     }
 
     // SECTION 1: GROSS CLIENT COLLECTION
-    let y = data.supplier.address ? 202 : 190
-    doc.rect(40, y, 515, 18).fill('#212529')
-    doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#FFFFFF')
-    doc.text('SECTION 1: GROSS CLIENT COLLECTION (TOTAL EARNINGS COLLECTED ON YOUR BEHALF)', 48, y + 5)
-    doc.text('GST Rate', 355, y + 5, { width: 60, align: 'center' })
-    doc.text('Gross Amount (AUD)', 430, y + 5, { width: 115, align: 'right' })
+    let y = sy + 15
+    doc.rect(40, y, 515, 16).fill('#1E293B')
+    doc.fontSize(7).font('Helvetica-Bold').fillColor('#FFFFFF')
+    doc.text('SECTION 1: GROSS CLIENT COLLECTION (TOTAL EARNINGS COLLECTED ON YOUR BEHALF)', 48, y + 4)
+    doc.text('GST Rate', 355, y + 4, { width: 60, align: 'center' })
+    doc.text('Gross Amount (AUD)', 430, y + 4, { width: 115, align: 'right' })
 
-    y += 18
-    doc.font('Helvetica').fontSize(9).fillColor('#333333')
+    y += 16
+    doc.font('Helvetica').fontSize(7.5).fillColor('#1E293B')
     let cIdx = 1
     for (const c of data.collections) {
       const gstRate = c.gstRate || (data.supplier.isGstRegistered ? '10.0%' : '0.0%')
-      doc.text(`${cIdx}. ${c.description}`, 48, y + 5, { width: 300 })
-      doc.text(gstRate, 355, y + 5, { width: 60, align: 'center' })
-      doc.text(`$${fmt(c.amount)}`, 440, y + 5, { width: 105, align: 'right' })
-      y += 18
-      doc.strokeColor('#EEEEEE').lineWidth(0.5).moveTo(40, y).lineTo(555, y).stroke()
+      doc.text(`${cIdx}. ${c.description}`, 48, y + 4, { width: 300 })
+      doc.text(gstRate, 355, y + 4, { width: 60, align: 'center' })
+      doc.text(`$${fmt(c.amount)}`, 440, y + 4, { width: 105, align: 'right' })
+      y += 16
+      doc.strokeColor('#F1F5F9').lineWidth(0.5).moveTo(40, y).lineTo(555, y).stroke()
       cIdx++
     }
 
-    y += 3
-    doc.font('Helvetica-Bold').fontSize(9)
+    y += 4
+    doc.font('Helvetica-Bold').fontSize(8).fillColor('#0F172A')
     doc.text('TOTAL GROSS CLIENT COLLECTION:', 200, y, { width: 230, align: 'right' })
     doc.text(`$${fmt(data.totalGrossCollection)} AUD`, 440, y, { width: 105, align: 'right' })
 
-    y += 14
-    doc.font('Helvetica').fontSize(8.5).fillColor('#555555')
+    y += 12
+    doc.font('Helvetica').fontSize(7).fillColor('#64748B')
     const gstCollectedText =
       data.supplier.isGstRegistered && (data.totalServiceGst || 0) > 0
         ? `(Includes GST of $${fmt(data.totalServiceGst)} AUD on Gross Supplies)`
@@ -380,71 +402,71 @@ export const generateAndUploadArtistRctiPdf = async (
     doc.text(gstCollectedText, 48, y, { width: 500, align: 'right' })
 
     // SECTION 2: DEDUCTIONS & PLATFORM FACILITATION FEES
-    y += 20
-    doc.rect(40, y, 515, 18).fill('#343A40')
-    doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#FFFFFF')
-    doc.text('SECTION 2: DEDUCTIONS & PLATFORM FACILITATION FEES', 48, y + 5)
-    doc.text('Rate / Basis', 305, y + 5, { width: 130, align: 'center' })
-    doc.text('Deduction (AUD)', 445, y + 5, { width: 100, align: 'right' })
+    y += 16
+    doc.rect(40, y, 515, 16).fill('#334155')
+    doc.fontSize(7).font('Helvetica-Bold').fillColor('#FFFFFF')
+    doc.text('SECTION 2: DEDUCTIONS & PLATFORM FACILITATION FEES', 48, y + 4)
+    doc.text('Rate / Basis', 305, y + 4, { width: 130, align: 'center' })
+    doc.text('Deduction (AUD)', 445, y + 4, { width: 100, align: 'right' })
 
-    y += 18
-    doc.font('Helvetica').fontSize(9).fillColor('#333333')
+    y += 16
+    doc.font('Helvetica').fontSize(7.5).fillColor('#1E293B')
     for (const d of data.deductions) {
       if (d.isAbsorbed) {
-        doc.text(`• ${d.description}`, 48, y + 5, { width: 250 })
-        doc.font('Helvetica-Bold').fillColor('#1C7430')
-        doc.text('[ FULLY ABSORBED BY STUNNER ALERT ]', 290, y + 5, { width: 160, align: 'center' })
-        doc.font('Helvetica').fillColor('#333333')
-        doc.text('$0.00', 445, y + 5, { width: 100, align: 'right' })
+        doc.text(`• ${d.description}`, 48, y + 4, { width: 250 })
+        doc.font('Helvetica-Bold').fontSize(7).fillColor('#15803D')
+        doc.text('[ FULLY ABSORBED BY STUNNER ALERT ]', 290, y + 4, { width: 160, align: 'center' })
+        doc.font('Helvetica').fontSize(7.5).fillColor('#1E293B')
+        doc.text('$0.00', 445, y + 4, { width: 100, align: 'right' })
       } else {
-        doc.text(`• ${d.description}`, 48, y + 5, { width: 250 })
+        doc.text(`• ${d.description}`, 48, y + 4, { width: 250 })
         if (d.basis) {
-          doc.text(d.basis, 305, y + 5, { width: 130, align: 'center' })
+          doc.text(d.basis, 305, y + 4, { width: 130, align: 'center' })
         }
-        doc.text(`-$${fmt(d.amount)}`, 445, y + 5, { width: 100, align: 'right' })
+        doc.text(`-$${fmt(d.amount)}`, 445, y + 4, { width: 100, align: 'right' })
       }
-      y += 18
-      doc.strokeColor('#EEEEEE').lineWidth(0.5).moveTo(40, y).lineTo(555, y).stroke()
+      y += 16
+      doc.strokeColor('#F1F5F9').lineWidth(0.5).moveTo(40, y).lineTo(555, y).stroke()
     }
 
-    y += 3
-    doc.font('Helvetica-Bold').fontSize(9)
+    y += 4
+    doc.font('Helvetica-Bold').fontSize(8).fillColor('#0F172A')
     doc.text('TOTAL DEDUCTIONS:', 250, y, { width: 180, align: 'right' })
     doc.text(`-$${fmt(data.totalDeductions)} AUD`, 445, y, { width: 100, align: 'right' })
 
     // SECTION 3: NET PROFESSIONAL SETTLEMENT & PAYOUT SUMMARY
-    y += 22
-    doc.rect(40, y, 515, 18).fill('#212529')
-    doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#FFFFFF')
-    doc.text('SECTION 3: NET PROFESSIONAL SETTLEMENT & PAYOUT SUMMARY', 48, y + 5)
+    y += 18
+    doc.rect(40, y, 515, 16).fill('#1E293B')
+    doc.fontSize(7).font('Helvetica-Bold').fillColor('#FFFFFF')
+    doc.text('SECTION 3: NET PROFESSIONAL SETTLEMENT & PAYOUT SUMMARY', 48, y + 4)
 
-    y += 20
-    doc.rect(40, y, 515, 78).fill('#E8F8F0').stroke('#B7EBCE')
-    let boxY = y + 8
-    doc.font('Helvetica').fontSize(8.5).fillColor('#333333')
+    y += 18
+    doc.rect(40, y, 515, 68).fill('#F0FDF4').stroke('#BBF7D0')
+    let boxY = y + 7
+    doc.font('Helvetica').fontSize(7.5).fillColor('#1E293B')
     if (data.settlementSummary) {
       doc.text(`• Core Service Net Earnings: $${fmt(data.settlementSummary.coreServiceNet)}`, 50, boxY)
       if (data.settlementSummary.travelFeeReimbursement && data.settlementSummary.travelFeeReimbursement > 0) {
         doc.text(`• Direct Travel Fee Reimbursement (Zero Commission): $${fmt(data.settlementSummary.travelFeeReimbursement)}`, 280, boxY)
       }
-      boxY += 13
+      boxY += 11
       if (data.settlementSummary.parkingFeeReimbursement && data.settlementSummary.parkingFeeReimbursement > 0) {
         doc.text(`• Direct Parking Fee Reimbursement (Zero Commission): $${fmt(data.settlementSummary.parkingFeeReimbursement)}`, 50, boxY)
       }
       if (data.settlementSummary.serviceGstAmount && data.settlementSummary.serviceGstAmount > 0) {
         doc.text(`• Service GST Collected On Your Behalf: $${fmt(data.settlementSummary.serviceGstAmount)}`, 280, boxY)
       }
-      boxY += 13
+      boxY += 11
       doc.text(`• Less: Platform Processing Fee on Balance Payment: -$${fmt(data.settlementSummary.balanceProcessingFee)}`, 50, boxY)
-      boxY += 14
+      boxY += 12
     }
 
-    doc.font('Helvetica-Bold').fontSize(10.5).fillColor('#0E6251')
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#065F46')
     doc.text('TOTAL NET PAYOUT TRANSFERRED TO YOUR BANK ACCOUNT:', 50, boxY)
     doc.text(`$${fmt(data.netPayout)} AUD`, 420, boxY, { width: 125, align: 'right' })
-    boxY += 14
+    boxY += 12
 
-    doc.font('Helvetica').fontSize(8).fillColor('#555555')
+    doc.font('Helvetica').fontSize(7).fillColor('#64748B')
     const transferGroupText = data.transferGroup || `GRP-${data.bookingNumber}`
     const transferIdText = data.transferId ? ` | Transfer ID: ${data.transferId}` : ''
     doc.text(
@@ -454,13 +476,23 @@ export const generateAndUploadArtistRctiPdf = async (
     )
 
     // ATO Compliance Declaration
-    y += 88
-    doc.fontSize(7.5).font('Helvetica').fillColor('#666666')
+    y += 76
+    doc.fontSize(6.5).font('Helvetica').fillColor('#64748B')
     doc.text(
       'ATO COMPLIANCE & RCTI AGREEMENT DECLARATION:\n• Issued by Mimilini Pty Ltd t/a Stunner Alert under Australian Recipient Created Tax Invoice (RCTI) guidelines.\n• The supplier and the recipient acknowledge that both are registered for GST where indicated.\n• The supplier agrees that the recipient (Stunner Alert) will issue tax invoices in respect of the supplies, and the supplier will not issue tax invoices in respect of these supplies.',
       40,
       y,
-      { width: 515, lineGap: 2 }
+      { width: 515, lineGap: 1.5 }
+    )
+
+    // Footer note
+    doc.strokeColor('#E2E8F0').lineWidth(0.5).moveTo(40, 770).lineTo(555, 770).stroke()
+    doc.fontSize(7).font('Helvetica').fillColor('#94A3B8')
+    doc.text(
+      'Recipient Created Tax Invoice issued pursuant to Subsection 153-B of the A New Tax System (Goods and Services Tax) Act 1999.',
+      40,
+      778,
+      { width: 515, align: 'center' }
     )
   })
 
@@ -475,61 +507,63 @@ export const generateAndUploadBalanceReceiptPdf = async (
 ): Promise<string> => {
   const buffer = await buildPdfBuffer((doc) => {
     // Header
-    doc.fontSize(22).font('Helvetica-Bold').fillColor('#1A1A1A').text('STUNNER ALERT', 40, 40)
-    doc.fontSize(9).font('Helvetica').fillColor('#555555').text('Stunner Alert Pty Ltd | ABN: 88 701 443 129', 40, 68)
+    doc.fontSize(20).font('Helvetica-Bold').fillColor('#0F172A').text('STUNNER ALERT', 40, 40)
+    doc.fontSize(7.5).font('Helvetica').fillColor('#64748B').text('Stunner Alert Pty Ltd | ABN: 88 701 443 129', 40, 64)
 
-    doc.fontSize(16).font('Helvetica-Bold').fillColor('#1A1A1A').text('PAYMENT RECEIPT', 360, 40, { align: 'right' })
-    doc.fontSize(9).font('Helvetica').fillColor('#333333')
-    doc.text(`Receipt No: ${data.receiptNumber}`, 360, 65, { align: 'right' })
-    doc.text(`Receipt Date: ${data.receiptDate}`, 360, 78, { align: 'right' })
-    doc.text(`Booking Ref: #${data.bookingNumber}`, 360, 91, { align: 'right' })
+    doc.fontSize(15).font('Helvetica-Bold').fillColor('#0F172A').text('PAYMENT RECEIPT', 315, 40, { width: 240, align: 'right' })
+    doc.fontSize(7.5).font('Helvetica').fillColor('#334155')
+    doc.text(`Receipt No: ${data.receiptNumber}`, 315, 60, { width: 240, align: 'right' })
+    doc.text(`Receipt Date: ${data.receiptDate}`, 315, 71, { width: 240, align: 'right' })
+    doc.text(`Booking Ref: #${data.bookingNumber}`, 315, 82, { width: 240, align: 'right' })
 
-    doc.strokeColor('#DDDDDD').lineWidth(1).moveTo(40, 115).lineTo(555, 115).stroke()
+    doc.strokeColor('#E2E8F0').lineWidth(0.75).moveTo(40, 100).lineTo(555, 100).stroke()
 
-    doc.fontSize(10).font('Helvetica-Bold').fillColor('#1A1A1A').text('PAYMENT BY:', 40, 125)
-    doc.fontSize(9).font('Helvetica').fillColor('#333333').text(data.customerName, 40, 140)
-    if (data.customerEmail) doc.text(data.customerEmail, 40, 153)
+    doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#64748B').text('PAYMENT BY:', 40, 110)
+    doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#0F172A').text(data.customerName, 40, 122)
+    if (data.customerEmail) doc.fontSize(7.5).font('Helvetica').fillColor('#334155').text(data.customerEmail, 40, 134)
 
-    doc.fontSize(10).font('Helvetica-Bold').fillColor('#1A1A1A').text('PROFESSIONAL PROVIDER:', 320, 125)
-    doc.fontSize(9).font('Helvetica').fillColor('#333333').text(data.artistName, 320, 140)
-    if (data.artistAbn) doc.text(`ABN: ${data.artistAbn}`, 320, 153)
+    doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#64748B').text('PROFESSIONAL PROVIDER:', 315, 110)
+    doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#0F172A').text(data.artistName, 315, 122)
+    if (data.artistAbn) doc.fontSize(7.5).font('Helvetica').fillColor('#334155').text(`ABN: ${data.artistAbn}`, 315, 134)
 
     // Transaction Details
-    let y = 185
-    doc.rect(40, y, 515, 20).fill('#212529')
-    doc.fontSize(9).font('Helvetica-Bold').fillColor('#FFFFFF')
+    let y = 160
+    doc.rect(40, y, 515, 18).fill('#1E293B')
+    doc.fontSize(7).font('Helvetica-Bold').fillColor('#FFFFFF')
     doc.text('FINAL 80% BALANCE SETTLEMENT DETAILS', 48, y + 5)
 
-    y += 25
-    doc.font('Helvetica').fontSize(9).fillColor('#333333')
+    y += 24
+    doc.font('Helvetica').fontSize(7.5).fillColor('#334155')
     doc.text(`• Service: ${data.serviceName}`, 48, y)
-    y += 16
+    y += 14
     doc.text(`• Payment Tender: ${data.paymentMethodText}`, 48, y)
-    y += 16
+    y += 14
     doc.text(`• Gateway Transaction ID: ${data.transactionRef}`, 48, y)
 
-    y += 30
-    doc.rect(40, y, 515, 90).fill('#F8F9FA').stroke('#E9ECEF')
-    doc.font('Helvetica').fontSize(9).fillColor('#333333')
-    doc.text('Total Booking Value:', 55, y + 12)
-    doc.text(`$${fmt(data.totalBookingPrice)} AUD`, 460, y + 12, { width: 85, align: 'right' })
+    y += 24
+    doc.rect(40, y, 515, 80).fill('#F8FAFC').stroke('#E2E8F0')
+    doc.font('Helvetica').fontSize(7.5).fillColor('#334155')
+    doc.text('Total Booking Value:', 55, y + 10)
+    doc.text(`$${fmt(data.totalBookingPrice)} AUD`, 460, y + 10, { width: 85, align: 'right' })
 
-    doc.text('Less: Prior Deposit Paid (20%):', 55, y + 30)
-    doc.text(`-$${fmt(data.priorDepositPaid)} AUD`, 460, y + 30, { width: 85, align: 'right' })
+    doc.text('Less: Prior Deposit Paid (20%):', 55, y + 26)
+    doc.text(`-$${fmt(data.priorDepositPaid)} AUD`, 460, y + 26, { width: 85, align: 'right' })
 
-    doc.font('Helvetica-Bold').fillColor('#0E6251')
-    doc.text('Amount Charged Today (80% Balance):', 55, y + 48)
-    doc.text(`$${fmt(data.amountChargedToday)} AUD`, 460, y + 48, { width: 85, align: 'right' })
+    doc.font('Helvetica-Bold').fillColor('#065F46')
+    doc.text('Amount Charged Today (80% Balance):', 55, y + 42)
+    doc.text(`$${fmt(data.amountChargedToday)} AUD`, 460, y + 42, { width: 85, align: 'right' })
 
-    doc.font('Helvetica-Bold').fillColor('#1C7430')
-    doc.text('Outstanding Remaining Balance:', 55, y + 66)
-    doc.text(`$${fmt(data.remainingBalance)} AUD [ PAID IN FULL ]`, 380, y + 66, { width: 165, align: 'right' })
+    doc.font('Helvetica-Bold').fillColor('#15803D')
+    doc.text('Outstanding Remaining Balance:', 55, y + 58)
+    doc.text(`$${fmt(data.remainingBalance)} AUD [ PAID IN FULL ]`, 380, y + 58, { width: 165, align: 'right' })
 
-    doc.fontSize(8).font('Helvetica').fillColor('#777777')
+    // Footer note
+    doc.strokeColor('#E2E8F0').lineWidth(0.5).moveTo(40, 770).lineTo(555, 770).stroke()
+    doc.fontSize(7).font('Helvetica').fillColor('#94A3B8')
     doc.text(
       'Thank you for your payment. Your appointment is now confirmed and settled. Stunner Alert Pty Ltd.',
       40,
-      760,
+      778,
       { width: 515, align: 'center' }
     )
   })
@@ -545,68 +579,70 @@ export const generateAndUploadCreditNotePdf = async (
 ): Promise<string> => {
   const buffer = await buildPdfBuffer((doc) => {
     // Header
-    doc.fontSize(22).font('Helvetica-Bold').fillColor('#1A1A1A').text('STUNNER ALERT', 40, 40)
-    doc.fontSize(9).font('Helvetica').fillColor('#555555').text('Stunner Alert Pty Ltd | ABN: 88 701 443 129', 40, 68)
+    doc.fontSize(20).font('Helvetica-Bold').fillColor('#0F172A').text('STUNNER ALERT', 40, 40)
+    doc.fontSize(7.5).font('Helvetica').fillColor('#64748B').text('Stunner Alert Pty Ltd | ABN: 88 701 443 129', 40, 64)
 
-    doc.fontSize(15).font('Helvetica-Bold').fillColor('#C02A2A').text('ADJUSTMENT / CREDIT NOTE', 300, 40, { align: 'right' })
-    doc.fontSize(9).font('Helvetica').fillColor('#333333')
-    doc.text(`Credit Note No: ${data.creditNoteNumber}`, 320, 65, { align: 'right' })
-    doc.text(`Original Invoice: ${data.originalInvoiceNumber}`, 320, 78, { align: 'right' })
-    doc.text(`Date: ${data.date}`, 320, 91, { align: 'right' })
-    doc.text(`Booking Ref: #${data.bookingNumber}`, 320, 104, { align: 'right' })
+    doc.fontSize(14).font('Helvetica-Bold').fillColor('#B91C1C').text('ADJUSTMENT / CREDIT NOTE', 250, 40, { width: 305, align: 'right' })
+    doc.fontSize(7.5).font('Helvetica').fillColor('#334155')
+    doc.text(`Credit Note No: ${data.creditNoteNumber}`, 315, 60, { width: 240, align: 'right' })
+    doc.text(`Original Invoice: ${data.originalInvoiceNumber}`, 315, 71, { width: 240, align: 'right' })
+    doc.text(`Date: ${data.date}`, 315, 82, { width: 240, align: 'right' })
+    doc.text(`Booking Ref: #${data.bookingNumber}`, 315, 93, { width: 240, align: 'right' })
 
-    doc.strokeColor('#DDDDDD').lineWidth(1).moveTo(40, 125).lineTo(555, 125).stroke()
+    doc.strokeColor('#E2E8F0').lineWidth(0.75).moveTo(40, 106).lineTo(555, 106).stroke()
 
-    doc.fontSize(10).font('Helvetica-Bold').fillColor('#1A1A1A').text('ISSUED TO (CLIENT):', 40, 135)
-    doc.fontSize(9).font('Helvetica').fillColor('#333333').text(data.customerName, 40, 150)
-    if (data.customerEmail) doc.text(data.customerEmail, 40, 163)
+    doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#64748B').text('ISSUED TO (CLIENT):', 40, 114)
+    doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#0F172A').text(data.customerName, 40, 126)
+    if (data.customerEmail) doc.fontSize(7.5).font('Helvetica').fillColor('#334155').text(data.customerEmail, 40, 138)
 
-    doc.fontSize(9).font('Helvetica-Bold').fillColor('#333333').text(`Reason for Adjustment: ${data.reason}`, 40, 185)
+    doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#334155').text(`Reason for Adjustment: ${data.reason}`, 40, 154)
 
     // Reversal Table
-    let y = 205
-    doc.rect(40, y, 515, 20).fill('#C02A2A')
-    doc.fontSize(9).font('Helvetica-Bold').fillColor('#FFFFFF')
+    let y = 172
+    doc.rect(40, y, 515, 18).fill('#B91C1C')
+    doc.fontSize(7).font('Helvetica-Bold').fillColor('#FFFFFF')
     doc.text('CHARGES CANCELLED / REVERSED', 48, y + 5)
-    doc.text('ADJUSTMENT (AUD)', 450, y + 5, { width: 100, align: 'right' })
+    doc.text('ADJUSTMENT (AUD)', 445, y + 5, { width: 100, align: 'right' })
 
-    y += 20
-    doc.font('Helvetica').fontSize(9).fillColor('#333333')
+    y += 18
+    doc.font('Helvetica').fontSize(7.5).fillColor('#1E293B')
     for (const item of data.reversedItems) {
-      doc.text(item.description, 48, y + 6, { width: 380 })
-      doc.text(`-$${fmt(item.amount)}`, 450, y + 6, { width: 100, align: 'right' })
-      y += 20
-      doc.strokeColor('#EEEEEE').lineWidth(0.5).moveTo(40, y).lineTo(555, y).stroke()
+      doc.text(item.description, 48, y + 5, { width: 380 })
+      doc.text(`-$${fmt(item.amount)}`, 445, y + 5, { width: 100, align: 'right' })
+      y += 16
+      doc.strokeColor('#F1F5F9').lineWidth(0.5).moveTo(40, y).lineTo(555, y).stroke()
     }
 
-    y += 10
-    doc.font('Helvetica-Bold').fontSize(10).fillColor('#C02A2A')
+    y += 6
+    doc.font('Helvetica-Bold').fontSize(8).fillColor('#B91C1C')
     doc.text('Total Adjustment Credited:', 300, y, { width: 150, align: 'right' })
-    doc.text(`-$${fmt(data.totalAdjustment)} AUD`, 450, y, { width: 100, align: 'right' })
+    doc.text(`-$${fmt(data.totalAdjustment)} AUD`, 445, y, { width: 100, align: 'right' })
 
     // Refund disposition
-    y += 35
-    doc.rect(40, y, 515, 80).fill('#FDF7F7').stroke('#F5C6CB')
-    doc.font('Helvetica-Bold').fontSize(9).fillColor('#721C24').text('REFUND DISPOSITION BREAKDOWN:', 50, y + 10)
-    y += 26
-    doc.font('Helvetica').fontSize(9).fillColor('#333333')
+    y += 24
+    doc.rect(40, y, 515, 68).fill('#FEF2F2').stroke('#FECACA')
+    doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#991B1B').text('REFUND DISPOSITION BREAKDOWN:', 50, y + 8)
+    y += 22
+    doc.font('Helvetica').fontSize(7.5).fillColor('#334155')
     if (data.walletRefundAmount > 0) {
       doc.text(`• Refunded to Stunner Alert Wallet Credit: $${fmt(data.walletRefundAmount)} AUD`, 50, y)
-      y += 15
+      y += 12
     }
     if (data.cardRefundAmount > 0) {
       doc.text(`• Refunded to Original Payment Card (Stripe): $${fmt(data.cardRefundAmount)} AUD`, 50, y)
-      y += 15
+      y += 12
     }
     if (data.voidedAmount > 0) {
       doc.text(`• Uncaptured Balance Released / Voided: $${fmt(data.voidedAmount)} AUD`, 50, y)
     }
 
-    doc.fontSize(8).font('Helvetica').fillColor('#777777')
+    // Footer note
+    doc.strokeColor('#E2E8F0').lineWidth(0.5).moveTo(40, 770).lineTo(555, 770).stroke()
+    doc.fontSize(7).font('Helvetica').fillColor('#94A3B8')
     doc.text(
       'ATO Compliance: This document serves as an official Adjustment Note for Australian GST purposes. Stunner Alert Pty Ltd.',
       40,
-      760,
+      778,
       { width: 515, align: 'center' }
     )
   })

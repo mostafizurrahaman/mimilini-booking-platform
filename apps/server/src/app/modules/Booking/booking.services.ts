@@ -1007,7 +1007,21 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     if (stripePaymentIntentId) {
       txnPayload.stripePaymentIntentId = stripePaymentIntentId
     }
-    await PaymentTransaction.create(txnPayload)
+    try {
+      await PaymentTransaction.findOneAndUpdate(
+        {
+          $or: [
+            ...(stripePaymentIntentId ? [{ stripePaymentIntentId }] : []),
+            { transactionId: `TXN-${bookingNumber}-01` },
+            { booking: (booking as any)._id, type: PAYMENT_TRANSACTION_TYPE.INITIAL_20 },
+          ],
+        },
+        { $set: txnPayload },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      )
+    } catch (txnErr: any) {
+      logger.warn(`[PaymentTransaction] Deposit audit record upsert notice: ${txnErr?.message}`)
+    }
   }
 
   // Record BookingHistory
@@ -2453,34 +2467,38 @@ const payBalance = async (user: IUser, bookingId: string, paymentMethodId?: stri
         logger.warn('[Custom Receipt PDF] Failed to generate receipt after balance payment:', receiptErr)
       }
 
-      const existingTxn = await PaymentTransaction.findOne({
-        $or: [
-          { stripePaymentIntentId: paymentIntent.id },
-          { booking: (booking as any)._id, type: PAYMENT_TRANSACTION_TYPE.BALANCE_80 },
-        ],
-      })
-      if (existingTxn) {
-        existingTxn.status = PAYMENT_STATUS.SUCCEEDED
-        existingTxn.stripePaymentIntentId = paymentIntent.id
-        await existingTxn.save()
-      } else {
-        await PaymentTransaction.create({
-          transactionId: `TXN-${booking.bookingNumber}-02`,
-          booking: (booking as any)._id,
-          bookingGroupId: transferGroup,
-          user: booking.customer,
-          artist: booking.artist,
-          type: PAYMENT_TRANSACTION_TYPE.BALANCE_80,
-          gateway: PAYMENT_GATEWAY.STRIPE_CONNECT,
-          status: PAYMENT_STATUS.SUCCEEDED,
-          currency: 'AUD',
-          amount: booking.balancePayment.amount,
-          stripePaymentIntentId: paymentIntent.id,
-          marketplaceFee: 0,
-          marketplaceFeeGst: 0,
-          stripeFeeBorne: booking.stripeBalanceFee,
-          artistNetShare: booking.artistNetPayout,
-        })
+      try {
+        await PaymentTransaction.findOneAndUpdate(
+          {
+            $or: [
+              ...(paymentIntent.id ? [{ stripePaymentIntentId: paymentIntent.id }] : []),
+              { transactionId: `TXN-${booking.bookingNumber}-02` },
+              { booking: (booking as any)._id, type: PAYMENT_TRANSACTION_TYPE.BALANCE_80 },
+            ],
+          },
+          {
+            $set: {
+              transactionId: `TXN-${booking.bookingNumber}-02`,
+              booking: (booking as any)._id,
+              bookingGroupId: transferGroup,
+              user: booking.customer,
+              artist: booking.artist,
+              type: PAYMENT_TRANSACTION_TYPE.BALANCE_80,
+              gateway: PAYMENT_GATEWAY.STRIPE_CONNECT,
+              status: PAYMENT_STATUS.SUCCEEDED,
+              currency: 'AUD',
+              amount: booking.balancePayment.amount,
+              stripePaymentIntentId: paymentIntent.id,
+              marketplaceFee: 0,
+              marketplaceFeeGst: 0,
+              stripeFeeBorne: booking.stripeBalanceFee,
+              artistNetShare: booking.artistNetPayout,
+            },
+          },
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        )
+      } catch (txnErr: any) {
+        logger.warn(`[PaymentTransaction] Balance audit record upsert notice: ${txnErr?.message}`)
       }
 
       await recordBookingHistory({
@@ -3792,7 +3810,21 @@ const executeInitialDepositPayment = async ({
   if (stripePaymentIntentId) {
     txnPayload.stripePaymentIntentId = stripePaymentIntentId
   }
-  await PaymentTransaction.create(txnPayload)
+  try {
+    await PaymentTransaction.findOneAndUpdate(
+      {
+        $or: [
+          ...(stripePaymentIntentId ? [{ stripePaymentIntentId }] : []),
+          { transactionId: `TXN-${booking.bookingNumber}-01` },
+          { booking: booking._id, type: PAYMENT_TRANSACTION_TYPE.INITIAL_20 },
+        ],
+      },
+      { $set: txnPayload },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    )
+  } catch (txnErr: any) {
+    logger.warn(`[PaymentTransaction] Deposit audit record upsert notice: ${txnErr?.message}`)
+  }
 
   await recordBookingHistory({
     booking: booking._id,

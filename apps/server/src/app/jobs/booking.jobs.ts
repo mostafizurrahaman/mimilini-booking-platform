@@ -125,23 +125,39 @@ export const process24HourBalancePayments = async () => {
             // safe fallback
           }
 
-          await PaymentTransaction.create({
-            transactionId: `TXN-${booking.bookingNumber}-02`,
-            booking: (booking as any)._id,
-            bookingGroupId: transferGroup,
-            user: booking.customer,
-            artist: booking.artist,
-            type: PAYMENT_TRANSACTION_TYPE.BALANCE_80,
-            gateway: PAYMENT_GATEWAY.STRIPE_CONNECT,
-            status: PAYMENT_STATUS.SUCCEEDED,
-            currency: 'AUD',
-            amount: booking.balancePayment.amount,
-            stripePaymentIntentId: paymentIntent.id,
-            marketplaceFee: 0,
-            marketplaceFeeGst: 0,
-            stripeFeeBorne: booking.stripeBalanceFee,
-            artistNetShare: booking.artistNetPayout,
-          })
+          try {
+            await PaymentTransaction.findOneAndUpdate(
+              {
+                $or: [
+                  ...(paymentIntent.id ? [{ stripePaymentIntentId: paymentIntent.id }] : []),
+                  { transactionId: `TXN-${booking.bookingNumber}-02` },
+                  { booking: (booking as any)._id, type: PAYMENT_TRANSACTION_TYPE.BALANCE_80 },
+                ],
+              },
+              {
+                $set: {
+                  transactionId: `TXN-${booking.bookingNumber}-02`,
+                  booking: (booking as any)._id,
+                  bookingGroupId: transferGroup,
+                  user: booking.customer,
+                  artist: booking.artist,
+                  type: PAYMENT_TRANSACTION_TYPE.BALANCE_80,
+                  gateway: PAYMENT_GATEWAY.STRIPE_CONNECT,
+                  status: PAYMENT_STATUS.SUCCEEDED,
+                  currency: 'AUD',
+                  amount: booking.balancePayment.amount,
+                  stripePaymentIntentId: paymentIntent.id,
+                  marketplaceFee: 0,
+                  marketplaceFeeGst: 0,
+                  stripeFeeBorne: booking.stripeBalanceFee,
+                  artistNetShare: booking.artistNetPayout,
+                },
+              },
+              { upsert: true, new: true, setDefaultsOnInsert: true }
+            )
+          } catch (txnErr: any) {
+            logger.warn(`[PaymentTransaction] Balance auto-charge audit record notice: ${txnErr?.message}`)
+          }
 
           await bookingServices.recordBookingHistory({
             booking: (booking as any)._id,
