@@ -117,6 +117,14 @@ export const process24HourBalancePayments = async () => {
           // Issue Artist RCTI invoice
           await bookingServices.issueArtistRctiStripeInvoice(booking)
 
+          // Refresh customer custom tax invoice and generate balance receipt
+          try {
+            await bookingServices.generateAndSaveBookingCustomPdf(booking._id.toString())
+            await bookingServices.generateAndSaveBalanceReceiptPdf(booking._id.toString())
+          } catch {
+            // safe fallback
+          }
+
           await PaymentTransaction.create({
             transactionId: `TXN-${booking.bookingNumber}-02`,
             booking: (booking as any)._id,

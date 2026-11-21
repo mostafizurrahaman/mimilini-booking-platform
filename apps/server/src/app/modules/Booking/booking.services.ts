@@ -60,6 +60,9 @@ import {
   generateAndUploadArtistRctiPdf,
   generateAndUploadBalanceReceiptPdf,
   generateAndUploadCreditNotePdf,
+  generateAndSaveBookingCustomPdf,
+  generateAndSaveBalanceReceiptPdf,
+  generateAndSaveCreditNotePdf,
 } from './booking.pdf.generator'
 
 export interface ICreateBookingInput {
@@ -961,9 +964,19 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     })
   }
 
-  // 13. Issue official Stripe Tax Invoice ONLY after payment succeeds
+  // 13. Issue official Stripe Tax Invoice if payment captured immediately
   if (initialStatus === 'captured') {
     await issueCustomerStripeInvoice(booking)
+  }
+
+  // 13b. Generate Customer Custom PDF Invoice immediately for all bookings (Pending or Confirmed)
+  try {
+    const generatedPdfUrl = await generateAndSaveBookingCustomPdf(booking._id.toString())
+    if (generatedPdfUrl) {
+      booking.customPdf = generatedPdfUrl
+    }
+  } catch (pdfErr) {
+    logger.warn('[Custom PDF] Failed to generate custom PDF during booking creation:', pdfErr)
   }
 
   // 13. Create PaymentTransaction audit record if payment occurred
@@ -1514,6 +1527,20 @@ const customerCancelBooking = async (
   booking.platformCreditIssued = customerCreditAmount
   await booking.save()
 
+  // Generate and save Credit Note PDF for late cancellation
+  try {
+    const cnUrl = await generateAndSaveCreditNotePdf(
+      booking._id.toString(),
+      booking.cancellationReason
+    )
+    if (cnUrl) {
+      booking.customCreditNotePdf = cnUrl
+      booking.creditNotePdfUrl = cnUrl
+    }
+  } catch (cnErr: any) {
+    logger.warn(`[Custom Credit Note PDF] Generation failed for late cancellation: ${cnErr?.message}`)
+  }
+
   const lateMessage = isBalancePaid
     ? `Booking cancelled under Late Cancellation policy (within 24 hours of appointment). Platform retained the 20% deposit. You received $${customerCreditAmount} Platform Credit (50% of professional net payout).`
     : isInitialPaid
@@ -1793,6 +1820,20 @@ const artistCancelBooking = async (
   }
   booking.platformCreditIssued = refundCreditAmount
   await booking.save()
+
+  // Generate and save Credit Note PDF for professional cancellation
+  try {
+    const cnUrl = await generateAndSaveCreditNotePdf(
+      booking._id.toString(),
+      booking.cancellationReason
+    )
+    if (cnUrl) {
+      booking.customCreditNotePdf = cnUrl
+      booking.creditNotePdfUrl = cnUrl
+    }
+  } catch (cnErr: any) {
+    logger.warn(`[Custom Credit Note PDF] Generation failed for professional cancellation: ${cnErr?.message}`)
+  }
 
   // Find nearby alternative artists for customer (Point 8)
   const nearbyAlternativeArtists = await ArtistServices.find({
@@ -2174,6 +2215,18 @@ const getBookingById = async (user: IUser, bookingId: string) => {
     await issueCustomerStripeInvoice(booking)
   }
 
+  // Ensure Customer Custom PDF exists
+  if (!booking.customPdf) {
+    try {
+      const generated = await generateAndSaveBookingCustomPdf(booking._id.toString())
+      if (generated) {
+        booking.customPdf = generated
+      }
+    } catch {
+      // safe fallback
+    }
+  }
+
   if (
     booking.balancePayment?.status === PAYMENT_STAGE_STATUS.CAPTURED &&
     (!booking.artistStripeInvoiceId ||
@@ -2181,6 +2234,35 @@ const getBookingById = async (user: IUser, bookingId: string) => {
       !booking.artistStripeInvoicePdf)
   ) {
     await issueArtistRctiStripeInvoice(booking)
+  }
+
+  // Ensure Customer Balance Receipt PDF exists if balance is captured
+  if (booking.balancePayment?.status === PAYMENT_STAGE_STATUS.CAPTURED && !booking.customReceiptPdf) {
+    try {
+      const generatedReceipt = await generateAndSaveBalanceReceiptPdf(booking._id.toString())
+      if (generatedReceipt) {
+        booking.customReceiptPdf = generatedReceipt
+      }
+    } catch {
+      // safe fallback
+    }
+  }
+
+  // Ensure Credit Note PDF exists if booking is cancelled/declined
+  const isCancelled =
+    booking.status === BOOKING_STATUS.CANCELLED ||
+    booking.status === BOOKING_STATUS.DECLINED ||
+    booking.status === BOOKING_STATUS.NO_SHOW
+
+  if (isCancelled && !booking.customCreditNotePdf) {
+    try {
+      const generatedCreditNote = await generateAndSaveCreditNotePdf(booking._id.toString())
+      if (generatedCreditNote) {
+        booking.customCreditNotePdf = generatedCreditNote
+      }
+    } catch {
+      // safe fallback
+    }
   }
 
   const [artistReviews, bookingReview] = await Promise.all([
@@ -2350,6 +2432,26 @@ const payBalance = async (user: IUser, bookingId: string, paymentMethodId?: stri
 
       // Automatically issue official Recipient Created Tax Invoice (RCTI) for artist
       await issueArtistRctiStripeInvoice(booking)
+
+      // Refresh customer invoice reflecting PAID IN FULL
+      try {
+        const updatedPdfUrl = await generateAndSaveBookingCustomPdf(booking._id.toString())
+        if (updatedPdfUrl) {
+          booking.customPdf = updatedPdfUrl
+        }
+      } catch (pdfErr) {
+        logger.warn('[Custom PDF] Failed to refresh custom invoice PDF after balance payment:', pdfErr)
+      }
+
+      // Generate and save Customer 80% Balance Payment Receipt PDF
+      try {
+        const receiptPdfUrl = await generateAndSaveBalanceReceiptPdf(booking._id.toString())
+        if (receiptPdfUrl) {
+          booking.customReceiptPdf = receiptPdfUrl
+        }
+      } catch (receiptErr) {
+        logger.warn('[Custom Receipt PDF] Failed to generate receipt after balance payment:', receiptErr)
+      }
 
       const existingTxn = await PaymentTransaction.findOne({
         $or: [
@@ -2788,102 +2890,10 @@ const issueCustomerStripeInvoice = async (booking: any) => {
       // Generate custom manual branded PDF for customer
       let customPdfUrl: string | null = null
       try {
-        const isGst = Boolean(artistProfile?.isGstRegistered)
-        const guestCount = booking.guestCount || 1
-        const unitPrice =
-          guestCount > 1
-            ? Math.round((booking.servicePrice / guestCount) * 100) / 100
-            : booking.servicePrice
-
-        const items: Array<{
-          description: string
-          quantity: number
-          unitPrice: number
-          amount: number
-        }> = [
-          {
-            description: serviceNames,
-            quantity: guestCount,
-            unitPrice,
-            amount: booking.servicePrice,
-          },
-        ]
-        if (booking.travelFee > 0) {
-          items.push({
-            description: 'Mobile Travel Surcharge (Direct Distance)',
-            quantity: 1,
-            unitPrice: booking.travelFee,
-            amount: booking.travelFee,
-          })
+        customPdfUrl = await generateAndSaveBookingCustomPdf(booking._id.toString())
+        if (customPdfUrl) {
+          booking.customPdf = customPdfUrl
         }
-        if (booking.parkingFee > 0) {
-          items.push({
-            description: 'Parking Fee Reimbursement',
-            quantity: 1,
-            unitPrice: booking.parkingFee,
-            amount: booking.parkingFee,
-          })
-        }
-
-        const paymentsApplied: Array<{ label: string; amount: number }> = []
-        if (booking.platformCreditApplied > 0) {
-          paymentsApplied.push({
-            label: 'Stunner Alert Platform Credit (Wallet Applied)',
-            amount: booking.platformCreditApplied,
-          })
-        }
-        if (booking.initialPayment?.amount > 0) {
-          paymentsApplied.push({
-            label: 'Initial 20% Deposit Paid (Card)',
-            amount: booking.initialPayment.amount,
-          })
-        }
-        if (booking.balancePayment?.status === 'captured' && booking.balancePayment?.amount > 0) {
-          paymentsApplied.push({
-            label: 'Final 80% Balance Paid (Card)',
-            amount: booking.balancePayment.amount,
-          })
-        }
-
-        const balanceDue =
-          booking.balancePayment?.status === 'captured'
-            ? 0
-            : booking.balancePayment?.amount || 0
-
-        customPdfUrl = await generateAndUploadCustomerInvoicePdf({
-          title: isGst ? 'TAX INVOICE' : 'INVOICE',
-          invoiceNumber: `INV-${booking.bookingNumber}`,
-          issueDate: moment(booking.createdAt || new Date()).format('DD MMM YYYY'),
-          dueDate: moment(booking.balancePayment?.dueDate || new Date()).format('DD MMM YYYY'),
-          statusText:
-            booking.balancePayment?.status === 'captured'
-              ? 'PAID IN FULL'
-              : 'PARTIALLY PAID - DEPOSIT RECEIVED',
-          bookingNumber: booking.bookingNumber,
-          appointmentDate: `${moment(booking.bookingDate).format('DD MMM YYYY')} ${booking.startTime}`,
-          serviceType: booking.visitType || 'home_visit',
-          seller: {
-            name: artistProfile?.businessName || 'Professional Artist',
-            businessName: artistProfile?.businessName || 'Professional Artist',
-            abn: artistProfile?.abn || null,
-            isGstRegistered: isGst,
-          },
-          buyer: {
-            name: customerUser?.name || 'Valued Client',
-            email: customerUser?.email || null,
-            address: booking.address?.address || null,
-          },
-          items,
-          totals: {
-            subtotal: booking.grossAmount || booking.servicePrice,
-            discount: booking.discountAmount || 0,
-            gstAmount: booking.gstAmount || 0,
-            totalAmount: booking.totalBookingPrice,
-          },
-          paymentBreakdown: paymentsApplied,
-          balanceDue,
-        })
-        booking.customPdf = customPdfUrl
       } catch (pdfErr: any) {
         logger.warn(`[Custom PDF] Customer Invoice PDF generation failed: ${pdfErr?.message}`)
       }
@@ -3148,67 +3158,117 @@ const issueArtistRctiStripeInvoice = async (booking: any) => {
       // Generate custom manual branded RCTI PDF for Artist
       let artistCustomPdfUrl: string | null = null
       try {
-        const collections: Array<{ description: string; amount: number }> = [
+        const isGst = Boolean(artistProfile?.isGstRegistered)
+        const gstRateStr = isGst ? '10.0%' : '0.0%'
+
+        const collections: Array<{ description: string; gstRate: string; amount: number }> = [
           {
-            description: `Core Service Earnings - Booking #${booking.bookingNumber}`,
+            description: `Core Beauty Service - Booking #${booking.bookingNumber}`,
+            gstRate: gstRateStr,
             amount: booking.servicePrice || 0,
           },
         ]
         if (booking.travelFee > 0) {
           collections.push({
             description: 'Mobile Travel Surcharge (100% Artist Pass-through)',
+            gstRate: gstRateStr,
             amount: booking.travelFee,
           })
         }
         if (booking.parkingFee > 0) {
           collections.push({
             description: 'Parking Fee Reimbursement (100% Artist Pass-through)',
+            gstRate: '0.0%',
             amount: booking.parkingFee,
           })
         }
 
-        const deductions: Array<{ description: string; amount: number }> = [
+        const totalServiceGst = isGst ? booking.gstAmount || 0 : 0
+        const totalGrossCollection = round2(
+          (booking.grossAmount ||
+            (booking.servicePrice || 0) + (booking.travelFee || 0) + (booking.parkingFee || 0)) +
+            totalServiceGst
+        )
+
+        const deductions: Array<{
+          description: string
+          basis?: string
+          amount: number
+          isAbsorbed?: boolean
+        }> = [
           {
             description: `Platform Facilitation Commission (${booking.platformCommissionPercentage || 20}%)`,
+            basis: `${booking.platformCommissionPercentage || 20}% on Service`,
             amount: booking.platformCommissionAmount || 0,
           },
         ]
-        if (booking.platformCommissionGst > 0) {
+        if ((booking.platformCommissionGst || 0) > 0) {
           deductions.push({
             description: 'GST on Platform Facilitation Commission (10%)',
+            basis: '10% on Platform Fee',
             amount: booking.platformCommissionGst,
           })
         }
-        if (booking.stripeBalanceFee > 0) {
+        if ((booking.stripeBalanceFee || 0) > 0) {
           deductions.push({
             description: 'Platform Processing Fee (Payment Processing on 80% Balance)',
+            basis: '1.65% + $0.30',
             amount: booking.stripeBalanceFee,
           })
         }
+        if ((booking.stripeInitialFee || 0) > 0) {
+          deductions.push({
+            description: `Initial 20% Processing Fee ($${(booking.stripeInitialFee || 0).toFixed(2)} on Deposit)`,
+            basis: 'Absorbed by Stunner Alert',
+            amount: 0,
+            isAbsorbed: true,
+          })
+        }
 
-        const totalGrossCollection = collections.reduce((acc, c) => acc + c.amount, 0)
-        const totalDeductions = deductions.reduce((acc, d) => acc + d.amount, 0)
+        const totalDeductions = round2(
+          (booking.platformCommissionAmount || 0) +
+            (booking.platformCommissionGst || 0) +
+            (booking.stripeBalanceFee || 0)
+        )
+
+        const settlementSummary = {
+          coreServiceNet: round2(
+            (booking.servicePrice || 0) -
+              (booking.platformCommissionAmount || 0) -
+              (booking.platformCommissionGst || 0)
+          ),
+          travelFeeReimbursement: booking.travelFee || 0,
+          parkingFeeReimbursement: booking.parkingFee || 0,
+          serviceGstAmount: totalServiceGst,
+          balanceProcessingFee: booking.stripeBalanceFee || 0,
+        }
 
         artistCustomPdfUrl = await generateAndUploadArtistRctiPdf({
           invoiceNumber: `RCTI-${booking.bookingNumber}`,
           issueDate: moment(booking.balancePayment?.paidAt || new Date()).format('DD MMM YYYY'),
           bookingNumber: booking.bookingNumber,
+          payoutMethod: 'Stripe Connect',
+          transferGroup: booking.bookingGroupId || `GRP-${booking.bookingNumber}`,
           recipient: {
             name: 'Mimilini Pty Ltd t/a Stunner Alert',
             abn: '88 701 443 129',
             email: 'billing@stunneralert.com',
+            address: 'Sydney, NSW, Australia',
           },
           supplier: {
             name: artistProfile?.businessName || artistUser?.name || 'Professional Artist',
             businessName: artistProfile?.businessName || artistUser?.name || 'Professional Artist',
             abn: artistProfile?.abn || null,
-            isGstRegistered: Boolean(artistProfile?.isGstRegistered),
+            isGstRegistered: isGst,
+            address: (artistProfile as any)?.address || null,
           },
           collections,
           totalGrossCollection,
+          totalServiceGst,
           deductions,
           totalDeductions,
           netPayout: booking.artistNetPayout || 0,
+          settlementSummary,
           payoutStatus: booking.completionDetails?.payoutTransferredAt ? 'TRANSFERRED' : 'PROCESSING',
           transferId: booking.completionDetails?.stripeTransferId || null,
         })
@@ -3315,6 +3375,7 @@ const getBookingReceipt = async (user: IUser, bookingId: string) => {
   return {
     ...receiptData,
     customReceiptPdf: booking.customReceiptPdf || null,
+    finalDisplayedPdfUrl: booking.customReceiptPdf || receiptData.finalDisplayedPdfUrl,
   }
 }
 
@@ -3344,7 +3405,8 @@ const getArtistInvoice = async (user: IUser, bookingId: string) => {
     booking.balancePayment.status === PAYMENT_STAGE_STATUS.CAPTURED &&
     (!booking.artistStripeInvoiceId ||
       !booking.artistStripeInvoiceUrl ||
-      !booking.artistStripeInvoicePdf)
+      !booking.artistStripeInvoicePdf ||
+      !booking.artistCustomPdf)
   ) {
     await issueArtistRctiStripeInvoice(booking)
   }
@@ -3386,6 +3448,18 @@ const getBookingInvoice = async (user: IUser, bookingId: string) => {
     (!booking.stripeInvoiceId || !booking.stripeInvoiceUrl || !booking.stripeInvoicePdf)
   ) {
     await issueCustomerStripeInvoice(booking)
+  }
+
+  // Ensure Customer Custom PDF exists
+  if (!booking.customPdf) {
+    try {
+      const generated = await generateAndSaveBookingCustomPdf(booking._id.toString())
+      if (generated) {
+        booking.customPdf = generated
+      }
+    } catch {
+      // safe fallback
+    }
   }
 
   const artistProfile = await ArtistProfile.findOne({
@@ -3685,6 +3759,16 @@ const executeInitialDepositPayment = async ({
 
   // 7. Issue Stripe Tax Invoice ONLY after payment succeeds
   await issueCustomerStripeInvoice(booking)
+
+  // 7b. Generate or update Customer Custom PDF invoice
+  try {
+    const generatedPdfUrl = await generateAndSaveBookingCustomPdf(booking._id.toString())
+    if (generatedPdfUrl) {
+      booking.customPdf = generatedPdfUrl
+    }
+  } catch (pdfErr) {
+    logger.warn('[Custom PDF] Failed to generate custom invoice PDF after booking acceptance:', pdfErr)
+  }
 
   // 8. Create PaymentTransaction audit record
   const txnPayload: any = {
@@ -6321,4 +6405,6 @@ export const bookingServices = {
   updateAdminBookingNotes,
   recordBookingHistory,
   getBookingTimelineFromHistory,
+  generateAndSaveBookingCustomPdf,
+  generateAndSaveBalanceReceiptPdf,
 }
