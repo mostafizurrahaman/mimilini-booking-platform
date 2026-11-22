@@ -38,7 +38,7 @@ import { logger } from '@app/libs/logger'
 import Stripe from 'stripe'
 import mongoose from 'mongoose'
 import httpStatus from 'http-status'
-import moment from 'moment'
+import moment from 'moment-timezone'
 import { walletServices } from '../Wallet/wallet.services'
 import { uploadMultipleFileToS3 } from 'packages/media-hub/src'
 import { AWS_FOLDER_NAMES } from '@app/libs/files_folder'
@@ -3891,16 +3891,42 @@ const acceptBooking = async (user: IUser, bookingId: string) => {
       )
     }
 
-    // Edge Case: Validate that scheduled appointment time is in the future
+    // 1. Edge Case: Validate that scheduled appointment time is in the future
     const appointmentDateStr = moment.utc(booking.bookingDate).format('YYYY-MM-DD')
-    const appointmentDateTime = moment(
+    const appointmentDateTime = moment.tz(
       `${appointmentDateStr} ${booking.startTime}`,
-      'YYYY-MM-DD HH:mm'
+      'YYYY-MM-DD HH:mm',
+      'Australia/Sydney'
     )
-    if (appointmentDateTime.isBefore(moment())) {
+    const nowSydney = moment.tz('Australia/Sydney')
+    if (appointmentDateTime.isSameOrBefore(nowSydney)) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        'Cannot accept a booking request whose scheduled appointment time has already passed'
+        'Cannot accept a booking request whose scheduled appointment time has already arrived or passed'
+      )
+    }
+
+    // 2. Edge Case: Check artist minNotice if configured
+    const availability = await Availability.findOne({ user: booking.artist })
+    const minNoticeHours = availability?.minNotice || 0
+    if (
+      minNoticeHours > 0 &&
+      appointmentDateTime.isBefore(nowSydney.clone().add(minNoticeHours, 'hours'))
+    ) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        `Cannot accept this booking as it is within your required advance notice window (${minNoticeHours} hours)`
+      )
+    }
+
+    // 3. Edge Case: 24-Hour Acceptance Window Check
+    const isPast24Hours = (booking as any).createdAt
+      ? moment().diff(moment((booking as any).createdAt), 'hours', true) >= 24
+      : false
+    if (isPast24Hours) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'This booking request has expired because it was not accepted within the 24-hour response window'
       )
     }
 
