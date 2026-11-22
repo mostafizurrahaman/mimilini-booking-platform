@@ -98,7 +98,7 @@ const updateProfileSchema = z.object({
 
 const updateUserStatusSchema = z.object({
   params: z.object({
-    userId: requiredString('User ID'),
+    id: requiredString('User ID'),
   }),
   body: z.object({
     status: enumString(AuthStatusValues, 'Status'),
