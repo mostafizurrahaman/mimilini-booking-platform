@@ -4644,7 +4644,12 @@ const requestReschedule = async (
   }
 
   if (isCustomer && !isAdmin) {
-    assertFullPaymentCaptured(booking, 'request reschedule')
+    if (booking.initialPayment?.status !== PAYMENT_STAGE_STATUS.CAPTURED) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'Cannot request reschedule: Initial deposit payment must be confirmed first.'
+      )
+    }
 
     const hoursUntilAppointment = currentApptDateTime.diff(moment(), 'hours', true)
     if (hoursUntilAppointment < 2) {
