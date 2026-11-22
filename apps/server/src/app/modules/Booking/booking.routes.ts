@@ -27,7 +27,7 @@ router.post(
 // we notify second -> 10%:
 // Group ->
 // booking pending payment -> pay  - 50%
-// booking option 
+// booking option
 router.post(
   '/',
   auth(AuthRoles.CUSTOMER),

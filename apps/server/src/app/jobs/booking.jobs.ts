@@ -9,6 +9,7 @@ import {
   PAYMENT_STAGE_STATUS,
   PAYMENT_STATUS,
   PAYMENT_TRANSACTION_TYPE,
+  PromoCodeUsage,
   WALLET_SOURCE,
 } from '@repo/db'
 import { logger } from '@app/libs/logger'
@@ -18,7 +19,7 @@ import { bookingServices } from '../modules/Booking/booking.services'
 import { walletServices } from '../modules/Wallet/wallet.services'
 import { notificationServices } from '../modules/Notification/notification.services'
 import { round2 } from '../modules/Booking/booking.utils'
-import moment from 'moment'
+import moment from 'moment-timezone'
 
 /**
  * 24-Hour Prior Balance Capture Job:
@@ -478,6 +479,170 @@ export const processExpiredInitialPaymentBookings = async () => {
   }
 }
 
+/**
+ * 24-Hour Requested Booking Expiry Job:
+ * If an artist does not accept or decline a requested booking within 24 hours
+ * (or if the scheduled appointment time arrives/passes before acceptance):
+ * - Booking status is transitioned to DECLINED
+ * - Reason: Auto-declined: Professional did not accept the request within the 24-hour response window
+ * - CancelledAt recorded, cancelledByRole: 'system'
+ * - Any platform credit applied is rolled back to customer wallet
+ * - Single-use PromoCode / PromoCodeUsage reservation is released
+ * - Timeline milestone DECLINED recorded in booking history
+ * - In-app notifications sent to both customer and artist
+ * - Real-time socket status update emitted
+ */
+export const processExpiredRequestedBookings = async () => {
+  try {
+    const now = moment()
+    const nowSydney = moment.tz('Australia/Sydney')
+    const twentyFourHoursAgo = moment().subtract(24, 'hours').toDate()
+
+    // Find requested bookings created >= 24h ago OR with appointment date in the past / today
+    const candidateBookings = await Booking.find({
+      status: BOOKING_STATUS.REQUESTED,
+      $or: [
+        { createdAt: { $lte: twentyFourHoursAgo } },
+        { bookingDate: { $lte: nowSydney.clone().endOf('day').toDate() } },
+      ],
+    })
+
+    if (candidateBookings.length === 0) return
+
+    for (const booking of candidateBookings) {
+      const createdAt = (booking as any).createdAt ? moment((booking as any).createdAt) : null
+      const isPast24Hours = createdAt ? now.diff(createdAt, 'hours', true) >= 24 : false
+
+      let isPastAppointment = false
+      if (booking.bookingDate && booking.startTime) {
+        const appointmentDateStr = moment.utc(booking.bookingDate).format('YYYY-MM-DD')
+        const appointmentDateTime = moment.tz(
+          `${appointmentDateStr} ${booking.startTime}`,
+          'YYYY-MM-DD HH:mm',
+          'Australia/Sydney'
+        )
+        if (appointmentDateTime.isValid() && appointmentDateTime.isSameOrBefore(nowSydney)) {
+          isPastAppointment = true
+        }
+      }
+
+      if (!isPast24Hours && !isPastAppointment) {
+        continue
+      }
+
+      const reason = isPastAppointment
+        ? 'Auto-declined: Booking request expired as scheduled appointment time arrived without professional confirmation'
+        : 'Auto-declined: Professional did not accept the request within the 24-hour response window'
+
+      // Atomic transition guard: only proceed if status is STILL 'requested'
+      const updatedBooking = await Booking.findOneAndUpdate(
+        { _id: booking._id, status: BOOKING_STATUS.REQUESTED },
+        {
+          $set: {
+            status: BOOKING_STATUS.DECLINED,
+            cancellationReason: reason,
+            cancelledAt: now.toDate(),
+            cancelledByRole: 'system',
+            cancellationFeeCharged: 0,
+            depositForfeited: false,
+            platformCreditIssued: 0,
+          },
+        },
+        { new: true }
+      )
+
+      if (!updatedBooking) {
+        // Concurrently accepted, declined, or cancelled by another process
+        continue
+      }
+
+      logger.warn(
+        `[Cron: Requested Booking Expiry] Auto-declined booking #${booking.bookingNumber} (${reason}).`
+      )
+
+      // 1. Rollback customer wallet platform credit if applied
+      if (booking.platformCreditApplied > 0) {
+        try {
+          await walletServices.creditUserWallet({
+            userId: booking.customer,
+            amount: booking.platformCreditApplied,
+            source: WALLET_SOURCE.BOOKING_ROLLBACK,
+            bookingId: booking._id,
+            bookingGroupId: booking.bookingGroupId,
+            description: `Booking #${booking.bookingNumber} auto-declined (expired 24h window) - platform credit restored`,
+          })
+        } catch (walletErr) {
+          logger.error(
+            `[Cron: Requested Booking Expiry] Failed to refund platform credit for ${booking.bookingNumber}:`,
+            walletErr
+          )
+        }
+      }
+
+      // 2. Release PromoCode reservation if applied
+      if (booking.promoCode) {
+        try {
+          await PromoCodeUsage.deleteOne({
+            promoCode: booking.promoCode,
+            user: (booking.customer as any)._id || booking.customer,
+          })
+        } catch (promoErr) {
+          logger.warn(
+            `[Cron: Requested Booking Expiry] Failed to release promo code for ${booking.bookingNumber}:`,
+            promoErr
+          )
+        }
+      }
+
+      // 3. Record booking history
+      await bookingServices.recordBookingHistory({
+        booking: booking._id,
+        bookingNumber: booking.bookingNumber,
+        status: BOOKING_STATUS.DECLINED,
+        milestone: BOOKING_TIMELINE_MILESTONE.DECLINED,
+        title: 'Booking Request Expired',
+        description: reason,
+        performedByRole: 'system',
+        note: reason,
+      })
+
+      // 4. Send notifications to both customer and artist
+      try {
+        await Promise.all([
+          notificationServices.sendNotification({
+            recipient: booking.customer,
+            title: 'Booking Request Expired',
+            message: `Your booking request #${booking.bookingNumber} has expired because the professional did not respond within 24 hours. Any applied credits have been restored.`,
+            type: NOTIFICATION_TYPE.BOOKING_DECLINED,
+            bookingId: booking._id,
+            bookingNumber: booking.bookingNumber,
+            actionUrl: `/bookings/${booking._id}`,
+          }),
+          notificationServices.sendNotification({
+            recipient: booking.artist,
+            title: 'Booking Request Expired',
+            message: `Booking request #${booking.bookingNumber} has expired as it was not accepted within the 24-hour response window.`,
+            type: NOTIFICATION_TYPE.BOOKING_DECLINED,
+            bookingId: booking._id,
+            bookingNumber: booking.bookingNumber,
+            actionUrl: `/bookings/${booking._id}`,
+          }),
+        ])
+      } catch (notifErr) {
+        logger.warn(
+          '[Booking Notification] Failed to notify parties of requested booking expiry:',
+          notifErr
+        )
+      }
+
+      // 5. Emit real-time status update to connected clients
+      emitBookingStatusUpdate(updatedBooking)
+    }
+  } catch (err: any) {
+    logger.error('[Cron: Requested Booking Expiry] Encountered an error:', err)
+  }
+}
+
 const activePayoutRetryLocks = new Set<string>()
 
 /**
@@ -659,6 +824,13 @@ export const startBookingCronJobs = () => {
     2 * 60 * 1000
   )
 
+  // Run 24-hour requested booking expiration check immediately and then every 2 minutes
+  processExpiredRequestedBookings()
+  const requestedExpiryInterval = setInterval(
+    processExpiredRequestedBookings,
+    2 * 60 * 1000
+  )
+
   // Run pending artist payout retry every day at 09:00 AM
   scheduleDailyAt9AM(processPendingArtistPayouts)
 
@@ -666,4 +838,5 @@ export const startBookingCronJobs = () => {
   if (balanceInterval.unref) balanceInterval.unref()
   if (rectificationInterval.unref) rectificationInterval.unref()
   if (initialPaymentTimeoutInterval.unref) initialPaymentTimeoutInterval.unref()
+  if (requestedExpiryInterval.unref) requestedExpiryInterval.unref()
 }
