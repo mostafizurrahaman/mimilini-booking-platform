@@ -93,7 +93,7 @@ const payBalanceSchema = z.object({
 
 const declineBookingSchema = z.object({
   body: z.object({
-    reason: optionalString('Decline reason'),
+    reason: requiredString('Decline reason'),
   }),
 })
 

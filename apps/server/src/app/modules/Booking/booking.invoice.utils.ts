@@ -24,6 +24,7 @@ export interface IBookingTaxInvoice {
   platform: {
     name: string
     country: 'Australia'
+    email?: string
     commissionPercentage: number
     commissionAmount: number
     commissionGst: number
@@ -124,7 +125,7 @@ export const generateBookingTaxInvoice = (
 
   if (booking.travelFee > 0) {
     items.push({
-      description: 'Mobile Artist Travel Surcharge',
+      description: 'Mobile Professional Travel Surcharge',
       quantity: 1,
       unitPrice: booking.travelFee,
       amount: booking.travelFee,
@@ -133,7 +134,7 @@ export const generateBookingTaxInvoice = (
 
   if (booking.parkingFee > 0) {
     items.push({
-      description: 'Artist Parking Fee Reimbursement',
+      description: 'Professional Parking Fee Reimbursement',
       quantity: 1,
       unitPrice: booking.parkingFee,
       amount: booking.parkingFee,
@@ -160,6 +161,7 @@ export const generateBookingTaxInvoice = (
 
     platform: {
       name: configs.site?.name || 'Stunner alert',
+      email: 'support@stunneralert.com.au',
       country: 'Australia',
       commissionPercentage: booking.platformCommissionPercentage || 20,
       commissionAmount: booking.platformCommissionAmount || 0,

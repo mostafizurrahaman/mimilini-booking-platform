@@ -32,7 +32,7 @@ export const process24HourBalancePayments = async () => {
     const in24Hours = moment().add(24, 'hours').toDate()
 
     const pendingBookings = await Booking.find({
-      status: BOOKING_STATUS.CONFIRMED,
+      status: { $in: [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.RESCHEDULED] },
       'balancePayment.status': PAYMENT_STAGE_STATUS.PENDING,
       'balancePayment.amount': { $gt: 0 },
       $or: [
@@ -276,7 +276,7 @@ export const processExpiredRectificationCancellations = async () => {
     const now = new Date()
 
     const expiredBookings = await Booking.find({
-      status: BOOKING_STATUS.CONFIRMED,
+      status: { $in: [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.RESCHEDULED] },
       'balancePayment.status': PAYMENT_STAGE_STATUS.FAILED,
       'balancePayment.rectificationDeadline': { $lte: now },
     })
@@ -643,6 +643,143 @@ export const processExpiredRequestedBookings = async () => {
   }
 }
 
+/**
+ * Reschedule Request Expiration Job:
+ * If recipient does not accept or decline a reschedule request:
+ * - Within 24 hours of request submission, OR
+ * - Less than 2 hours prior to scheduled appointment time (whichever is earlier):
+ * Reschedule request status transitions to 'expired'.
+ * The original booking remains active and unchanged.
+ * The requested new slot is unblocked.
+ * Both customer and professional are notified.
+ */
+export const processExpiredRescheduleRequests = async () => {
+  try {
+    const nowSydney = moment.tz('Australia/Sydney')
+    const pendingRescheduleBookings = await Booking.find({
+      'rescheduleRequest.status': 'pending',
+    })
+
+    if (pendingRescheduleBookings.length === 0) return
+
+    for (const booking of pendingRescheduleBookings) {
+      if (!booking.rescheduleRequest || booking.rescheduleRequest.status !== 'pending') {
+        continue
+      }
+
+      const requestCreatedAt = booking.rescheduleRequest.createdAt || (booking as any).updatedAt
+      const is24hPassed = requestCreatedAt
+        ? moment().diff(moment(requestCreatedAt), 'hours', true) >= 24
+        : false
+
+      // Check original appointment time
+      let isWithin2hOfAppt = false
+      if (booking.bookingDate && booking.startTime) {
+        const apptDateStr = moment.utc(booking.bookingDate).format('YYYY-MM-DD')
+        const apptDateTime = moment.tz(
+          `${apptDateStr} ${booking.startTime}`,
+          'YYYY-MM-DD HH:mm',
+          'Australia/Sydney'
+        )
+        if (apptDateTime.isValid()) {
+          const hoursUntilAppt = apptDateTime.diff(nowSydney, 'hours', true)
+          if (hoursUntilAppt <= 2) {
+            isWithin2hOfAppt = true
+          }
+        }
+      }
+
+      // Check requested new appointment time
+      let isWithin2hOfNewTime = false
+      if (booking.rescheduleRequest.newDate && booking.rescheduleRequest.newStartTime) {
+        const newDateStr = moment.utc(booking.rescheduleRequest.newDate).format('YYYY-MM-DD')
+        const newDateTime = moment.tz(
+          `${newDateStr} ${booking.rescheduleRequest.newStartTime}`,
+          'YYYY-MM-DD HH:mm',
+          'Australia/Sydney'
+        )
+        if (newDateTime.isValid()) {
+          const hoursUntilNew = newDateTime.diff(nowSydney, 'hours', true)
+          if (hoursUntilNew <= 2) {
+            isWithin2hOfNewTime = true
+          }
+        }
+      }
+
+      if (!is24hPassed && !isWithin2hOfAppt && !isWithin2hOfNewTime) {
+        continue
+      }
+
+      const expireReason =
+        isWithin2hOfAppt || isWithin2hOfNewTime
+          ? 'Expired: Reschedule window closed as appointment time is within 2 hours'
+          : 'Expired: Reschedule request was not confirmed within the 24-hour response window'
+
+      // Atomic status transition
+      const updatedBooking = await Booking.findOneAndUpdate(
+        { _id: booking._id, 'rescheduleRequest.status': 'pending' },
+        {
+          $set: {
+            'rescheduleRequest.status': 'expired',
+            'rescheduleRequest.respondedAt': new Date(),
+            'rescheduleRequest.declineReason': expireReason,
+          },
+        },
+        { new: true }
+      )
+
+      if (!updatedBooking) continue
+
+      logger.warn(
+        `[Cron: Reschedule Expiry] Reschedule request expired for booking #${booking.bookingNumber} (${expireReason}). Original schedule stands.`
+      )
+
+      // Record timeline history
+      await bookingServices.recordBookingHistory({
+        booking: booking._id,
+        bookingNumber: booking.bookingNumber,
+        status: booking.status,
+        milestone: BOOKING_TIMELINE_MILESTONE.RESCHEDULED,
+        title: 'Reschedule Request Expired',
+        description: `Reschedule request expired (${expireReason}). Original appointment on ${moment(booking.bookingDate).format('DD MMM YYYY')} at ${booking.startTime} remains in place.`,
+        performedByRole: 'system',
+        note: expireReason,
+      })
+
+      // Notify both parties
+      const apptFormatted = `${moment(booking.bookingDate).format('DD MMM YYYY')} at ${booking.startTime}`
+      try {
+        await Promise.all([
+          notificationServices.sendNotification({
+            recipient: (booking.customer as any)._id || booking.customer,
+            title: 'Reschedule Request Expired',
+            message: `The reschedule request for booking #${booking.bookingNumber} has expired without confirmation. Your original appointment on ${apptFormatted} remains in place.`,
+            type: NOTIFICATION_TYPE.BOOKING_RESCHEDULED,
+            bookingId: booking._id,
+            bookingNumber: booking.bookingNumber,
+            actionUrl: `/bookings/${booking._id}`,
+          }),
+          notificationServices.sendNotification({
+            recipient: (booking.artist as any)._id || booking.artist,
+            title: 'Reschedule Request Expired',
+            message: `The reschedule request for booking #${booking.bookingNumber} has expired without confirmation. Original appointment on ${apptFormatted} remains scheduled.`,
+            type: NOTIFICATION_TYPE.BOOKING_RESCHEDULED,
+            bookingId: booking._id,
+            bookingNumber: booking.bookingNumber,
+            actionUrl: `/bookings/${booking._id}`,
+          }),
+        ])
+      } catch (notifErr) {
+        logger.warn('[Booking Notification] Failed to notify parties of reschedule expiry:', notifErr)
+      }
+
+      emitBookingStatusUpdate(updatedBooking)
+    }
+  } catch (err: any) {
+    logger.error('[Cron: Reschedule Expiry] Encountered an error:', err)
+  }
+}
+
 const activePayoutRetryLocks = new Set<string>()
 
 /**
@@ -831,6 +968,13 @@ export const startBookingCronJobs = () => {
     2 * 60 * 1000
   )
 
+  // Run reschedule request expiration check immediately and then every 2 minutes
+  processExpiredRescheduleRequests()
+  const rescheduleExpiryInterval = setInterval(
+    processExpiredRescheduleRequests,
+    2 * 60 * 1000
+  )
+
   // Run pending artist payout retry every day at 09:00 AM
   scheduleDailyAt9AM(processPendingArtistPayouts)
 
@@ -839,4 +983,5 @@ export const startBookingCronJobs = () => {
   if (rectificationInterval.unref) rectificationInterval.unref()
   if (initialPaymentTimeoutInterval.unref) initialPaymentTimeoutInterval.unref()
   if (requestedExpiryInterval.unref) requestedExpiryInterval.unref()
+  if (rescheduleExpiryInterval.unref) rescheduleExpiryInterval.unref()
 }

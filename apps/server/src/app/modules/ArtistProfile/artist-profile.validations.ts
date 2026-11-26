@@ -14,6 +14,39 @@ import {
 } from '@repo/shared'
 import { artistProfileSortableFields } from '@repo/db'
 
+const emptyStringToUndefined = z.preprocess(
+  (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
+  z.string().trim().optional().nullable()
+)
+
+const optionalBioSchema = z.preprocess(
+  (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
+  z.string().trim().optional()
+)
+
+const facebookProfileSchema = z.preprocess(
+  (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
+  z
+    .string()
+    .trim()
+    .regex(
+      /^(https?:\/\/)?((www|m|web)\.)?(facebook\.com|fb\.com)\/[A-Za-z0-9._\-/?=&#%]+$/i,
+      'Invalid Facebook URL'
+    )
+    .optional()
+    .nullable()
+)
+
+const instagramProfileSchema = z.preprocess(
+  (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
+  z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9._]{1,30}$/, 'Invalid Instagram username')
+    .optional()
+    .nullable()
+)
+
 const createArtistProfileBodySchema = z
   .object({
     businessName: requiredString('Business name'),
@@ -30,7 +63,7 @@ const createArtistProfileBodySchema = z
     isGstRegistered: requiredStrBoolean("GST registered").optional().default(false),
     businessAddress: requiredString('Business address'),
     yearOfExperience: positiveNumber('Years of experience'),
-    professionalBio: optionalString('Professional bio'),
+    professionalBio: optionalBioSchema,
     latitude: z.coerce
       .number()
       .min(-90, 'Latitude must be between -90 and 90')
@@ -42,15 +75,9 @@ const createArtistProfileBodySchema = z
     city: requiredString('City'),
     state: requiredString('State'),
     postalCode: requiredString('Postal Code').regex(/^[0-9]{4}$/, { error: 'Invalid Postal code' }),
-    website: optionalString('Website').nullable(),
-    instagram: requiredString('Instagram username')
-      .regex(/^[a-zA-Z0-9._]{1,30}$/, 'Invalid Instagram username')
-      .optional()
-      .nullable(),
-    facebook: requiredString('Facebook profile url')
-      .regex(/^https?:\/\/(www\.)?facebook\.com\/[A-Za-z0-9._-]+\/?$/, 'Invalid Facebook URL')
-      .optional()
-      .nullable(),
+    website: emptyStringToUndefined,
+    instagram: instagramProfileSchema,
+    facebook: facebookProfileSchema,
     language: enumString(['english', 'australian english'], 'Language'),
     travelRadius: requiredNumber('Travel radius').min(0, {
       error: 'Min. travel radius must be 0',
@@ -76,7 +103,7 @@ const createArtistProfileSchema = z.object({
 const updateArtistProfileBodySchema = z
   .object({
     name: optionalString('Name'),
-    professionalBio: optionalString('Professional bio'),
+    professionalBio: optionalBioSchema,
     phone: requiredString('Phone')
       .regex(
         /^(?:(?:\+61|0061)\s?4\d{2}\s?\d{3}\s?\d{3}|0[2-8]\s?\d{4}\s?\d{4})$/,
@@ -99,15 +126,9 @@ const updateArtistProfileBodySchema = z
     postalCode: requiredString('Postal Code')
       .regex(/^[0-9]{4}$/, { error: 'Invalid Postal code' })
       .optional(),
-    website: optionalString('Website').nullable(),
-    instagram: requiredString('Instagram username')
-      .regex(/^[a-zA-Z0-9._]{1,30}$/, 'Invalid Instagram username')
-      .optional()
-      .nullable(),
-    facebook: requiredString('Facebook profile url')
-      .regex(/^https?:\/\/(www\.)?facebook\.com\/[A-Za-z0-9._-]+\/?$/, 'Invalid Facebook URL')
-      .optional()
-      .nullable(),
+    website: emptyStringToUndefined,
+    instagram: instagramProfileSchema,
+    facebook: facebookProfileSchema,
     language: enumString(['english', 'australian english'], 'Language').optional(),
     travelRadius: requiredNumber('Travel radius')
       .min(0, {
