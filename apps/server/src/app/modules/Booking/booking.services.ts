@@ -1153,6 +1153,9 @@ const customerCancelBooking = async (
   bookingId: string,
   cancellationReason?: string
 ) => {
+  if (!cancellationReason || !cancellationReason.trim()) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Cancellation reason is required to cancel a booking')
+  }
   const booking = await Booking.findById(bookingId).populate('artist customer')
   if (!booking) {
     throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
@@ -1630,6 +1633,9 @@ const artistCancelBooking = async (
   bookingId: string,
   cancellationReason?: string
 ) => {
+  if (!cancellationReason || !cancellationReason.trim()) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Cancellation reason is required to cancel a booking')
+  }
   const booking = await Booking.findById(bookingId).populate('artist customer')
   if (!booking) {
     throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
@@ -1954,6 +1960,9 @@ const artistCancelBooking = async (
  * Routes to customerCancelBooking or artistCancelBooking based on role, or executes admin cancellation.
  */
 const cancelBooking = async (user: IUser, bookingId: string, cancellationReason?: string) => {
+  if (!cancellationReason || !cancellationReason.trim()) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Cancellation reason is required to cancel a booking')
+  }
   const booking = await Booking.findById(bookingId).populate('artist customer')
   if (!booking) {
     throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
