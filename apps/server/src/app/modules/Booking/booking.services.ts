@@ -49,6 +49,7 @@ import {
   calculateDistanceKm,
   round2,
   resolveFinalDisplayedPdfUrl,
+  resolveCancellationNoticeTexts,
 } from './booking.utils'
 import {
   generateBookingTaxInvoice,
@@ -2333,6 +2334,14 @@ const getBookingById = async (user: IUser, bookingId: string) => {
   bookingObj.finalDisplayedPdfUrl = pdfInfo.finalDisplayedPdfUrl
   bookingObj.finalDisplayedPdfType = pdfInfo.pdfType
   bookingObj.finalDisplayedPdfLabel = pdfInfo.label
+
+  // Dynamic cancellation policy notices based on role, status, tier, and timeframe
+  const platformSettings = await PlatformSettings.getSettings()
+  const cancellationNotices = resolveCancellationNoticeTexts(bookingObj, platformSettings)
+  bookingObj.displayTextForCustomerBeforeCancelling =
+    cancellationNotices.displayTextForCustomerBeforeCancelling
+  bookingObj.displayTextForProfessionalBeforeCancelling =
+    cancellationNotices.displayTextForProfessionalBeforeCancelling
 
   return bookingObj
 }
@@ -6375,9 +6384,10 @@ const getBookingDetailsAdmin = async (bookingId: string) => {
     throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
   }
 
-  const [artistProfile, reviews] = await Promise.all([
+  const [artistProfile, reviews, platformSettings] = await Promise.all([
     ArtistProfile.findOne({ user: (booking.artist as any)?._id }).lean(),
     Review.find({ artist: (booking.artist as any)?._id }).select('rating').lean(),
+    PlatformSettings.getSettings(),
   ])
 
   const totalReviews = reviews.length
@@ -6497,6 +6507,10 @@ const getBookingDetailsAdmin = async (bookingId: string) => {
     noShowDetails: booking.noShowDetails,
     internalNotes: booking.adminNotes || '',
     timeline,
+    displayTextForCustomerBeforeCancelling:
+      resolveCancellationNoticeTexts(booking, platformSettings).displayTextForCustomerBeforeCancelling,
+    displayTextForProfessionalBeforeCancelling:
+      resolveCancellationNoticeTexts(booking, platformSettings).displayTextForProfessionalBeforeCancelling,
   }
 }
 
