@@ -1,3 +1,4 @@
+import moment from 'moment-timezone'
 import { DISCOUNT_STATUS, DISCOUNT_TYPES, type IPromoCodeDoc } from '@repo/db'
 
 export interface ICalculateBookingBreakdownParams {
@@ -316,3 +317,119 @@ export const resolveFinalDisplayedPdfUrl = (
     label: unpaidInvoiceUrl ? 'Proforma Invoice (Unpaid)' : 'Payment Pending',
   }
 }
+
+/**
+ * Calculates pre-cancellation policy notice messages for both Customer and Professional.
+ * Directly informs each party in second-person ("you") of exact financial and account consequences
+ * according to current booking status, payment status, tier budget, timeframe, and platform policies.
+ */
+export const resolveCancellationNoticeTexts = (
+  booking: any,
+  platformSettings?: any
+): {
+  displayTextForCustomerBeforeCancelling: string
+  displayTextForProfessionalBeforeCancelling: string
+} => {
+  const status = booking.status
+
+  // Terminal / non-cancellable statuses
+  if (
+    status === 'completed' ||
+    status === 'cancelled' ||
+    status === 'declined' ||
+    status === 'no_show'
+  ) {
+    return {
+      displayTextForCustomerBeforeCancelling: `This booking is already ${status} and cannot be cancelled.`,
+      displayTextForProfessionalBeforeCancelling: `This booking is already ${status} and cannot be cancelled.`,
+    }
+  }
+
+  if (status === 'in_progress') {
+    return {
+      displayTextForCustomerBeforeCancelling:
+        'The appointment is currently in progress. You cannot cancel once service delivery has begun.',
+      displayTextForProfessionalBeforeCancelling:
+        'The appointment is currently in progress. You cannot cancel once service delivery has begun.',
+    }
+  }
+
+  const isInitialPaid = booking.initialPayment?.status === 'captured'
+  const isBalancePaid =
+    booking.balancePayment?.status === 'captured' &&
+    (booking.balancePayment?.amount || 0) > 0
+
+  // 1. Pre-payment / Requested status (before customer pays deposit)
+  if (!isInitialPaid) {
+    return {
+      displayTextForCustomerBeforeCancelling:
+        'You have not made any payment for this booking yet. If you cancel now, your booking request will be withdrawn immediately without any charges or penalties.',
+      displayTextForProfessionalBeforeCancelling:
+        'No payment has been charged for this booking yet. If you cancel or decline now, the booking request will be dismissed with no fee or penalty applied to your account.',
+    }
+  }
+
+  // Calculate hours until appointment
+  const appointmentDateStr = moment.utc(booking.bookingDate).format('YYYY-MM-DD')
+  const appointmentDateTime = moment(
+    `${appointmentDateStr} ${booking.startTime}`,
+    'YYYY-MM-DD HH:mm'
+  )
+  const hoursUntilAppointment = appointmentDateTime.diff(moment(), 'hours', true)
+
+  // 2. Customer side cancellation notice
+  let customerNotice = ''
+  const depositAmount = booking.initialPayment?.amount || 0
+  const totalPaid = round2(depositAmount + (isBalancePaid ? (booking.balancePayment?.amount || 0) : 0))
+  const initialStripeFee = booking.stripeInitialFee || 0
+  const balanceStripeFee = booking.stripeBalanceFee || 0
+  const totalStripeFee = round2(initialStripeFee + (isBalancePaid ? balanceStripeFee : 0))
+
+  if (hoursUntilAppointment >= 24) {
+    const refundCredit = round2(Math.max(0, totalPaid - totalStripeFee))
+    customerNotice = `You are cancelling more than 24 hours before your appointment. In accordance with our cancellation policy, you will receive $${refundCredit} AUD as Platform Credit (your total paid $${totalPaid} AUD minus $${totalStripeFee} AUD payment processing fee), valid for 36 months.`
+  } else {
+    // Late cancellation (< 24h)
+    if (isBalancePaid) {
+      const baseNetPayout = booking.artistNetPayout || 0
+      const customerCreditAmount = round2(baseNetPayout * 0.5)
+      customerNotice = `You are cancelling within 24 hours of your appointment. Under our late cancellation policy, your initial 20% deposit ($${depositAmount} AUD) is forfeited, and you will receive 50% of the professional service share ($${customerCreditAmount} AUD) as Platform Credit in your wallet.`
+    } else {
+      customerNotice = `You are cancelling within 24 hours of your appointment. Under our late cancellation policy, your initial 20% deposit payment ($${depositAmount} AUD) is non-refundable and will be forfeited.`
+    }
+  }
+
+  // 3. Professional side cancellation notice
+  let professionalNotice = ''
+  if (platformSettings) {
+    const bookingAmount = booking.totalBookingPrice || booking.grossAmount || 0
+    const penaltyCalc = calculateArtistCancellationPenalty(
+      bookingAmount,
+      hoursUntilAppointment,
+      platformSettings
+    )
+
+    let timeframeLabel = 'within 48 hours of the scheduled commencement time'
+    if (penaltyCalc.timeframeTier === 'moreThan14Days') {
+      timeframeLabel = '14 or more days before the scheduled appointment'
+    } else if (penaltyCalc.timeframeTier === 'sevenTo13Days') {
+      timeframeLabel = 'between 7 and 13 days before the scheduled appointment'
+    }
+
+    if (hoursUntilAppointment <= 48) {
+      professionalNotice = `You are cancelling within 48 hours of the confirmed appointment (${penaltyCalc.budgetTier.toUpperCase()} ticket booking of $${bookingAmount} AUD). If you cancel now, you will incur a cancellation fee of $${penaltyCalc.penaltyAmount} AUD and your account will be immediately suspended for review under our reliability terms.`
+    } else {
+      professionalNotice = `You are cancelling ${timeframeLabel} for a confirmed ${penaltyCalc.budgetTier.toUpperCase()} ticket booking of $${bookingAmount} AUD. If you proceed with cancellation, a professional cancellation fee of $${penaltyCalc.penaltyAmount} AUD will be charged to your account, and your profile will be temporarily hidden from customer discovery until resolved.`
+    }
+  } else {
+    // Fallback if settings not provided
+    professionalNotice =
+      'If you cancel this confirmed booking, professional cancellation fees will apply based on your booking ticket size and notice timeframe, and your account may face temporary restrictions or suspension.'
+  }
+
+  return {
+    displayTextForCustomerBeforeCancelling: customerNotice,
+    displayTextForProfessionalBeforeCancelling: professionalNotice,
+  }
+}
+

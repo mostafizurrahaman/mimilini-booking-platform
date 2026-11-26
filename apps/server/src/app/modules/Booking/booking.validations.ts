@@ -81,7 +81,7 @@ const confirmBookingPaymentSchema = z.object({
 
 const cancelBookingSchema = z.object({
   body: z.object({
-    reason: optionalString('Cancellation Reason'),
+    reason: requiredString('Cancellation Reason'),
   }),
 })
 

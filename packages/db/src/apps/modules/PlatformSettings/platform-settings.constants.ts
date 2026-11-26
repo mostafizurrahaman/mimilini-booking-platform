@@ -6,22 +6,22 @@ export const DEFAULT_PLATFORM_SETTINGS = {
   travelingFeePerKm: 0,
   parkingFee: 0,
   peakTimeSurcharge: 0,
-  lowMaxAmount: 200,
-  mediumMaxAmount: 500,
+  lowMaxAmount: 300,
+  mediumMaxAmount: 1500,
   low: {
-    moreThan14Days: 0,
-    sevenTo13Days: 15,
-    within48Hours: 30,
+    moreThan14Days: 20,
+    sevenTo13Days: 30,
+    within48Hours: 50,
   },
   medium: {
-    moreThan14Days: 15,
-    sevenTo13Days: 35,
-    within48Hours: 60,
+    moreThan14Days: 50,
+    sevenTo13Days: 50,
+    within48Hours: 100,
   },
   high: {
-    moreThan14Days: 30,
-    sevenTo13Days: 60,
-    within48Hours: 120,
+    moreThan14Days: 50,
+    sevenTo13Days: 100,
+    within48Hours: 250,
   },
 } as const
 

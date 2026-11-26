@@ -49,6 +49,7 @@ import {
   calculateDistanceKm,
   round2,
   resolveFinalDisplayedPdfUrl,
+  resolveCancellationNoticeTexts,
 } from './booking.utils'
 import {
   generateBookingTaxInvoice,
@@ -1153,6 +1154,9 @@ const customerCancelBooking = async (
   bookingId: string,
   cancellationReason?: string
 ) => {
+  if (!cancellationReason || !cancellationReason.trim()) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Cancellation reason is required to cancel a booking')
+  }
   const booking = await Booking.findById(bookingId).populate('artist customer')
   if (!booking) {
     throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
@@ -1630,6 +1634,9 @@ const artistCancelBooking = async (
   bookingId: string,
   cancellationReason?: string
 ) => {
+  if (!cancellationReason || !cancellationReason.trim()) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Cancellation reason is required to cancel a booking')
+  }
   const booking = await Booking.findById(bookingId).populate('artist customer')
   if (!booking) {
     throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
@@ -1954,6 +1961,9 @@ const artistCancelBooking = async (
  * Routes to customerCancelBooking or artistCancelBooking based on role, or executes admin cancellation.
  */
 const cancelBooking = async (user: IUser, bookingId: string, cancellationReason?: string) => {
+  if (!cancellationReason || !cancellationReason.trim()) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Cancellation reason is required to cancel a booking')
+  }
   const booking = await Booking.findById(bookingId).populate('artist customer')
   if (!booking) {
     throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
@@ -2174,7 +2184,7 @@ const getMyBookings = async (
     ? { bookingDate: 1, startTime: 1 }
     : { bookingDate: -1, startTime: -1 }
 
-  const [bookings, total] = await Promise.all([
+  const [bookings, total, platformSettings] = await Promise.all([
     Booking.find(filter)
       .sort(sortOrder)
       .skip(skip)
@@ -2185,6 +2195,7 @@ const getMyBookings = async (
       .populate('customer', 'name profileImage profilePicture phone')
       .lean(),
     Booking.countDocuments(filter),
+    PlatformSettings.getSettings(),
   ])
 
   const bookingIds = bookings.map((b: any) => b._id)
@@ -2199,11 +2210,16 @@ const getMyBookings = async (
 
   const enrichedBookings = bookings.map((b: any) => {
     const pdfInfo = resolveFinalDisplayedPdfUrl(b, user.role)
+    const cancellationNotices = resolveCancellationNoticeTexts(b, platformSettings)
     return {
       ...b,
       finalDisplayedPdfUrl: pdfInfo.finalDisplayedPdfUrl,
       finalDisplayedPdfType: pdfInfo.pdfType,
       finalDisplayedPdfLabel: pdfInfo.label,
+      displayTextForCustomerBeforeCancelling:
+        cancellationNotices.displayTextForCustomerBeforeCancelling,
+      displayTextForProfessionalBeforeCancelling:
+        cancellationNotices.displayTextForProfessionalBeforeCancelling,
       review: reviewByBookingId.get(String(b._id)) || null,
     }
   })
@@ -2324,6 +2340,14 @@ const getBookingById = async (user: IUser, bookingId: string) => {
   bookingObj.finalDisplayedPdfUrl = pdfInfo.finalDisplayedPdfUrl
   bookingObj.finalDisplayedPdfType = pdfInfo.pdfType
   bookingObj.finalDisplayedPdfLabel = pdfInfo.label
+
+  // Dynamic cancellation policy notices based on role, status, tier, and timeframe
+  const platformSettings = await PlatformSettings.getSettings()
+  const cancellationNotices = resolveCancellationNoticeTexts(bookingObj, platformSettings)
+  bookingObj.displayTextForCustomerBeforeCancelling =
+    cancellationNotices.displayTextForCustomerBeforeCancelling
+  bookingObj.displayTextForProfessionalBeforeCancelling =
+    cancellationNotices.displayTextForProfessionalBeforeCancelling
 
   return bookingObj
 }
@@ -6133,7 +6157,7 @@ const getAllBookingsAdmin = async (query: {
   const todayStart = moment().startOf('day').toDate()
   const todayEnd = moment().endOf('day').toDate()
 
-  const [bookings, total, totalAllTime, todayCount, pendingCount, completedCount, cancelledCount] =
+  const [bookings, total, totalAllTime, todayCount, pendingCount, completedCount, cancelledCount, platformSettings] =
     await Promise.all([
       Booking.find(filter)
         .sort(sortOrder)
@@ -6163,6 +6187,7 @@ const getAllBookingsAdmin = async (query: {
       Booking.countDocuments({
         status: { $in: [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.DECLINED] },
       }),
+      PlatformSettings.getSettings(),
     ])
 
   const formattedBookings = bookings.map((b: any) => {
@@ -6176,6 +6201,7 @@ const getAllBookingsAdmin = async (query: {
     }
 
     const pdfInfo = resolveFinalDisplayedPdfUrl(b, 'admin')
+    const cancellationNotices = resolveCancellationNoticeTexts(b, platformSettings)
 
     return {
       _id: b._id,
@@ -6216,6 +6242,10 @@ const getAllBookingsAdmin = async (query: {
       finalDisplayedPdfUrl: pdfInfo.finalDisplayedPdfUrl,
       finalDisplayedPdfType: pdfInfo.pdfType,
       finalDisplayedPdfLabel: pdfInfo.label,
+      displayTextForCustomerBeforeCancelling:
+        cancellationNotices.displayTextForCustomerBeforeCancelling,
+      displayTextForProfessionalBeforeCancelling:
+        cancellationNotices.displayTextForProfessionalBeforeCancelling,
       createdAt: b.createdAt,
     }
   })
@@ -6366,9 +6396,10 @@ const getBookingDetailsAdmin = async (bookingId: string) => {
     throw new AppError(httpStatus.NOT_FOUND, 'Booking not found')
   }
 
-  const [artistProfile, reviews] = await Promise.all([
+  const [artistProfile, reviews, platformSettings] = await Promise.all([
     ArtistProfile.findOne({ user: (booking.artist as any)?._id }).lean(),
     Review.find({ artist: (booking.artist as any)?._id }).select('rating').lean(),
+    PlatformSettings.getSettings(),
   ])
 
   const totalReviews = reviews.length
@@ -6488,6 +6519,10 @@ const getBookingDetailsAdmin = async (bookingId: string) => {
     noShowDetails: booking.noShowDetails,
     internalNotes: booking.adminNotes || '',
     timeline,
+    displayTextForCustomerBeforeCancelling:
+      resolveCancellationNoticeTexts(booking, platformSettings).displayTextForCustomerBeforeCancelling,
+    displayTextForProfessionalBeforeCancelling:
+      resolveCancellationNoticeTexts(booking, platformSettings).displayTextForProfessionalBeforeCancelling,
   }
 }
 
