@@ -2184,7 +2184,7 @@ const getMyBookings = async (
     ? { bookingDate: 1, startTime: 1 }
     : { bookingDate: -1, startTime: -1 }
 
-  const [bookings, total] = await Promise.all([
+  const [bookings, total, platformSettings] = await Promise.all([
     Booking.find(filter)
       .sort(sortOrder)
       .skip(skip)
@@ -2195,6 +2195,7 @@ const getMyBookings = async (
       .populate('customer', 'name profileImage profilePicture phone')
       .lean(),
     Booking.countDocuments(filter),
+    PlatformSettings.getSettings(),
   ])
 
   const bookingIds = bookings.map((b: any) => b._id)
@@ -2209,11 +2210,16 @@ const getMyBookings = async (
 
   const enrichedBookings = bookings.map((b: any) => {
     const pdfInfo = resolveFinalDisplayedPdfUrl(b, user.role)
+    const cancellationNotices = resolveCancellationNoticeTexts(b, platformSettings)
     return {
       ...b,
       finalDisplayedPdfUrl: pdfInfo.finalDisplayedPdfUrl,
       finalDisplayedPdfType: pdfInfo.pdfType,
       finalDisplayedPdfLabel: pdfInfo.label,
+      displayTextForCustomerBeforeCancelling:
+        cancellationNotices.displayTextForCustomerBeforeCancelling,
+      displayTextForProfessionalBeforeCancelling:
+        cancellationNotices.displayTextForProfessionalBeforeCancelling,
       review: reviewByBookingId.get(String(b._id)) || null,
     }
   })
@@ -6151,7 +6157,7 @@ const getAllBookingsAdmin = async (query: {
   const todayStart = moment().startOf('day').toDate()
   const todayEnd = moment().endOf('day').toDate()
 
-  const [bookings, total, totalAllTime, todayCount, pendingCount, completedCount, cancelledCount] =
+  const [bookings, total, totalAllTime, todayCount, pendingCount, completedCount, cancelledCount, platformSettings] =
     await Promise.all([
       Booking.find(filter)
         .sort(sortOrder)
@@ -6181,6 +6187,7 @@ const getAllBookingsAdmin = async (query: {
       Booking.countDocuments({
         status: { $in: [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.DECLINED] },
       }),
+      PlatformSettings.getSettings(),
     ])
 
   const formattedBookings = bookings.map((b: any) => {
@@ -6194,6 +6201,7 @@ const getAllBookingsAdmin = async (query: {
     }
 
     const pdfInfo = resolveFinalDisplayedPdfUrl(b, 'admin')
+    const cancellationNotices = resolveCancellationNoticeTexts(b, platformSettings)
 
     return {
       _id: b._id,
@@ -6234,6 +6242,10 @@ const getAllBookingsAdmin = async (query: {
       finalDisplayedPdfUrl: pdfInfo.finalDisplayedPdfUrl,
       finalDisplayedPdfType: pdfInfo.pdfType,
       finalDisplayedPdfLabel: pdfInfo.label,
+      displayTextForCustomerBeforeCancelling:
+        cancellationNotices.displayTextForCustomerBeforeCancelling,
+      displayTextForProfessionalBeforeCancelling:
+        cancellationNotices.displayTextForProfessionalBeforeCancelling,
       createdAt: b.createdAt,
     }
   })
