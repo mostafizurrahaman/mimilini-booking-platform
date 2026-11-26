@@ -45,6 +45,7 @@ import { deleteSingleFileFromS3, uploadSingleFileToS3, type TMulterFile } from '
 import { AWS_FOLDER_NAMES } from '@app/libs/files_folder'
 import { getNewOtp } from '@app/libs/get-new-otp'
 import { logger } from '@app/libs/logger'
+import { stripe } from '@app/libs/stripe'
 
 // 1. Signup
 const signUp = async (payload: ISignUpSchemaType, profileImage: TMulterFile) => {
@@ -986,7 +987,47 @@ const getMe = async (user: IUser) => {
     throw new AppError(httpStatus.NOT_FOUND, 'Profile not found!')
   }
 
-  return profile?.[0]
+  const result = profile[0]
+
+  if (user.role === AuthRoles.ARTIST) {
+    let availableBalance = 0
+    let pendingBalance = 0
+
+    const artistAccount = await Account.findOne({ user: user._id })
+    if (artistAccount?.account) {
+      try {
+        const stripeBalance = await stripe.balance.retrieve(
+          {},
+          { stripeAccount: artistAccount.account }
+        )
+        const audAvailable = stripeBalance.available?.find(
+          (b) => b.currency.toLowerCase() === 'aud'
+        )
+        const audPending = stripeBalance.pending?.find(
+          (b) => b.currency.toLowerCase() === 'aud'
+        )
+
+        const availCents = audAvailable ? audAvailable.amount : stripeBalance.available?.[0]?.amount || 0
+        const pendCents = audPending ? audPending.amount : stripeBalance.pending?.[0]?.amount || 0
+
+        availableBalance = Math.round(((availCents / 100) + Number.EPSILON) * 100) / 100
+        pendingBalance = Math.round(((pendCents / 100) + Number.EPSILON) * 100) / 100
+      } catch (stripeErr: any) {
+        logger.warn(`[Stripe Balance Retrieve Error] user ${user._id}: ${stripeErr?.message}`)
+        availableBalance = 0
+        pendingBalance = 0
+      }
+    }
+
+    result.availableBalance = availableBalance
+    result.pendingBalance = pendingBalance
+    if (result.artistProfile) {
+      result.artistProfile.availableBalance = availableBalance
+      result.artistProfile.pendingBalance = pendingBalance
+    }
+  }
+
+  return result
 }
 
 // 11. Update Profile:

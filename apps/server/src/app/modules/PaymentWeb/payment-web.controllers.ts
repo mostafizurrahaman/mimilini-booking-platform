@@ -342,7 +342,7 @@ export const renderPaymentCancel = (req: Request, res: Response) => {
       }
       <div class="detail-row">
         <span class="detail-label">Notice</span>
-        <span class="detail-value" style="color: #64748B; font-weight: 500;">You can retry anytime from the app.</span>
+        <span class="detail-value" style="color: #64748B; font-weight: 500;">You can retry from the app.</span>
       </div>
     </div>
 

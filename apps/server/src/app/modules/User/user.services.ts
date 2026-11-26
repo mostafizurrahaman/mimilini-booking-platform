@@ -11,6 +11,7 @@ import {
   userSearchableFields,
   userSortableFields,
   type IUser,
+  type IUserDoc,
 } from 'packages/db/src'
 import { Types, type PipelineStage } from 'mongoose'
 import httpStatus from 'http-status'
@@ -621,13 +622,13 @@ const getUserDetailsById = async (id: string) => {
     }
   )
 
-  const user = await User.aggregate(pipeline)
+  const [user] = await User.aggregate(pipeline)
 
-  if (!user?.[0]) {
-    throw new AppError(httpStatus.BAD_REQUEST, '')
+  if (!user) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'User not found.')
   }
 
-  return user[0]
+  if (user) return user
 }
 
 export const userServices = {

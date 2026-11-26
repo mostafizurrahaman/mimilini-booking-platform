@@ -797,6 +797,17 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     effectivePaymentMethodId = existingCard.stripePaymentMethodId
   }
 
+  // 8b. Debit wallet credit if applied (reserves credit for both Quick Booking and Requested Booking)
+  if (breakdown.platformCreditApplied > 0) {
+    await walletServices.debitUserWallet({
+      userId: user._id,
+      amount: breakdown.platformCreditApplied,
+      source: WALLET_SOURCE.BOOKING_PAYMENT,
+      bookingGroupId,
+      description: `Platform credit applied to booking #${bookingNumber}`,
+    })
+  }
+
   if (isQuickBooking) {
     // 7. Verify Stripe customer exists
     if (!user.stripeCustomerId) {
@@ -816,17 +827,6 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
         )
       }
       effectivePaymentMethodId = defaultCard.stripePaymentMethodId
-    }
-
-    // Debit wallet credit if applied
-    if (breakdown.platformCreditApplied > 0) {
-      await walletServices.debitUserWallet({
-        userId: user._id,
-        amount: breakdown.platformCreditApplied,
-        source: WALLET_SOURCE.BOOKING_PAYMENT,
-        bookingGroupId,
-        description: `Platform credit applied to booking #${bookingNumber}`,
-      })
     }
 
     // 9. 20% Deposit Stripe Payment Intent
@@ -921,7 +921,7 @@ const createBooking = async (user: IUser, input: ICreateBookingInput) => {
     parkingFee: breakdown.parkingFee,
     grossAmount: breakdown.grossAmount,
     discountAmount: breakdown.discountAmount,
-    platformCreditApplied: initialStatus === 'captured' ? breakdown.platformCreditApplied : 0,
+    platformCreditApplied: breakdown.platformCreditApplied,
     gstAmount: breakdown.serviceGst,
     stripeGstTaxRateId: stripeGstTaxRateId || null,
     totalBookingPrice: breakdown.totalBookingPrice,
@@ -1184,6 +1184,11 @@ const customerCancelBooking = async (
   // Pre-payment cancellation (Rule 1): Customer cancels before paying/confirming -> no charge, no refund
   if (!isInitialPaid) {
     booking.status = BOOKING_STATUS.CANCELLED
+    if (booking.rescheduleRequest && booking.rescheduleRequest.status === 'pending') {
+      booking.rescheduleRequest.status = 'declined'
+      booking.rescheduleRequest.respondedAt = new Date()
+      booking.rescheduleRequest.declineReason = 'Cancelled: Booking was cancelled before payment'
+    }
     booking.cancelledBy = user._id
     booking.cancelledByRole = isAdmin && !isCustomer ? 'admin' : 'customer'
     booking.cancellationReason = cancellationReason || 'Cancelled by client before payment/confirmation'
@@ -1255,7 +1260,10 @@ const customerCancelBooking = async (
   // Release promo code if applied and deposit was captured
   if (booking.promoCode && isInitialPaid) {
     await PromoCode.findByIdAndUpdate(booking.promoCode, { $inc: { usageCount: -1 } })
-    await PromoCodeUsage.deleteOne({ promoCode: booking.promoCode, user: booking.customer })
+    await PromoCodeUsage.deleteOne({
+      promoCode: booking.promoCode,
+      user: (booking.customer as any)._id || booking.customer,
+    })
   }
 
   // Void customer Stripe invoice or issue Credit Note if already finalized/paid
@@ -1317,6 +1325,11 @@ const customerCancelBooking = async (
     }
 
     booking.status = BOOKING_STATUS.CANCELLED
+    if (booking.rescheduleRequest && booking.rescheduleRequest.status === 'pending') {
+      booking.rescheduleRequest.status = 'declined'
+      booking.rescheduleRequest.respondedAt = new Date()
+      booking.rescheduleRequest.declineReason = 'Cancelled: Booking was cancelled before payment'
+    }
     booking.cancelledBy = user._id
     booking.cancelledByRole = isAdmin && !isCustomer ? 'admin' : 'customer'
     booking.cancellationReason = cancellationReason || 'Cancelled by client >24h'
@@ -1648,6 +1661,11 @@ const artistCancelBooking = async (
   // Pre-payment cancellation: Professional cancels before payment/confirmation -> no charge, no refund
   if (!isInitialPaid) {
     booking.status = BOOKING_STATUS.CANCELLED
+    if (booking.rescheduleRequest && booking.rescheduleRequest.status === 'pending') {
+      booking.rescheduleRequest.status = 'declined'
+      booking.rescheduleRequest.respondedAt = new Date()
+      booking.rescheduleRequest.declineReason = 'Cancelled: Booking was cancelled before payment'
+    }
     booking.cancelledBy = user._id
     booking.cancelledByRole = isAdmin && !isArtist ? 'admin' : 'artist'
     booking.cancellationReason = cancellationReason || 'Cancelled by professional before payment/confirmation'
@@ -1715,7 +1733,10 @@ const artistCancelBooking = async (
   // Release promo code if applied and deposit was captured
   if (booking.promoCode && isInitialPaid) {
     await PromoCode.findByIdAndUpdate(booking.promoCode, { $inc: { usageCount: -1 } })
-    await PromoCodeUsage.deleteOne({ promoCode: booking.promoCode, user: booking.customer })
+    await PromoCodeUsage.deleteOne({
+      promoCode: booking.promoCode,
+      user: (booking.customer as any)._id || booking.customer,
+    })
   }
 
   // Void Stripe invoices if exist
@@ -3188,14 +3209,14 @@ const issueArtistRctiStripeInvoice = async (booking: any) => {
         ]
         if (booking.travelFee > 0) {
           collections.push({
-            description: 'Mobile Travel Surcharge (100% Artist Pass-through)',
+            description: 'Mobile Travel Surcharge (100% Professional Pass-through)',
             gstRate: gstRateStr,
             amount: booking.travelFee,
           })
         }
         if (booking.parkingFee > 0) {
           collections.push({
-            description: 'Parking Fee Reimbursement (100% Artist Pass-through)',
+            description: 'Parking Fee Reimbursement (100% Professional Pass-through)',
             gstRate: '0.0%',
             amount: booking.parkingFee,
           })
@@ -3270,12 +3291,11 @@ const issueArtistRctiStripeInvoice = async (booking: any) => {
           recipient: {
             name: 'Mimilini Pty Ltd t/a Stunner Alert',
             abn: '88 701 443 129',
-            email: 'billing@stunneralert.com',
-            address: 'Sydney, NSW, Australia',
+            email: 'support@stunneralert.com.au',
           },
           supplier: {
-            name: artistProfile?.businessName || artistUser?.name || 'Professional Artist',
-            businessName: artistProfile?.businessName || artistUser?.name || 'Professional Artist',
+            name: artistProfile?.businessName || artistUser?.name || 'Independent Professional',
+            businessName: artistProfile?.businessName || artistUser?.name || 'Independent Professional',
             abn: artistProfile?.abn || null,
             isGstRegistered: isGst,
             address: (artistProfile as any)?.address || null,
@@ -3638,8 +3658,8 @@ const executeInitialDepositPayment = async ({
     }
   }
 
-  // 3. Debit wallet credit if applied
-  if (breakdown.platformCreditApplied > 0) {
+  // 3. Debit wallet credit if applied and not already debited at booking creation
+  if (breakdown.platformCreditApplied > 0 && !(booking.platformCreditApplied > 0)) {
     await walletServices.debitUserWallet({
       userId: customerUser._id,
       amount: breakdown.platformCreditApplied,
@@ -4222,11 +4242,19 @@ const declineBooking = async (user: IUser, bookingId: string, reason?: string) =
     )
   }
 
+  if (!reason || !reason.trim()) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'A valid decline reason is required to decline this booking request'
+    )
+  }
+
+  const trimmedReason = reason.trim()
   booking.status = BOOKING_STATUS.DECLINED
-  booking.cancellationReason = reason || 'Declined by professional'
+  booking.cancellationReason = trimmedReason
   booking.cancelledAt = new Date()
   booking.cancelledBy = user._id as any
-  booking.cancelledByRole = 'artist'
+  booking.cancelledByRole = isAdmin && !isArtist ? 'admin' : 'artist'
 
   const wasInitialCaptured = booking.initialPayment.status === PAYMENT_STAGE_STATUS.CAPTURED
 
@@ -4278,10 +4306,10 @@ const declineBooking = async (user: IUser, bookingId: string, reason?: string) =
     status: BOOKING_STATUS.DECLINED,
     milestone: BOOKING_TIMELINE_MILESTONE.DECLINED,
     title: 'Booking Declined',
-    description: reason || 'Booking declined by professional',
+    description: `Booking declined by ${isAdmin && !isArtist ? 'admin' : 'professional'}: ${trimmedReason}`,
     performedBy: user._id,
     performedByRole: (user.role as any) || 'artist',
-    note: reason,
+    note: trimmedReason,
   })
 
   // Notify customer
@@ -4292,7 +4320,7 @@ const declineBooking = async (user: IUser, bookingId: string, reason?: string) =
       senderName: user.name,
       senderPicture: user.profileImage,
       title: 'Booking Declined',
-      message: `${user.name} could not accept booking #${booking.bookingNumber}${reason ? ': ' + reason : ''}`,
+      message: `${user.name} could not accept booking #${booking.bookingNumber}. Reason: ${trimmedReason}`,
       type: NOTIFICATION_TYPE.BOOKING_DECLINED,
       bookingId: booking._id,
       bookingNumber: booking.bookingNumber,
@@ -4438,11 +4466,12 @@ const customerSign = async (
 
   if (
     booking.status !== BOOKING_STATUS.COMPLETED &&
-    booking.status !== BOOKING_STATUS.CONFIRMED
+    booking.status !== BOOKING_STATUS.CONFIRMED &&
+    booking.status !== BOOKING_STATUS.RESCHEDULED
   ) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      `Cannot sign a booking with status '${booking.status}'. Service must be confirmed or completed.`
+      `Cannot sign a booking with status '${booking.status}'. Service must be confirmed, completed or rescheduled.`
     )
   }
 
@@ -4834,6 +4863,7 @@ const requestReschedule = async (
   const pendingRescheduleConflict = await Booking.findOne({
     _id: { $ne: booking._id },
     artist: booking.artist,
+    status: { $nin: [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.DECLINED] },
     'rescheduleRequest.status': 'pending',
     'rescheduleRequest.newDate': requestedDateMoment.toDate(),
     'rescheduleRequest.newStartTime': { $lt: newEndTime },
@@ -4924,6 +4954,40 @@ const respondReschedule = async (
 
   assertNotRefundedOrFailedPayment(booking, 'respond to reschedule')
 
+  // Check if reschedule request has expired (24-hour response window or <= 2 hours before appointment)
+  const nowSydney = moment.tz('Australia/Sydney')
+  const requestCreatedAt = booking.rescheduleRequest.createdAt || (booking as any).updatedAt
+  const isPast24Hours = requestCreatedAt
+    ? moment().diff(moment(requestCreatedAt), 'hours', true) >= 24
+    : false
+
+  const apptDateStr = moment.utc(booking.bookingDate).format('YYYY-MM-DD')
+  const apptDateTime = moment.tz(
+    `${apptDateStr} ${booking.startTime}`,
+    'YYYY-MM-DD HH:mm',
+    'Australia/Sydney'
+  )
+  const hoursUntilAppt = apptDateTime.diff(nowSydney, 'hours', true)
+  const isWithin2Hours = hoursUntilAppt <= 2
+
+  if (isPast24Hours || isWithin2Hours) {
+    const expireReason = isWithin2Hours
+      ? 'Expired: Reschedule window closed as appointment is within 2 hours'
+      : 'Expired: Reschedule request was not accepted within the 24-hour response window'
+
+    booking.rescheduleRequest.status = 'expired'
+    booking.rescheduleRequest.respondedAt = new Date()
+    booking.rescheduleRequest.declineReason = expireReason
+    await booking.save()
+
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      isWithin2Hours
+        ? 'Cannot respond to reschedule request: The reschedule window has closed (less than 2 hours before the scheduled appointment).'
+        : 'Cannot respond to reschedule request: This request has expired because it was not answered within the 24-hour response window.'
+    )
+  }
+
   const isCustomer = booking.customer.toString() === user._id.toString()
   const isArtist = booking.artist.toString() === user._id.toString()
   const isAdmin = user.role === 'admin' || user.role === 'super_admin'
@@ -4966,6 +5030,24 @@ const respondReschedule = async (
       throw new AppError(
         httpStatus.CONFLICT,
         'Cannot accept reschedule: The professional already has another booking during this time slot.'
+      )
+    }
+
+    const isBlocked = await ArtistBlockedDate.findOne({
+      artist: booking.artist,
+      date: booking.rescheduleRequest.newDate,
+      $or: [
+        { isFullDay: true },
+        {
+          startTime: { $lt: booking.rescheduleRequest.newEndTime },
+          endTime: { $gt: booking.rescheduleRequest.newStartTime },
+        },
+      ],
+    })
+    if (isBlocked) {
+      throw new AppError(
+        httpStatus.CONFLICT,
+        'Cannot accept reschedule: This time slot conflicts with the professional blocked schedule.'
       )
     }
 

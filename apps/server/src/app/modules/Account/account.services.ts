@@ -2,7 +2,7 @@ import { Account, accountStatus, ArtistProfile, type IUser } from '@repo/db'
 import httpStatus from 'http-status'
 import { AppError } from '@repo/shared'
 
-import { createStripeAccount, regenerateConnectedAccountLink } from '@app/libs/stripe'
+import { createStripeAccount, regenerateConnectedAccountLink, stripe } from '@app/libs/stripe'
 
 // ? 1. Connect Stripe Account :
 const connectStripeAccount = async (user: IUser) => {
@@ -63,7 +63,35 @@ const getAccountById = async (user: IUser) => {
     throw new AppError(httpStatus.NOT_FOUND, 'Account not found')
   }
 
-  return result
+  const accountObj = result.toObject()
+  let availableBalance = 0
+  let pendingBalance = 0
+
+  if (result.account) {
+    try {
+      const stripeBalance = await stripe.balance.retrieve(
+        {},
+        { stripeAccount: result.account }
+      )
+      const audAvailable = stripeBalance.available?.find((b) => b.currency.toLowerCase() === 'aud')
+      const audPending = stripeBalance.pending?.find((b) => b.currency.toLowerCase() === 'aud')
+
+      const availCents = audAvailable ? audAvailable.amount : stripeBalance.available?.[0]?.amount || 0
+      const pendCents = audPending ? audPending.amount : stripeBalance.pending?.[0]?.amount || 0
+
+      availableBalance = Math.round(((availCents / 100) + Number.EPSILON) * 100) / 100
+      pendingBalance = Math.round(((pendCents / 100) + Number.EPSILON) * 100) / 100
+    } catch {
+      availableBalance = 0
+      pendingBalance = 0
+    }
+  }
+
+  return {
+    ...accountObj,
+    availableBalance,
+    pendingBalance,
+  }
 }
 
 // ?. Refresh url:

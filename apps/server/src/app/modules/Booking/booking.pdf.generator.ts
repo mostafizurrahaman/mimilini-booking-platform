@@ -173,7 +173,7 @@ export const generateAndUploadCustomerInvoicePdf = async (
       .font('Helvetica')
       .fillColor('#64748B')
       .text('Stunner Alert Pty Ltd (Platform) | ABN: 88 701 443 129', 40, 64)
-    doc.text('billing@stunneralert.com | Sydney, Australia', 40, 75)
+    doc.text('support@stunneralert.com.au', 40, 75)
 
     doc.fontSize(14).font('Helvetica-Bold').fillColor('#0F172A').text(data.title, 315, 40, { width: 240, align: 'right' })
     doc.fontSize(7.5).font('Helvetica').fillColor('#334155')
@@ -186,7 +186,7 @@ export const generateAndUploadCustomerInvoicePdf = async (
     doc.strokeColor('#E2E8F0').lineWidth(0.75).moveTo(40, 98).lineTo(555, 98).stroke()
 
     // Parties
-    doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#64748B').text('SERVICE PROVIDER (ARTIST):', 40, 108)
+    doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#64748B').text('SERVICE PROVIDER (PROFESSIONAL):', 40, 108)
     doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#0F172A').text(data.seller.businessName || data.seller.name, 40, 120)
     doc.fontSize(7.5).font('Helvetica').fillColor('#334155')
     let py = 132
@@ -289,7 +289,7 @@ export const generateAndUploadCustomerInvoicePdf = async (
       doc.text('• Current Amount Paid:', 50, y)
       doc.text(`$${fmt(data.dueSchedule.currentPaid)}`, 465, y, { width: 82, align: 'right' })
       y += 12
-      doc.text('• Initial 20% Deposit (Due upon artist confirmation):', 50, y)
+      doc.text('• Initial 20% Deposit (Due upon professional confirmation):', 50, y)
       doc.text(`$${fmt(data.dueSchedule.initialDeposit)}`, 465, y, { width: 82, align: 'right' })
       y += 12
       doc.text('• Remaining 80% Balance (Due 24h before appointment):', 50, y)
@@ -340,7 +340,7 @@ export const generateAndUploadArtistRctiPdf = async (
       .font('Helvetica')
       .fillColor('#64748B')
       .text('Mimilini Pty Ltd t/a Stunner Alert (Recipient / Payer)', 40, 64)
-    doc.text(`ABN: ${data.recipient.abn} | ${data.recipient.email} | Sydney, NSW, Australia`, 40, 75)
+    doc.text(`ABN: ${data.recipient.abn} | ${data.recipient.email || 'support@stunneralert.com.au'}`, 40, 75)
 
     doc
       .fontSize(13)
@@ -509,6 +509,7 @@ export const generateAndUploadBalanceReceiptPdf = async (
     // Header
     doc.fontSize(20).font('Helvetica-Bold').fillColor('#0F172A').text('STUNNER ALERT', 40, 40)
     doc.fontSize(7.5).font('Helvetica').fillColor('#64748B').text('Stunner Alert Pty Ltd | ABN: 88 701 443 129', 40, 64)
+    doc.text('support@stunneralert.com.au', 40, 75)
 
     doc.fontSize(15).font('Helvetica-Bold').fillColor('#0F172A').text('PAYMENT RECEIPT', 315, 40, { width: 240, align: 'right' })
     doc.fontSize(7.5).font('Helvetica').fillColor('#334155')
@@ -581,6 +582,7 @@ export const generateAndUploadCreditNotePdf = async (
     // Header
     doc.fontSize(20).font('Helvetica-Bold').fillColor('#0F172A').text('STUNNER ALERT', 40, 40)
     doc.fontSize(7.5).font('Helvetica').fillColor('#64748B').text('Stunner Alert Pty Ltd | ABN: 88 701 443 129', 40, 64)
+    doc.text('support@stunneralert.com.au', 40, 75)
 
     doc.fontSize(14).font('Helvetica-Bold').fillColor('#B91C1C').text('ADJUSTMENT / CREDIT NOTE', 250, 40, { width: 305, align: 'right' })
     doc.fontSize(7.5).font('Helvetica').fillColor('#334155')
@@ -769,8 +771,8 @@ export const generateAndSaveBookingCustomPdf = async (bookingId: string) => {
       appointmentDate: `${moment(booking.bookingDate).format('DD MMM YYYY')} ${booking.startTime}`,
       serviceType: booking.visitType || 'home_visit',
       seller: {
-        name: artistProfile?.businessName || (booking.artist as any)?.name || 'Professional Artist',
-        businessName: artistProfile?.businessName || (booking.artist as any)?.name || 'Professional Artist',
+        name: artistProfile?.businessName || (booking.artist as any)?.name || 'Independent Professional',
+        businessName: artistProfile?.businessName || (booking.artist as any)?.name || 'Independent Professional',
         abn: artistProfile?.abn || (booking.artist as any)?.abn || null,
         isGstRegistered: isGst,
       },
@@ -834,7 +836,7 @@ export const generateAndSaveBalanceReceiptPdf = async (bookingId: string) => {
       customerName: (booking.customer as any)?.name || 'Valued Client',
       customerEmail: (booking.customer as any)?.email || null,
       artistName:
-        artistProfile?.businessName || (booking.artist as any)?.name || 'Professional Artist',
+        artistProfile?.businessName || (booking.artist as any)?.name || 'Independent Professional',
       artistAbn: artistProfile?.abn || (booking.artist as any)?.abn || null,
       serviceName,
       totalBookingPrice: booking.totalBookingPrice,

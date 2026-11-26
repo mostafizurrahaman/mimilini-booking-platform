@@ -155,7 +155,7 @@ export interface IRescheduleRequest {
   newEndTime: string
   reason: string
   message?: string | null | undefined
-  status: 'pending' | 'accepted' | 'declined'
+  status: 'pending' | 'accepted' | 'declined' | 'expired'
   createdAt: Date
   respondedAt?: Date | null | undefined
   declineReason?: string | null | undefined
