@@ -17,11 +17,11 @@ import { notificationServices } from '../Notification/notification.services'
 export const formatTimeframeTier = (tier?: string): string => {
   switch (tier) {
     case 'sevenTo13Days':
-      return '7 to 13 Days'
+      return '48 Hours to 13 Days'
     case 'within48Hours':
       return 'Within 48 Hours'
     case 'moreThan14Days':
-      return 'More than 14 Days'
+      return '14 or More Days'
     default:
       return tier || ''
   }
