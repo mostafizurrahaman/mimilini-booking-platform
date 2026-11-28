@@ -7,11 +7,11 @@ import {
 } from '@repo/shared'
 
 const cancellationFeeTierSchema = z.object({
-  moreThan14Days: requiredNumber('Cancellation fee for more than 14 days').min(
+  moreThan14Days: requiredNumber('Cancellation fee for 14 or more days').min(
     0,
     'Cancellation fee cannot be negative'
   ),
-  sevenTo13Days: requiredNumber('Cancellation fee for 7-13 days').min(
+  sevenTo13Days: requiredNumber('Cancellation fee for 48 hours to 13 days').min(
     0,
     'Cancellation fee cannot be negative'
   ),
@@ -23,11 +23,11 @@ const cancellationFeeTierSchema = z.object({
 
 const updateCancellationFeeTierSchema = z
   .object({
-    moreThan14Days: optionalNumber('Cancellation fee for more than 14 days').refine(
+    moreThan14Days: optionalNumber('Cancellation fee for 14 or more days').refine(
       (v) => v === undefined || v >= 0,
       { message: 'Cancellation fee cannot be negative' }
     ),
-    sevenTo13Days: optionalNumber('Cancellation fee for 7-13 days').refine(
+    sevenTo13Days: optionalNumber('Cancellation fee for 48 hours to 13 days').refine(
       (v) => v === undefined || v >= 0,
       { message: 'Cancellation fee cannot be negative' }
     ),

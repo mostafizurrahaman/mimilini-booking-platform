@@ -185,11 +185,13 @@ export const calculateArtistCancellationPenalty = (
 
   // 2. Determine Timeframe Tier
   let timeframeTier: 'moreThan14Days' | 'sevenTo13Days' | 'within48Hours' = 'within48Hours'
-  if (hoursUntilAppointment > 14 * 24) {
+  if (hoursUntilAppointment >= 14 * 24) {
     timeframeTier = 'moreThan14Days'
-  } else if (hoursUntilAppointment >= 7 * 24) {
+  } else if (hoursUntilAppointment > 48) {
+    // 13 days down to before 48 hours (covers 48 hours up to 14 days)
     timeframeTier = 'sevenTo13Days'
   } else {
+    // Within 48 hours of scheduled commencement time
     timeframeTier = 'within48Hours'
   }
 
@@ -413,7 +415,7 @@ export const resolveCancellationNoticeTexts = (
     if (penaltyCalc.timeframeTier === 'moreThan14Days') {
       timeframeLabel = '14 or more days before the scheduled appointment'
     } else if (penaltyCalc.timeframeTier === 'sevenTo13Days') {
-      timeframeLabel = 'between 7 and 13 days before the scheduled appointment'
+      timeframeLabel = 'between 48 hours and 13 days before the scheduled appointment'
     }
 
     if (hoursUntilAppointment <= 48) {
